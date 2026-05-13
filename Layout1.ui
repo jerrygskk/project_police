@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1024</width>
+    <height>768</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>公文管理系統</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainVerticalLayout">
+    <item>
+     <widget class="QTabWidget" name="tabWidget">
+      <property name="currentIndex">
+       <number>0</number>
+      </property>
+
+      <!-- 分頁 1: 交辦單發文 (保留完整佈局) -->
+      <widget class="QWidget" name="tab_dispatch">
+       <attribute name="title">
+        <string>交辦單發文</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="tabLayout_1">
+        <item>
+         <layout class="QHBoxLayout" name="topLayout_1">
+          <item><widget class="QLabel"><property name="text"><string>文號：</string></property></widget></item>
+          <item><widget class="QLineEdit" name="lineEdit_docNum"><property name="minimumSize"><size><width>150</width><height>30</height></size></property></widget></item>
+          <item><spacer name="sp1"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+          <item><widget class="QPushButton" name="btn_send"><property name="minimumSize"><size><width>120</width><height>50</height></size></property><property name="text"><string>發文</string></property></widget></item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QTableWidget" name="tableWidget">
+          <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+          <column><property name="text"><string>交辦單編號</string></property></column>
+          <column><property name="text"><string>交辦事由</string></property></column>
+          <column><property name="text"><string>業務組</string></property></column>
+          <column><property name="text"><string>所承辦人</string></property></column>
+          <column><property name="text"><string>收文日期</string></property></column>
+          <column><property name="text"><string>限辦日期</string></property></column>
+          <column><property name="text"><string>是否逾期</string></property></column>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+
+      <!-- 分頁 2: 保持空白 -->
+      <widget class="QWidget" name="tab_receive">
+       <attribute name="title">
+        <string>交辦單收文</string>
+       </attribute>
+      </widget>
+
+      <!-- 分頁 3: 保持空白 -->
+      <widget class="QWidget" name="tab_report">
+       <attribute name="title">
+        <string>公文陳報</string>
+       </attribute>
+      </widget>
+
+      <!-- 分頁 4: 保持空白 -->
+      <widget class="QWidget" name="tab_print">
+       <attribute name="title">
+        <string>簽收單列印</string>
+       </attribute>
+      </widget>
+
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+</ui>

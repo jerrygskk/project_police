@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Dialog</class>
+ <widget class="QDialog" name="Dialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>650</width>
+    <height>600</height> <!-- 稍微調高視窗以容納更多按鈕 -->
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>公文管理系統 - 主選單</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">
+    QDialog {
+        background-color: #f5f7fa;
+    }
+    QPushButton {
+        font-size: 20pt;
+        font-weight: bold;
+        color: #2d3436;
+        background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e8ecef);
+        border: 1px solid #b2bec3;
+        border-right: 5px solid #636e72;
+        border-bottom: 5px solid #636e72;
+        border-radius: 12px;
+    }
+    QPushButton:hover {
+        background-color: #ffffff;
+        border-color: #3399ff;
+        color: #1a5fb4;
+    }
+    QPushButton:pressed {
+        background-color: #dfe6e9;
+        border-right: 1px solid #b2bec3;
+        border-bottom: 1px solid #b2bec3;
+        padding-top: 4px;
+        padding-left: 4px;
+    }
+    QLabel#versionLabel {
+        font-size: 10pt;
+        color: rgba(45, 52, 54, 150);
+        font-weight: bold;
+    }
+   </string>
+  </property>
+  <layout class="QGridLayout" name="gridLayout">
+   <property name="leftMargin">
+    <number>120</number>
+   </property>
+   <property name="topMargin">
+    <number>50</number>
+   </property>
+   <property name="rightMargin">
+    <number>20</number>
+   </property>
+   <property name="bottomMargin">
+    <number>15</number>
+   </property>
+   
+   <item row="0" column="0" colspan="2">
+    <layout class="QVBoxLayout" name="buttonLayout">
+     <property name="spacing">
+      <number>25</number>
+     </property>
+     <property name="rightMargin">
+      <number>100</number>
+     </property>
+     <item>
+      <widget class="QPushButton" name="btn_report_assignment">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Minimum" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy>
+       </property>
+       <property name="text"><string>交辦單陳報</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_receive_assignment">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Minimum" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy>
+       </property>
+       <property name="text"><string>交辦單收文</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_report_case">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Minimum" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy>
+       </property>
+       <property name="text"><string>案件陳報</string></property>
+      </widget>
+     </item>
+     <!-- 新增按鈕：產生簽收表 -->
+     <item>
+      <widget class="QPushButton" name="btn_generate_receipt">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Minimum" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy>
+       </property>
+       <property name="text"><string>產生簽收表</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_exit">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Minimum" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy>
+       </property>
+       <property name="text"><string>離開系統</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+
+   <item row="1" column="1" alignment="Qt::AlignRight|Qt::AlignBottom">
+    <widget class="QLabel" name="versionLabel">
+     <property name="text"><string>Ver: α1</string></property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <connections>
+  <connection>
+   <sender>btn_exit</sender>
+   <signal>clicked()</signal>
+   <receiver>Dialog</receiver>
+   <slot>close()</slot>
+  </connection>
+ </connections>
+</ui>

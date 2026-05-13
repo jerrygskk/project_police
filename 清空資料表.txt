@@ -1,0 +1,18 @@
+-- 1. 暫時關閉外鍵約束檢查
+PRAGMA foreign_keys = OFF;
+
+-- 2. 清空所有資料表 (包含人員主檔與各類紀錄)
+DELETE FROM "Document_Criminal";
+DELETE FROM "Document_General";
+DELETE FROM "Task_Assignment";
+
+-- 3. 一次性重製所有表的自增索引 (讓 ID 從 1 重新開始)
+DELETE FROM sqlite_sequence WHERE name IN (
+    'Document_Criminal', 
+    'Document_General', 
+    'Task_Assignment', 
+    'Ref_Personnel'
+);
+
+-- 4. 恢復外鍵約束檢查
+PRAGMA foreign_keys = ON;
