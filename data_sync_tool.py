@@ -1,109 +1,113 @@
 import sqlite3
 import pandas as pd
 import os
+import re
+import warnings
 
-# ---------------------------------------------------------
-# 1. 核心設定與對照表
-# ---------------------------------------------------------
-DB_NAME = 'document_system.db'
-EXCEL_FILE = 'import_data.xlsx'
+warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
-def create_reverse_map(d):
-    return {str(v).strip(): k for k, v in d.items()}
+# 1. 配置
+DB_NAME = 'dbfile.db'
+EXCEL_FILE = 'ori.xlsm'
+SQL_INIT_FILE = 'init_ref_tables.sql'
 
-# 建立名稱到 ID 的映射
-MAPS = {
-    'case_status': create_reverse_map({'CS01': 'A_現行犯', 'CS02': 'B_到案', 'CS03': 'B_未到案'}),
-    'gen_category': create_reverse_map({'GC01': 'D_業務陳報', 'GC02': 'F_司法相驗', 'GC03': 'J_其他'}),
-    'dept': create_reverse_map({'D01': '交通組', 'D02': '偵查隊', 'D03': '防治組', 'D04': '行政組', 'D05': '督察組', 'D06': '人事室', 'D07': '保民組', 'D08': '保防組', 'D09': '秘書室', 'D10': '會計室', 'D11': '勤指中心'}),
-    'personnel': create_reverse_map({'P01': '賴柏仁', 'P02': '覃筱蘭', 'P03': '游智程', 'P04': '洪渝勛-01.10', 'P05': '劉志廷-02', 'P06': '徐維陽-04', 'P07': '陳凱霖-05', 'P08': '郭彥麟-07.22', 'P09': '陳力豪-08', 'P10': '劉星緯-09', 'P11': '鄭郁勳-11', 'P12': '楊詠翔-12', 'P13': '謝欣蓉-13', 'P14': '鄧敬豪-14', 'P15': '邱垂政-15', 'P16': '洪哲文-16', 'P17': '嘺俊甫-17', 'P18': '陳正道-18', 'P19': '溫學成-19.06', 'P20': '劉致忻-20.3', 'P21': '古浩成-21', 'P22': '秦志如-23', 'P23': '林柏宏-24', 'P24': '簡雄雄-25', 'P25': '莊守翔-26', 'P26': '馬瑞興-27', 'P27': '呂紹榮-28', 'P28': '黃柏嘉-29', 'P29': '陳冠宇-30', 'P30': '謝煥春-31', 'P31': '胡展維-32', 'P32': '林思維', 'P33': '羅以芯', 'P34': '游琇媛'}),
-    'case_type': create_reverse_map({'CT01': '通緝', 'CT02': '毒品危害防制條例', 'CT03': '185-3公共危險(酒)', 'CT04': '185-3公共危險(毒)', 'CT05': '320竊盜', 'CT06': '321加重竊盜', 'CT07': '339詐欺', 'CT08': '失聯移工', 'CT09': '135妨害公務', 'CT10': '149聚眾不解散', 'CT11': '150聚眾鬥毆', 'CT12': '151恐嚇公眾', 'CT13': '169-171誣告', 'CT14': '185-4肇事逃逸', 'CT15': '210-220偽造文書印文罪', 'CT16': '235妨害風化', 'CT17': '266-270賭博罪', 'CT18': '271殺人', 'CT19': '277傷害', 'CT20': '284過失傷害', 'CT21': '302妨害自由(私行拘禁)', 'CT22': '304強制罪', 'CT23': '305恐嚇危安', 'CT24': '306侵入住宅', 'CT25': '309-314妨害名譽及信用罪(公然侮辱、誹謗)', 'CT26': '315-319妨害秘密罪', 'CT27': '319-1到319-6妨害性隱私及不實性影像罪章', 'CT28': '325準強盜', 'CT29': '326搶奪', 'CT30': '328強盜', 'CT31': '330加重強盜', 'CT32': '335侵占', 'CT33': '342背信', 'CT34': '344重利', 'CT35': '346恐嚇取財', 'CT36': '354毀損', 'CT37': '358妨害電腦使用', 'CT38': '★★刑案類找不到法條(暫選)', 'CT39': '汽機車失竊', 'CT40': '汽機車遺失/侵占', 'CT41': '汽機車車牌遺失/侵占', 'CT42': '其他汽機車案類', 'CT43': '社會秩序維護法', 'CT44': '家庭暴力防治法', 'CT45': '個人資料保護法', 'CT46': '跟蹤騷擾防治法', 'CT47': '性騷擾防治法', 'CT48': '菸害防制法', 'CT49': '醫療法', 'CT50': '人口販運防治法', 'CT51': '農田水利法', 'CT52': '廢棄物清理法'})
+SHEET_CONFIGS = {
+    'Task': {
+        'sheet': '交辦單-收發紀錄', 'header': 0,
+        'mapping': {
+            '編號': ('doc_id', 'str', None),
+            '收文日期': ('receive_date', 'date', None),
+            '收文人員': ('receive_id', 'str', 'personnel'),
+            '業務組': ('dept_id', 'str', 'dept'),
+            '交辦事由': ('subject', 'str', None),
+            '所承辦人': ('processor_id', 'str', 'personnel'),
+            '限辦日期': ('deadline', 'date', None),
+            '發文日期': ('dispatch_date', 'date', None),
+            '送文人員': ('sender_id', 'str', 'personnel'),
+            '時間戳記': ('timestamp', 'datetime', None)
+        }
+    },
+    'Criminal': {
+        'sheet': '刑案-收發紀錄', 'header': 1,
+        'mapping': {
+            '送文編號': ('doc_id', 'str', None), '陳報日期': ('report_date', 'date', None),
+            '送文人員': ('sender_id', 'str', 'personnel'), '案類': ('case_type', 'str', 'case_type'),
+            '發文分類': ('case_status', 'str', 'case_status'), '主承辦/查獲人': ('processor_id', 'str', 'personnel'),
+            '嫌疑人/案由': ('subject_summary', 'str', None), '受理/查獲日期': ('occurrence_date', 'date', None),
+            '報案人': ('reporter_name', 'str', None), '受理人': ('receiver_id', 'str', 'personnel'),
+            '紙本': ('is_reported', 'bool', None), '電子檔': ('is_electronic', 'bool', None)
+        }
+    },
+    'General': {
+        'sheet': '陳報單-收發紀錄', 'header': 1,
+        'mapping': {
+            '送文編號': ('doc_id', 'str', None), '陳報日期': ('report_date', 'date', None),
+            '送文人員': ('sender_id', 'str', 'personnel'), '業務單位/分類': ('dept_id', 'str', 'dept'),
+            '發文分類': ('gen_cat_id', 'str', 'gen_cat'), '陳報主旨': ('subject', 'str', None),
+            '陳報人': ('processor_id', 'str', 'personnel'), '欄1': ('is_reported', 'bool', None), '欄2': ('is_electronic', 'bool', None)
+        }
+    }
 }
 
-def get_ref_id(val, map_key, table_name, col_name, doc_id):
-    """檢查並獲取對照 ID"""
-    s_val = str(val).strip() if pd.notna(val) else ""
-    if not s_val: return None
-    
-    if s_val not in MAPS[map_key]:
-        print(f"[警告] 找不到對照值! | 表格: {table_name} | 欄位: {col_name} | 數值: '{s_val}' | 文號: {doc_id}")
-        return "ERR_MISSING"
-    return MAPS[map_key][s_val]
+def run_sync():
+    if not os.path.exists(EXCEL_FILE) or not os.path.exists(SQL_INIT_FILE):
+        print("❌ 錯誤: 找不到原始檔案"); return
 
-# ---------------------------------------------------------
-# 2. 資料庫操作
-# ---------------------------------------------------------
-def run_import():
-    if not os.path.exists(EXCEL_FILE):
-        print(f"錯誤: 找不到 {EXCEL_FILE}")
-        return
+    with open(SQL_INIT_FILE, 'r', encoding='utf-8') as f:
+        sql_content = f.read()
 
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
+    def get_map(table_name):
+        match = re.search(rf"INSERT INTO {table_name}.*?VALUES\s*(.*?);", sql_content, re.S)
+        return {n.strip(): i.strip() for i, n in re.findall(r"\('([^']+?)','([^']+?)'", match.group(1))} if match else {}
+
+    maps = {k: get_map(v) for k, v in {
+        'dept': 'Ref_Departments', 'personnel': 'Ref_Personnel', 
+        'case_status': 'Ref_Case_Status', 'case_type': 'Ref_CaseTypes', 'gen_cat': 'Ref_General_Category'}.items()}
+
+    conn = sqlite3.connect(DB_NAME); cur = conn.cursor()
 
     try:
-        # 行為 1: 清空並重置
-        tables = ['Document_Task', 'Document_Criminal', 'Document_General']
-        for t in tables:
-            cur.execute(f"DELETE FROM {t}")
-        cur.execute("DELETE FROM sqlite_sequence WHERE name IN ('Document_Task', 'Document_Criminal', 'Document_General')")
-        print("系統: 已清空舊有資料並重置計數器。")
+        print("⚙️ 初始化資料庫結構與視圖...")
+        cur.executescript(sql_content); conn.commit()
+        xls = pd.ExcelFile(EXCEL_FILE, engine='openpyxl')
 
-        xls = pd.ExcelFile(EXCEL_FILE)
+        for key, cfg in SHEET_CONFIGS.items():
+            if cfg['sheet'] not in xls.sheet_names: continue
+            df = pd.read_excel(xls, cfg['sheet'], header=cfg['header'])
+            if df.empty: continue
+            df.columns = [str(c).strip() for c in df.columns]
 
-        # A. Document_Task
-        if 'Document_Task' in xls.sheet_names:
-            df = pd.read_excel(xls, 'Document_Task')
-            for _, r in df.iterrows():
-                d_id = r['doc_id']
-                s_id = get_ref_id(r['sender_id'], 'personnel', 'Task', 'sender_id', d_id)
-                dept = get_ref_id(r['dept_id'], 'dept', 'Task', 'dept_id', d_id)
-                a_id = get_ref_id(r['assignee_id'], 'personnel', 'Task', 'assignee_id', d_id)
-                
-                if "ERR_MISSING" in [s_id, dept, a_id]: continue
-                
-                cur.execute("""INSERT INTO Document_Task (doc_id, dispatch_date, sender_id, subject, dept_id, receive_date, assignee_id, deadline) 
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", 
-                            (str(d_id), r['dispatch_date'], s_id, r['subject'], dept, r['receive_date'], a_id, r['deadline']))
+            processed = pd.DataFrame()
+            for ex_col, (db_col, dtype, m_key) in cfg['mapping'].items():
+                if ex_col not in df.columns: continue
+                col = df[ex_col].copy()
 
-        # B. Document_Criminal
-        if 'Document_Criminal' in xls.sheet_names:
-            df = pd.read_excel(xls, 'Document_Criminal')
-            for _, r in df.iterrows():
-                d_id = r['doc_id']
-                s_id = get_ref_id(r['sender_id'], 'personnel', 'Criminal', 'sender_id', d_id)
-                c_t  = get_ref_id(r['case_type'], 'case_type', 'Criminal', 'case_type', d_id)
-                c_s  = get_ref_id(r['case_status'], 'case_status', 'Criminal', 'case_status', d_id)
-                p_id = get_ref_id(r['processor_id'], 'personnel', 'Criminal', 'processor_id', d_id)
-                
-                if "ERR_MISSING" in [s_id, c_t, c_s, p_id]: continue
-                
-                cur.execute("""INSERT INTO Document_Criminal (doc_id, report_date, sender_id, case_type, case_status, processor_id, subject_summary, occurrence_date, reporter_name, is_reported, is_electronic) 
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                            (str(d_id), r['report_date'], s_id, c_t, c_s, p_id, r['subject_summary'], r['occurrence_date'], r['reporter_name'], r['is_reported'], r['is_electronic']))
+                if dtype == 'str':
+                    col = col.astype(str).str.strip().replace('nan', None)
+                    if m_key: col = col.map(maps[m_key]).fillna(col)
+                elif dtype == 'bool':
+                    bm = {'Y':1,'N':0,'1':1,'0':0,'1.0':1,'0.0':0,'是':1,'否':0,'TRUE':1,'FALSE':0}
+                    col = col.astype(str).str.strip().str.upper().map(bm).fillna(0).astype(int)
+                elif dtype in ['date', 'datetime']:
+                    num = pd.to_numeric(col, errors='coerce')
+                    mask = num.notnull() & (num > 1) & (num < 100000)
+                    res = pd.Series(index=col.index, dtype='datetime64[ns]')
+                    res.update(pd.to_datetime(num[mask], unit='D', origin='1899-12-30'))
+                    res.update(pd.to_datetime(col[~mask], errors='coerce'))
+                    fmt = '%Y-%m-%d' if dtype == 'date' else '%Y-%m-%d %H:%M:%S'
+                    col = res.dt.strftime(fmt).where(res.notnull(), None)
+                processed[db_col] = col
 
-        # C. Document_General
-        if 'Document_General' in xls.sheet_names:
-            df = pd.read_excel(xls, 'Document_General')
-            for _, r in df.iterrows():
-                d_id = r['doc_id']
-                s_id = get_ref_id(r['sender_id'], 'personnel', 'General', 'sender_id', d_id)
-                dept = get_ref_id(r['dept_id'], 'dept', 'General', 'dept_id', d_id)
-                p_id = get_ref_id(r['processor_id'], 'personnel', 'General', 'processor_id', d_id)
-                
-                if "ERR_MISSING" in [s_id, dept, p_id]: continue
-                
-                cur.execute("""INSERT INTO Document_General (doc_id, report_date, sender_id, dept_id, subject, processor_id, is_reported, is_electronic) 
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                            (str(d_id), r['report_date'], s_id, dept, r['subject'], p_id, r['is_reported'], r['is_electronic']))
-
+            processed = processed.dropna(subset=['doc_id'])
+            for _, r in processed.iterrows():
+                cur.execute(f"REPLACE INTO Document_{key} ({', '.join(r.index)}) VALUES ({', '.join(['?']*len(r))})", 
+                            tuple(None if pd.isna(v) else v for v in r.values))
+            print(f"✅ {cfg['sheet']}: 資料匯入成功")
         conn.commit()
-        print("系統: 匯入作業完成。")
     except Exception as e:
-        print(f"錯誤: {e}")
-        conn.rollback()
+        print(f"❌ 錯誤: {e}"); import traceback; traceback.print_exc()
     finally:
         conn.close()
 
 if __name__ == "__main__":
-    run_import()
+    run_sync()
