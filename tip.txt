@@ -1,0 +1,46 @@
+==導出目前資料庫的架構
+
+SELECT type, name, sql 
+FROM sqlite_master 
+WHERE type IN ('table', 'view') 
+ORDER BY type;
+
+==啟動QT
+
+pyside6-designer
+
+
+==欄位說明
+A. Document_Task (交辦單)
+doc_id (序號)
+dispatch_date (發文日期)
+sender_id (公文遞送人)
+subject (交辦事由)
+dept_id (交辦單位)
+receive_date (收文日期)
+assignee_id (承辦人)
+deadline (限辦日期)
+timestamp (系統時間)
+
+B. Document_Criminal (刑事陳報)
+doc_id (從 dispatch_id 改名，統一化)
+report_date (陳報日期)
+sender_id (公文遞送人)
+case_type (案件種類)
+case_status (原 category，案件狀態)
+processor_id (承辦人/陳報人)
+subject_summary (原 suspect，案由主旨)
+occurrence_date (原 detect_date，受理/查獲日期)
+reporter_name (報案人)
+is_reported (送交狀態)
+is_electronic (電子檔狀態)
+
+C. Document_General (一般公文)
+doc_id (從 dispatch_id 改名，統一化)
+report_date (發文日期)
+sender_id (公文遞送人)
+dept_id (陳報單位)
+subject (陳報主旨)
+processor_id (承辦人，從 reporter_id 改來)
+is_reported (送交狀態)
+is_electronic (電子檔狀態)
