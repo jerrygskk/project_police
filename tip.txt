@@ -4,7 +4,7 @@
 加入暫存 git add .
 增加新檔 git add XXX.xx
 移除檔案 git rm -f xxx.xx
-上傳檔案 git commit -m "modify files"
+註解暫存 git commit -m "更新 main.py、tip.txt 與資料庫檔案"
 上傳遠端 git push
 
 ==導出目前資料庫的架構
