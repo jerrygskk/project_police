@@ -1,6 +1,5 @@
 from PySide6.QtCore import Qt, QDate, QObject, QEvent, QTimer
-from PySide6.QtWidgets import QComboBox
-from PySide6.QtGui import QCompleter
+from PySide6.QtWidgets import QComboBox, QCompleter
 
 
 def setupDateEditToToday(date_edit):
@@ -45,13 +44,17 @@ def setupFilterCombo(combo, data_list):
     combo.setCompleter(completer)
 
     # 修正 completer popup 黑色背景問題
+    # dropdown 自動展開到最長選項的寬度
+    fm = combo.fontMetrics()
+    max_w = max((fm.horizontalAdvance(name) for _, name in data_list), default=0)
+    max_w += 48  # padding + scrollbar
+    combo.view().setMinimumWidth(max(max_w, combo.minimumWidth()))
+
     completer.popup().setStyleSheet("""
         QAbstractItemView {
             background-color: #ffffff;
             color: #1c1c1e;
             border: 1px solid #c6c6c8;
-            selection-background-color: #007aff;
-            selection-color: #ffffff;
         }
         QAbstractItemView::item {
             background-color: #ffffff;
@@ -59,8 +62,16 @@ def setupFilterCombo(combo, data_list):
             padding: 4px 8px;
             min-height: 28px;
         }
+        QAbstractItemView::item:hover {
+            background-color: #e5e5ea;
+            color: #1c1c1e;
+        }
         QAbstractItemView::item:selected {
-            background-color: #007aff;
+            background-color: #6e8fac;
+            color: #ffffff;
+        }
+        QAbstractItemView::item:selected:hover {
+            background-color: #5c7a9a;
             color: #ffffff;
         }
     """)

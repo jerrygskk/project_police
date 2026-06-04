@@ -1,4 +1,8 @@
 import sys
+import os
+
+# 壓掉 Qt DirectWrite 字型警告（MS Sans Serif 找不到屬正常現象，不影響功能）
+os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.fonts.warning=false")
 
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 from PySide6.QtCore import QTimer
@@ -6,7 +10,8 @@ from PySide6.QtGui import QFont
 
 from theme    import APPLE_STYLE
 from db_utils import getResourcePath, loadUi
-from tabs     import TabDispatch, TabReceive
+from tabs     import TabDispatch, TabReceive, TabReport
+import resources_rc  # 註冊 Qt resource（arrow.svg）
 
 
 # ──────────────────────────────────────────────
@@ -22,8 +27,8 @@ class DocumentManager:
     TAB_CLASSES = {
         0: TabDispatch,
         1: TabReceive,
-        # 2: TabCriminal,
-        # 3: TabGeneral,
+        2: TabReport,
+        # 3: TabPrint,
     }
 
     def __init__(self, tab_index=0):
@@ -51,12 +56,21 @@ class DocumentManager:
             return
 
         def _resize():
-            for attr in ['table', 'recv_table']:
+            for attr in ['table', 'recv_table', 'crim_table', 'gen_table']:
                 t = getattr(tab_obj, attr, None)
                 if t and t.columnCount() > 0:
                     autoResizeTable(t)
 
+        def _setFocus():
+            if hasattr(tab_obj, 'lineEdit') and tab_obj.lineEdit:
+                tab_obj.lineEdit.setFocus()
+            elif hasattr(tab_obj, 'recv_subject') and tab_obj.recv_subject:
+                tab_obj.recv_subject.setFocus()
+            elif hasattr(tab_obj, 'crim_subject') and tab_obj.crim_subject:
+                tab_obj.crim_subject.setFocus()
+
         QTimer.singleShot(150, _resize)
+        QTimer.singleShot(50, _setFocus)
 
 
 # ──────────────────────────────────────────────
@@ -71,7 +85,7 @@ class MainMenu:
     }
 
     def __init__(self):
-        self.ui = loadUi(getResourcePath("公文輸入系統.ui"))
+        self.ui = loadUi(getResourcePath("main_menu.ui"))
         if not self.ui:
             sys.exit(1)
 
@@ -99,8 +113,15 @@ class MainMenu:
 # ──────────────────────────────────────────────
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    app.setFont(QFont("", 14))
+    app.setFont(QFont("Microsoft JhengHei", 14))
+
+    # arrow.svg 已透過 resources_rc 內嵌，直接套用
     app.setStyleSheet(APPLE_STYLE)
+
+    # 設定應用程式 icon
+    from PySide6.QtGui import QIcon
+    icon_path = getResourcePath("police_badge.svg")
+    app.setWindowIcon(QIcon(icon_path))
 
     menu = MainMenu()
     if menu.ui.exec() != QDialog.Accepted or menu.selected_tab < 0:
@@ -108,5 +129,7 @@ if __name__ == "__main__":
 
     mgr = DocumentManager(tab_index=menu.selected_tab)
     if hasattr(mgr, 'window') and mgr.window:
+        mgr.window.setWindowIcon(QIcon(icon_path))
         mgr.window.show()
+        QTimer.singleShot(50, lambda: mgr._onTabChanged(menu.selected_tab))
         sys.exit(app.exec())

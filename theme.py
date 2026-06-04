@@ -1,4 +1,7 @@
 # Apple HIG 全域樣式表
+# arrow.svg 路徑在 main.py 啟動時動態替換（ARROW_PLACEHOLDER → 絕對路徑）
+# 打包後從 _MEIPASS 讀，開發時從當前目錄讀
+
 APPLE_STYLE = """
 /* ── 全域基礎 ── */
 * {
@@ -58,7 +61,7 @@ QComboBox::drop-down {
     background: transparent;
 }
 QComboBox::down-arrow {
-    image: url(arrow.svg);
+    image: url(:/arrow.svg);
     width: 12px;
     height: 8px;
 }
@@ -66,7 +69,7 @@ QComboBox QAbstractItemView {
     background-color: #ffffff;
     border: 1px solid #c6c6c8;
     border-radius: 8px;
-    selection-background-color: #007aff;
+    selection-background-color: #6e8fac;
     selection-color: #ffffff;
     outline: none;
     padding: 2px;
@@ -77,8 +80,16 @@ QComboBox QAbstractItemView::item {
     padding: 4px 8px;
     min-height: 28px;
 }
+QComboBox QAbstractItemView::item:hover {
+    background-color: #e5e5ea;
+    color: #1c1c1e;
+}
 QComboBox QAbstractItemView::item:selected {
-    background-color: #007aff;
+    background-color: #6e8fac;
+    color: #ffffff;
+}
+QComboBox QAbstractItemView::item:selected:hover {
+    background-color: #5c7a9a;
     color: #ffffff;
 }
 
@@ -101,7 +112,7 @@ QDateEdit::drop-down {
     background: transparent;
 }
 QDateEdit::down-arrow {
-    image: url(arrow.svg);
+    image: url(:/arrow.svg);
     width: 12px;
     height: 8px;
 }

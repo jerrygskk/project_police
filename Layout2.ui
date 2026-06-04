@@ -178,4 +178,12 @@
    </layout>
   </widget>
  </widget>
+ <tabstops>
+  <tabstop>recv_subject</tabstop>
+  <tabstop>recv_date</tabstop>
+  <tabstop>recv_receiver</tabstop>
+  <tabstop>recv_dept</tabstop>
+  <tabstop>recv_processor</tabstop>
+  <tabstop>recv_deadline</tabstop>
+ </tabstops>
 </ui>

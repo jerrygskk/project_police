@@ -7,10 +7,18 @@ from PySide6.QtCore import QFile
 
 
 def getResourcePath(relative_path):
-    """PyInstaller 打包後也能正確取得資源路徑"""
+    """
+    - dbfile.db：永遠從 exe 所在目錄讀（真實資料）
+    - 其他（.ui, .svg）：打包後從 _MEIPASS，開發時從當前目錄
+    """
+    if relative_path == 'dbfile.db':
+        if getattr(sys, 'frozen', False):
+            return os.path.join(os.path.dirname(sys.executable), relative_path)
+        return os.path.join(os.path.abspath('.'), relative_path)
+
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+    return os.path.join(os.path.abspath('.'), relative_path)
 
 
 def loadUi(path):

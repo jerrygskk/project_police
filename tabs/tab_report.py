@@ -1,0 +1,384 @@
+from PySide6.QtCore import Qt, QDate
+from PySide6.QtWidgets import (
+    QTableWidgetItem, QRadioButton, QVBoxLayout, QStackedWidget,
+    QDateEdit, QComboBox, QLineEdit, QLabel,
+    QTableWidget, QMessageBox, QPushButton
+)
+
+from base_tab import BaseTab
+from db_utils import getResourcePath, loadUi, nextDocId
+from ui_utils import (
+    setupPreviewTable, autoResizeTable,
+    setupFilterCombo, setupDateEditToToday,
+)
+
+CRIM_HEADERS = ["刑案編號", "發文分類", "案件分類", "承辦人員", "陳報主旨", "查獲/受理", "受理人員", "報案人"]
+GEN_HEADERS  = ["陳報編號", "發文分類", "案類", "承辦人", "陳報單主旨"]
+
+# Radio 圓點縮小，選中用較細 border 呈現
+RADIO_STYLE = """
+QRadioButton {
+    spacing: 6px;
+    color: #1c1c1e;
+    font-size: 14pt;
+}
+QRadioButton::indicator {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #c6c6c8;
+    border-radius: 7px;
+    background-color: #ffffff;
+}
+QRadioButton::indicator:checked {
+    background-color: #8fa8c8;
+    border: 4px solid #ffffff;
+    outline: 2px solid #8fa8c8;
+}
+QRadioButton:checked {
+    color: #8fa8c8;
+}
+"""
+
+
+class TabReport(BaseTab):
+    """公文陳報：刑案 / 一般陳報，左右並列預覽"""
+
+    def setup(self, tab_index):
+        tab = self.tab_widget.widget(tab_index)
+        if not tab:
+            return
+
+        rpt_widget = loadUi(getResourcePath("Layout3.ui"))
+        if not rpt_widget:
+            return
+
+        inner = rpt_widget.centralWidget()
+        lay = QVBoxLayout(tab)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(inner)
+        self._inner = inner
+
+        # ── 頂部共用欄位 ──────────────────────────────────
+        self.rpt_date   = inner.findChild(QDateEdit, 'rpt_date')
+        self.rpt_sender = inner.findChild(QComboBox, 'rpt_sender')
+
+        # ── Radio 按鈕 ────────────────────────────────────
+        self.radio_criminal = inner.findChild(QRadioButton, 'radio_criminal')
+        self.radio_general  = inner.findChild(QRadioButton, 'radio_general')
+        for rb in [self.radio_criminal, self.radio_general]:
+            if rb:
+                rb.setStyleSheet(RADIO_STYLE)
+
+        # ── QStackedWidget ────────────────────────────────
+        self.form_stack = inner.findChild(QStackedWidget, 'formStack')
+
+        # ── 刑案欄位（page 0） ────────────────────────────
+        # 發文分類改用 radio button（現行犯/到案/未到案）
+        self.radio_status_a = inner.findChild(QRadioButton, 'radio_status_a')  # CS01 現行犯
+        self.radio_status_b = inner.findChild(QRadioButton, 'radio_status_b')  # CS02 到案
+        self.radio_status_c = inner.findChild(QRadioButton, 'radio_status_c')  # CS03 未到案
+        # 套用與陳報類型相同的 radio 樣式
+        for rb in [self.radio_status_a, self.radio_status_b, self.radio_status_c]:
+            if rb:
+                rb.setStyleSheet(RADIO_STYLE)
+        self.crim_casetype  = inner.findChild(QComboBox, 'crim_casetype')
+        self.crim_processor = inner.findChild(QComboBox, 'crim_processor')
+        self.crim_receiver  = inner.findChild(QComboBox, 'crim_receiver')
+        self.crim_subject   = inner.findChild(QLineEdit, 'crim_subject')
+        self.crim_occdate   = inner.findChild(QDateEdit, 'crim_occdate')
+        self.crim_reporter  = inner.findChild(QLineEdit, 'crim_reporter')
+
+        # ── 一般欄位（page 1） ────────────────────────────
+        # 發文分類改用 radio（業務/其他/相驗）
+        self.radio_gen_cat_a = inner.findChild(QRadioButton, 'radio_gen_cat_a')  # GC01 業務陳報
+        self.radio_gen_cat_b = inner.findChild(QRadioButton, 'radio_gen_cat_b')  # GC03 其他
+        self.radio_gen_cat_c = inner.findChild(QRadioButton, 'radio_gen_cat_c')  # GC02 司法相驗
+        for rb in [self.radio_gen_cat_a, self.radio_gen_cat_b, self.radio_gen_cat_c]:
+            if rb:
+                rb.setStyleSheet(RADIO_STYLE)
+        self.gen_dept       = inner.findChild(QComboBox, 'gen_dept')
+        self.gen_processor  = inner.findChild(QComboBox, 'gen_processor')
+        self.gen_subject    = inner.findChild(QLineEdit, 'gen_subject')
+
+        # ── 預覽表格 ──────────────────────────────────────
+        self.crim_table = inner.findChild(QTableWidget, 'crim_tableWidget')
+        self.gen_table  = inner.findChild(QTableWidget, 'gen_tableWidget')
+
+        # ── 預覽左右比例 8:5（用程式碼設定，QUiLoader 不支援 stretch 屬性）
+        from PySide6.QtWidgets import QSizePolicy
+        if self.crim_table:
+            self.crim_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        if self.gen_table:
+            self.gen_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # 找到 previewLayout 並設定 stretch
+        preview_layout = inner.findChild(
+            __import__('PySide6.QtWidgets', fromlist=['QHBoxLayout']).QHBoxLayout,
+            'previewLayout'
+        )
+        if preview_layout is None:
+            # findChild 對 layout 不可靠，改用 parent widget 找
+            from PySide6.QtWidgets import QHBoxLayout
+            for i in range(inner.layout().count()):
+                item = inner.layout().itemAt(i)
+                if item and isinstance(item.layout(), QHBoxLayout):
+                    preview_layout = item.layout()
+                    break
+        if preview_layout and preview_layout.count() >= 2:
+            preview_layout.setStretch(0, 8)
+            preview_layout.setStretch(1, 5)
+
+        # ── 預覽標題樣式 ──────────────────────────────────
+        for lbl_name, color in [('lbl_criminal_title', '#5b8db8'), ('lbl_general_title', '#c0a080')]:
+            lbl = inner.findChild(QLabel, lbl_name)
+            if lbl:
+                lbl.setStyleSheet(
+                    f"background-color: {color}; color: white; font-weight: 600;"
+                    f"padding: 6px; border-radius: 4px;"
+                )
+
+        # ── 日期初始化 ────────────────────────────────────
+        if self.rpt_date:
+            self.rpt_date.setDate(QDate.currentDate())
+            setupDateEditToToday(self.rpt_date)
+        if self.crim_occdate:
+            self.crim_occdate.setDate(QDate.currentDate())
+            setupDateEditToToday(self.crim_occdate)
+
+        # ── 載入參照表 ────────────────────────────────────
+        self._personnel, self._depts = self._loadRef()
+        self._case_types = self._loadTable(
+            "SELECT case_type_id, case_type_name FROM Ref_CaseTypes ORDER BY case_type_id"
+        )
+
+        # ── 填入下拉選單 ──────────────────────────────────
+        setupFilterCombo(self.rpt_sender,     self._personnel)
+        # crim_status 已改為 radio，不需要 setupFilterCombo
+        setupFilterCombo(self.crim_casetype,  self._case_types)
+        setupFilterCombo(self.crim_processor, self._personnel)
+        setupFilterCombo(self.crim_receiver,  self._personnel)
+        # gen_cat 已改為 radio，不需要 setupFilterCombo
+        setupFilterCombo(self.gen_dept,       self._depts)
+        setupFilterCombo(self.gen_processor,  self._personnel)
+
+        # ── 預覽表格初始化 ────────────────────────────────
+        if self.crim_table:
+            setupPreviewTable(self.crim_table, CRIM_HEADERS)
+        if self.gen_table:
+            setupPreviewTable(self.gen_table, GEN_HEADERS)
+
+        # ── 預設顯示刑案（page 0） ────────────────────────
+        if self.form_stack:
+            self.form_stack.setCurrentIndex(0)
+
+        # ── 信號綁定 ──────────────────────────────────────
+        if self.radio_criminal:
+            self.radio_criminal.toggled.connect(
+                lambda checked: self.form_stack.setCurrentIndex(0 if checked else 1)
+            )
+
+        btn_clear  = inner.findChild(QPushButton, 'btn_rpt_clear')
+        btn_submit = inner.findChild(QPushButton, 'btn_rpt_submit')
+        if btn_clear:  btn_clear.clicked.connect(self._formClear)
+        if btn_submit: btn_submit.clicked.connect(self._submit)
+        if self.crim_subject: self.crim_subject.setFocus()
+
+        # ── 互填按鈕 ──────────────────────────────────────
+        btn_copy_to_receiver  = inner.findChild(QPushButton, 'btn_copy_to_receiver')
+        btn_copy_to_processor = inner.findChild(QPushButton, 'btn_copy_to_processor')
+        for btn in [btn_copy_to_receiver, btn_copy_to_processor]:
+            if btn:
+                btn.setStyleSheet("font-size: 11pt; padding: 2px 4px;")
+        if btn_copy_to_receiver:
+            btn_copy_to_receiver.clicked.connect(self._copyProcessorToReceiver)
+        if btn_copy_to_processor:
+            btn_copy_to_processor.clicked.connect(self._copyReceiverToProcessor)
+
+    # ── 輔助：從 DB 載入二元組列表 ──────────────────────────
+    def _loadTable(self, sql):
+        try:
+            conn = self._getConn()
+            rows = conn.execute(sql).fetchall()
+            conn.close()
+            return [(r[0], r[1]) for r in rows]
+        except Exception as e:
+            QMessageBox.critical(None, "DB錯誤", f"載入對照表失敗: {e}")
+            return []
+
+    # ── 互填：同承辦 / 同受理 ────────────────────────────────
+    def _copyProcessorToReceiver(self):
+        """同承辦：把承辦人員的值填入受理人員"""
+        if not self.crim_processor or not self.crim_receiver:
+            return
+        idx = self.crim_processor.currentIndex()
+        data = self.crim_processor.currentData()
+        text = self.crim_processor.currentText()
+        if data:
+            # 在 receiver combo 找對應 data 的 index
+            for i in range(self.crim_receiver.count()):
+                if self.crim_receiver.itemData(i) == data:
+                    self.crim_receiver.setCurrentIndex(i)
+                    return
+            # 找不到就直接設文字
+            self.crim_receiver.setEditText(text)
+
+    def _copyReceiverToProcessor(self):
+        """同受理：把受理人員的值填入承辦人員"""
+        if not self.crim_receiver or not self.crim_processor:
+            return
+        data = self.crim_receiver.currentData()
+        text = self.crim_receiver.currentText()
+        if data:
+            for i in range(self.crim_processor.count()):
+                if self.crim_processor.itemData(i) == data:
+                    self.crim_processor.setCurrentIndex(i)
+                    return
+            self.crim_processor.setEditText(text)
+
+    # ── 清除表單（保留送文日期、發文人員）──────────────────
+    def _formClear(self):
+        # 發文分類 radio 重設為現行犯
+        if self.radio_status_a:
+            self.radio_status_a.setChecked(True)
+        setupFilterCombo(self.crim_casetype,  self._case_types)
+        setupFilterCombo(self.crim_processor, self._personnel)
+        setupFilterCombo(self.crim_receiver,  self._personnel)
+        if self.crim_subject:  self.crim_subject.clear()
+        if self.crim_occdate:  self.crim_occdate.setDate(QDate.currentDate())
+        if self.crim_reporter: self.crim_reporter.clear()
+        # gen_cat 已改為 radio，重設為業務
+        if self.radio_gen_cat_a: self.radio_gen_cat_a.setChecked(True)
+        setupFilterCombo(self.gen_dept,      self._depts)
+        setupFilterCombo(self.gen_processor, self._personnel)
+        if self.gen_subject: self.gen_subject.clear()
+
+    # ── 確認陳報 ────────────────────────────────────────────
+    def _submit(self):
+        report_date = self.rpt_date.date().toString("yyyy-MM-dd") if self.rpt_date else ""
+        sender_id   = self.rpt_sender.currentData() if self.rpt_sender else None
+        is_criminal = self.radio_criminal.isChecked() if self.radio_criminal else True
+
+        if is_criminal:
+            self._submitCriminal(report_date, sender_id)
+        else:
+            self._submitGeneral(report_date, sender_id)
+
+    def _submitCriminal(self, report_date, sender_id):
+        # 發文分類從 radio 讀取
+        if self.radio_status_a and self.radio_status_a.isChecked():
+            status_id, status_name = 'CS01', '現行犯'
+        elif self.radio_status_b and self.radio_status_b.isChecked():
+            status_id, status_name = 'CS02', '到案'
+        else:
+            status_id, status_name = 'CS03', '未到案'
+        casetype_id  = self.crim_casetype.currentData()
+        processor_id = self.crim_processor.currentData()
+        receiver_id  = self.crim_receiver.currentData()
+        subject      = self.crim_subject.text().strip()  if self.crim_subject   else ""
+        occ_date     = self.crim_occdate.date().toString("yyyy-MM-dd") if self.crim_occdate else None
+        reporter     = self.crim_reporter.text().strip() if self.crim_reporter  else ""
+
+        errors = []
+        if not sender_id:    errors.append("發文人員")
+        if not casetype_id:  errors.append("案類")
+        if not processor_id: errors.append("承辦人員")
+        if not subject:      errors.append("陳報主旨")
+        if errors:
+            QMessageBox.warning(None, "欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
+            return
+
+        try:
+            conn       = self._getConn()
+            new_doc_id = nextDocId(conn, 'Document_Criminal')
+            conn.execute("""
+                INSERT INTO Document_Criminal
+                    (doc_id, report_date, sender_id, case_type, case_status,
+                     processor_id, subject_summary, occurrence_date,
+                     reporter_name, receiver_id, is_reported, is_electronic)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+            """, (new_doc_id, report_date, sender_id, casetype_id, status_id,
+                  processor_id, subject, occ_date or None,
+                  reporter or None, receiver_id))
+            conn.commit()
+            conn.close()
+
+            self._insertCrimRow(
+                new_doc_id, status_name,
+                self.crim_casetype.currentText(),
+                self.crim_processor.currentText(),
+                subject, occ_date,
+                self.crim_receiver.currentText(),
+                reporter,
+            )
+            self._formClear()
+
+        except Exception as e:
+            QMessageBox.critical(None, "寫入失敗", str(e))
+
+    def _submitGeneral(self, report_date, sender_id):
+        # 發文分類從 radio 讀取（業務=GC01, 其他=GC03, 相驗=GC02）
+        if self.radio_gen_cat_a and self.radio_gen_cat_a.isChecked():
+            cat_id, cat_name = 'GC01', 'D_業務陳報'
+        elif self.radio_gen_cat_b and self.radio_gen_cat_b.isChecked():
+            cat_id, cat_name = 'GC03', 'J_其他'
+        else:
+            cat_id, cat_name = 'GC02', 'F_司法相驗'
+        dept_id      = self.gen_dept.currentData()
+        processor_id = self.gen_processor.currentData()
+        subject      = self.gen_subject.text().strip() if self.gen_subject else ""
+
+        errors = []
+        if not sender_id:    errors.append("發文人員")
+        if not processor_id: errors.append("承辦人")
+        if not subject:      errors.append("陳報主旨")
+        if errors:
+            QMessageBox.warning(None, "欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
+            return
+
+        try:
+            conn       = self._getConn()
+            new_doc_id = nextDocId(conn, 'Document_General')
+            conn.execute("""
+                INSERT INTO Document_General
+                    (doc_id, report_date, sender_id, dept_id, gen_cat_id,
+                     subject, processor_id, is_reported, is_electronic)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)
+            """, (new_doc_id, report_date, sender_id, dept_id, cat_id,
+                  subject, processor_id))
+            conn.commit()
+            conn.close()
+
+            self._insertGenRow(
+                new_doc_id, cat_name,
+                self.gen_dept.currentText(),
+                self.gen_processor.currentText(),
+                subject,
+            )
+            self._formClear()
+
+        except Exception as e:
+            QMessageBox.critical(None, "寫入失敗", str(e))
+
+    # ── 插入預覽列 ───────────────────────────────────────────
+    def _insertCrimRow(self, doc_id, status, casetype, processor,
+                       subject, occ_date, receiver, reporter):
+        if not self.crim_table:
+            return
+        pos = self.crim_table.rowCount()
+        self.crim_table.insertRow(pos)
+        for col, val in enumerate([doc_id, status, casetype, processor,
+                                   subject, occ_date or "", receiver, reporter or ""]):
+            item = QTableWidgetItem(str(val) if val else "")
+            item.setTextAlignment(Qt.AlignCenter)
+            self.crim_table.setItem(pos, col, item)
+        autoResizeTable(self.crim_table)
+
+    def _insertGenRow(self, doc_id, cat, dept, processor, subject):
+        if not self.gen_table:
+            return
+        pos = self.gen_table.rowCount()
+        self.gen_table.insertRow(pos)
+        for col, val in enumerate([doc_id, cat, dept, processor, subject]):
+            item = QTableWidgetItem(str(val) if val else "")
+            item.setTextAlignment(Qt.AlignCenter)
+            self.gen_table.setItem(pos, col, item)
+        autoResizeTable(self.gen_table)

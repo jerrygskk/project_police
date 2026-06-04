@@ -66,6 +66,7 @@ class TabReceive(BaseTab):
         btn_submit = inner.findChild(QPushButton, 'btn_recv_submit')
         if btn_clear:  btn_clear.clicked.connect(self._formClear)
         if btn_submit: btn_submit.clicked.connect(self._submit)
+        if self.recv_subject: self.recv_subject.setFocus()
 
     # ── 免覆 Checkbox ─────────────────────────────────────
     def _onNoDeadlineChanged(self, state):
