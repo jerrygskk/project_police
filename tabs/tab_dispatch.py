@@ -4,7 +4,6 @@ from PySide6.QtCore import Qt, QDate
 from PySide6.QtWidgets import QTableWidgetItem, QPushButton, QMessageBox
 
 from base_tab import BaseTab
-from db_utils import nextDocId
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn,
     setupFilterCombo, setupDateEditToToday,
@@ -42,16 +41,8 @@ class TabDispatch(BaseTab):
             setupDateEditToToday(self.dispatch_date)
 
         if self.dispatch_sender:
-            try:
-                conn      = self._getConn()
-                personnel = conn.execute(
-                    "SELECT staff_id, staff_name FROM Ref_Personnel "
-                    "WHERE is_active=1 ORDER BY staff_id"
-                ).fetchall()
-                conn.close()
-                setupFilterCombo(self.dispatch_sender, personnel)
-            except Exception as e:
-                print(f"[警告] 載入發文人員失敗: {e}")
+            personnel, _ = self._loadRef()
+            setupFilterCombo(self.dispatch_sender, personnel)
 
         if self.lineEdit:
             self.lineEdit.returnPressed.connect(self.handleQuery)
@@ -190,7 +181,8 @@ class TabDispatch(BaseTab):
             conn = self._getConn()
             for seq, (row_idx, doc_id) in enumerate(pending):
                 ts     = datetime.now()
-                ts_str = ts.strftime("%Y-%m-%d %H:%M:%S.") + f"{ts.microsecond + seq:06d}"
+                us     = (ts.microsecond + seq) % 1_000_000
+                ts_str = ts.strftime("%Y-%m-%d %H:%M:%S.") + f"{us:06d}"
                 conn.execute(sql, (dispatch_day, sender_id, ts_str, doc_id))
 
                 item = QTableWidgetItem(dispatch_day)
@@ -199,7 +191,7 @@ class TabDispatch(BaseTab):
 
                 deadline_item = self.table.item(row_idx, 5)
                 deadline_val  = deadline_item.text() if deadline_item else ""
-                status        = calcOverdue(deadline_val, today)
+                status        = calcOverdue(deadline_val, dispatch_day)
                 status_item   = QTableWidgetItem(status)
                 status_item.setTextAlignment(Qt.AlignCenter)
                 color = colorForStatus(status)

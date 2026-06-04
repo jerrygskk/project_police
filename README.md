@@ -39,6 +39,7 @@
   ├── widgets.py         ← 元件行為（setupFilterCombo, setupDateEditToToday）
   └── table.py           ← 表格工具（setupPreviewTable, autoResizeTable,
                                       makeDeleteBtn, FIXED_COL_WIDTHS）
+                           setupPreviewTable 支援 stretch_col 與 fixed_overrides 參數
 
   tabs/                  ← 各功能 Tab
   ├── __init__.py        ← re-export 所有 Tab 類別
@@ -63,16 +64,16 @@
   main.py                135 行
   db_utils.py             49 行
   base_tab.py             43 行
-  ui_utils/status.py      30 行
+  ui_utils/status.py      31 行
   ui_utils/widgets.py     89 行
-  ui_utils/table.py      170 行
-  ui_utils/__init__.py    18 行
-  tabs/tab_dispatch.py   214 行
+  ui_utils/table.py      189 行
+  ui_utils/__init__.py    23 行
+  tabs/tab_dispatch.py   206 行
   tabs/tab_receive.py    181 行
-  tabs/tab_report.py     384 行
+  tabs/tab_report.py     410 行
   tabs/__init__.py         4 行
   ─────────────────────────────
-  合計                  1317 行
+  合計                  1360 行
 
 ----------------------------------------------------------------
 新增 Tab 的標準流程
@@ -102,6 +103,8 @@ ui_utils 擴充規則
 ----------------------------------------------------------------
 
   - 新欄位固定寬度   → 在 table.py 的 FIXED_COL_WIDTHS 加一行
+                       若同名欄位在不同表格需要不同寬度，改用 fixed_overrides 參數
+                       例：setupPreviewTable(table, headers, fixed_overrides={"欄位名": 寬度})
   - 新的狀態顏色邏輯 → 在 status.py 的 colorForStatus 加條件
   - 新的元件行為     → 在 widgets.py 新增函式，並在 __init__.py export
   - 不論如何擴充，外部呼叫 from ui_utils import xxx 永遠不需要修改
@@ -125,6 +128,16 @@ tab_report.py 特殊架構說明
     btn_copy_to_receiver  → 同承辦：把承辦人員值填入受理人員
     btn_copy_to_processor → 同受理：把受理人員值填入承辦人員
 
+  預覽表格欄位：
+    刑案：編號 / 狀態 / 案類 / 陳報主旨（固定） / 承辦人 / 受理人 / 日期 / 報案人（stretch）
+    一般：編號 / 業務單位 / 陳報主旨（固定） / 承辦人 / 分類（stretch）
+
+  ⚠️ 預覽顯示名稱與 DB 不同，明年大修資料庫時需一起更新：
+    刑案狀態：現行（DB: A_現行犯）/ 到案（DB: B_到案）/ 未到（DB: B_未到案）
+    一般分類：業務（DB: D_業務陳報）/ 其他（DB: J_其他）/ 相驗（DB: F_司法相驗）
+    人名顯示：去掉 - 後面的編號，例如 匿名-19.06 → 匿名
+    日期顯示：MM-DD-YYYY 格式（DB 存 YYYY-MM-DD）
+
 ----------------------------------------------------------------
 打包指令
 ----------------------------------------------------------------
@@ -132,18 +145,19 @@ tab_report.py 特殊架構說明
   【主程式】
   pyinstaller --clean --onefile --windowed --icon=police_badge.ico ^
     --add-data "*.ui;." --add-data "police_badge.svg;." ^
-    --name 公文管理系統 main.py
+    --name Police-Document-Manager main.py
 
   【資料同步工具】
-  pyinstaller --onefile --icon=police_badge.ico ^
+  pyinstaller --onefile ^
     --add-data "init_ref_tables.sql;." ^
-    --name 資料同步工具 data_sync_tool.py
+    --name Data-Sync-Tool data_sync_tool.py
 
   注意事項：
   - dbfile.db 不打包進 exe，需與 exe 放在同一資料夾
   - arrow.svg 已透過 resources_rc.py 內嵌，不需 --add-data
   - 若修改 arrow.svg，需重新執行：
       pyside6-rcc resources.qrc -o resources_rc.py
+  - GitHub release 上傳檔名為英文（中文檔名會被 URL encode）
 
 ----------------------------------------------------------------
 arrow.svg 修改流程（Qt Resource 方案）

@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtWidgets import (
-    QTableWidgetItem, QRadioButton, QVBoxLayout, QStackedWidget,
+    QTableWidgetItem, QRadioButton, QVBoxLayout, QHBoxLayout,
+    QStackedWidget, QSizePolicy,
     QDateEdit, QComboBox, QLineEdit, QLabel,
     QTableWidget, QMessageBox, QPushButton
 )
@@ -12,8 +13,8 @@ from ui_utils import (
     setupFilterCombo, setupDateEditToToday,
 )
 
-CRIM_HEADERS = ["刑案編號", "發文分類", "案件分類", "承辦人員", "陳報主旨", "查獲/受理", "受理人員", "報案人"]
-GEN_HEADERS  = ["陳報編號", "發文分類", "案類", "承辦人", "陳報單主旨"]
+CRIM_HEADERS = ["編號", "狀態", "案類", "陳報主旨", "承辦人", "受理人", "日期", "報案人"]
+GEN_HEADERS  = ["編號", "業務單位", "陳報主旨", "承辦人", "分類"]
 
 # Radio 圓點縮小，選中用較細 border 呈現
 RADIO_STYLE = """
@@ -104,25 +105,18 @@ class TabReport(BaseTab):
         self.crim_table = inner.findChild(QTableWidget, 'crim_tableWidget')
         self.gen_table  = inner.findChild(QTableWidget, 'gen_tableWidget')
 
-        # ── 預覽左右比例 8:5（用程式碼設定，QUiLoader 不支援 stretch 屬性）
-        from PySide6.QtWidgets import QSizePolicy
+        # 找到 previewLayout 並設定 stretch
+        # （findChild 對 layout 不可靠，用迴圈找）
         if self.crim_table:
             self.crim_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         if self.gen_table:
             self.gen_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        # 找到 previewLayout 並設定 stretch
-        preview_layout = inner.findChild(
-            __import__('PySide6.QtWidgets', fromlist=['QHBoxLayout']).QHBoxLayout,
-            'previewLayout'
-        )
-        if preview_layout is None:
-            # findChild 對 layout 不可靠，改用 parent widget 找
-            from PySide6.QtWidgets import QHBoxLayout
-            for i in range(inner.layout().count()):
-                item = inner.layout().itemAt(i)
-                if item and isinstance(item.layout(), QHBoxLayout):
-                    preview_layout = item.layout()
-                    break
+        preview_layout = None
+        for i in range(inner.layout().count()):
+            item = inner.layout().itemAt(i)
+            if item and isinstance(item.layout(), QHBoxLayout):
+                preview_layout = item.layout()
+                break
         if preview_layout and preview_layout.count() >= 2:
             preview_layout.setStretch(0, 8)
             preview_layout.setStretch(1, 5)
@@ -162,9 +156,15 @@ class TabReport(BaseTab):
 
         # ── 預覽表格初始化 ────────────────────────────────
         if self.crim_table:
-            setupPreviewTable(self.crim_table, CRIM_HEADERS)
+            # 刑案「陳報主旨」固定 184px（10全形），stretch 給「報案人」
+            # ⚠️ 一般「陳報主旨」同樣固定 184px，兩者皆用 fixed_overrides 區分 stretch 欄
+            setupPreviewTable(self.crim_table, CRIM_HEADERS, stretch_col=7,
+                              fixed_overrides={"陳報主旨": 184})
         if self.gen_table:
-            setupPreviewTable(self.gen_table, GEN_HEADERS)
+            # 一般陳報「陳報主旨」固定 184px（10全形），stretch 給「分類」
+            # ⚠️ 刑案「陳報主旨」仍為 stretch，兩者同名但行為不同，故用 fixed_overrides 區分
+            setupPreviewTable(self.gen_table, GEN_HEADERS, stretch_col=4,
+                              fixed_overrides={"陳報主旨": 184})
 
         # ── 預設顯示刑案（page 0） ────────────────────────
         if self.form_stack:
@@ -264,12 +264,13 @@ class TabReport(BaseTab):
 
     def _submitCriminal(self, report_date, sender_id):
         # 發文分類從 radio 讀取
+        # ⚠️ 以下顯示名稱與 DB 不同，若修改 Ref_Case_Status 需一起更新
         if self.radio_status_a and self.radio_status_a.isChecked():
-            status_id, status_name = 'CS01', '現行犯'
+            status_id, status_name = 'CS01', '現行'   # DB: A_現行犯
         elif self.radio_status_b and self.radio_status_b.isChecked():
-            status_id, status_name = 'CS02', '到案'
+            status_id, status_name = 'CS02', '到案'   # DB: B_到案
         else:
-            status_id, status_name = 'CS03', '未到案'
+            status_id, status_name = 'CS03', '未到'   # DB: B_未到案
         casetype_id  = self.crim_casetype.currentData()
         processor_id = self.crim_processor.currentData()
         receiver_id  = self.crim_receiver.currentData()
@@ -304,10 +305,11 @@ class TabReport(BaseTab):
             self._insertCrimRow(
                 new_doc_id, status_name,
                 self.crim_casetype.currentText(),
+                subject,
                 self.crim_processor.currentText(),
-                subject, occ_date,
                 self.crim_receiver.currentText(),
                 reporter,
+                occ_date,
             )
             self._formClear()
 
@@ -316,12 +318,13 @@ class TabReport(BaseTab):
 
     def _submitGeneral(self, report_date, sender_id):
         # 發文分類從 radio 讀取（業務=GC01, 其他=GC03, 相驗=GC02）
+        # ⚠️ 以下顯示名稱與 DB 不同，若修改 Ref_General_Category 需一起更新
         if self.radio_gen_cat_a and self.radio_gen_cat_a.isChecked():
-            cat_id, cat_name = 'GC01', 'D_業務陳報'
+            cat_id, cat_name = 'GC01', '業務'   # DB: D_業務陳報
         elif self.radio_gen_cat_b and self.radio_gen_cat_b.isChecked():
-            cat_id, cat_name = 'GC03', 'J_其他'
+            cat_id, cat_name = 'GC03', '其他'   # DB: J_其他
         else:
-            cat_id, cat_name = 'GC02', 'F_司法相驗'
+            cat_id, cat_name = 'GC02', '相驗'   # DB: F_司法相驗
         dept_id      = self.gen_dept.currentData()
         processor_id = self.gen_processor.currentData()
         subject      = self.gen_subject.text().strip() if self.gen_subject else ""
@@ -348,10 +351,11 @@ class TabReport(BaseTab):
             conn.close()
 
             self._insertGenRow(
-                new_doc_id, cat_name,
+                new_doc_id,
                 self.gen_dept.currentText(),
-                self.gen_processor.currentText(),
                 subject,
+                self.gen_processor.currentText(),
+                cat_name,
             )
             self._formClear()
 
@@ -359,25 +363,47 @@ class TabReport(BaseTab):
             QMessageBox.critical(None, "寫入失敗", str(e))
 
     # ── 插入預覽列 ───────────────────────────────────────────
-    def _insertCrimRow(self, doc_id, status, casetype, processor,
-                       subject, occ_date, receiver, reporter):
+    def _insertCrimRow(self, doc_id, status, casetype, subject,
+                       processor, receiver, reporter, occ_date):
         if not self.crim_table:
             return
+
+        def _trimName(name):
+            """去掉 - 後面的內容，例如 匿名-19.06 → 匿名"""
+            return name.split('-')[0] if name and '-' in name else (name or "")
+
+        def _fmtDate(d):
+            """YYYY-MM-DD → MM-DD-YYYY，只改預覽顯示"""
+            if not d:
+                return ""
+            try:
+                from datetime import datetime
+                return datetime.strptime(str(d), "%Y-%m-%d").strftime("%m-%d-%Y")
+            except Exception:
+                return str(d)
+
         pos = self.crim_table.rowCount()
         self.crim_table.insertRow(pos)
-        for col, val in enumerate([doc_id, status, casetype, processor,
-                                   subject, occ_date or "", receiver, reporter or ""]):
+        for col, val in enumerate([
+            doc_id, status, casetype, subject,
+            _trimName(processor), _trimName(receiver),
+            _fmtDate(occ_date), _trimName(reporter),
+        ]):
             item = QTableWidgetItem(str(val) if val else "")
             item.setTextAlignment(Qt.AlignCenter)
             self.crim_table.setItem(pos, col, item)
         autoResizeTable(self.crim_table)
 
-    def _insertGenRow(self, doc_id, cat, dept, processor, subject):
+    def _insertGenRow(self, doc_id, dept, subject, processor, cat):
         if not self.gen_table:
             return
+
+        def _trimName(name):
+            return name.split('-')[0] if name and '-' in name else (name or "")
+
         pos = self.gen_table.rowCount()
         self.gen_table.insertRow(pos)
-        for col, val in enumerate([doc_id, cat, dept, processor, subject]):
+        for col, val in enumerate([doc_id, dept, subject, _trimName(processor), cat]):
             item = QTableWidgetItem(str(val) if val else "")
             item.setTextAlignment(Qt.AlignCenter)
             self.gen_table.setItem(pos, col, item)

@@ -17,25 +17,25 @@ FIXED_COL_WIDTHS = {
     "所承辦人":     120,
     "收文人員":     120,
     # 刑案
-    "刑案編號":      70,
-    "受理/查獲日期": 115,
-    "承辦人員":     110,
-    "受理人員":      90,
-    "報案人":        80,
-    "發文分類":      95,
+    "編號":          56,
+    "狀態":          56,
+    "案類":         152,
+    "承辦人":        88,
+    "受理人":        88,
+    "報案人":        72,
+    "日期":          80,
     # 一般
-    "陳報編號":      70,
-    "承辦人":        90,
-    "陳報人":       120,
-    "主承辦人":     120,
+    "業務單位":      88,
+    "分類":          56,
 }
 
 # 動態量欄位的 padding（欄位內容寬度 + PAD）
 _PAD = 24
 
 
-def _measureColWidths(table, fm):
+def _measureColWidths(table, fm, fixed_overrides=None):
     stretch_col = table.property("stretch_col")
+    overrides   = fixed_overrides or {}
     widths = {}
     for col in range(table.columnCount()):
         if col == 0 and table.columnWidth(0) <= 32:
@@ -44,6 +44,10 @@ def _measureColWidths(table, fm):
         hdr_item = table.horizontalHeaderItem(col)
         hdr_text = hdr_item.text() if hdr_item else ""
 
+        # fixed_overrides 優先於 FIXED_COL_WIDTHS
+        if hdr_text in overrides:
+            widths[col] = overrides[hdr_text]
+            continue
         if hdr_text in FIXED_COL_WIDTHS:
             widths[col] = FIXED_COL_WIDTHS[hdr_text]
             continue
@@ -63,8 +67,9 @@ def autoResizeTable(table):
     if table.property("user_resized"):
         return
 
-    fm = QFontMetrics(table.font())
-    widths, stretch_col = _measureColWidths(table, fm)
+    fm             = QFontMetrics(table.font())
+    fixed_overrides = table.property("fixed_overrides") or {}
+    widths, stretch_col = _measureColWidths(table, fm, fixed_overrides)
 
     available = table.viewport().width()
     if available <= 0:
@@ -97,8 +102,20 @@ def makeDeleteBtn(callback):
     return container, btn
 
 
-def setupPreviewTable(table, headers, row_height=30):
-    """套用 Apple HIG 風格表格樣式，並設定欄位標題"""
+def setupPreviewTable(table, headers, row_height=30, stretch_col=None, fixed_overrides=None):
+    """
+    套用 Apple HIG 風格表格樣式，並設定欄位標題。
+
+    stretch_col:
+        指定哪一欄自動撐滿剩餘空間。
+        預設：headers[0]=="" 時為 col 2，否則為 col 1。
+
+    fixed_overrides:
+        dict，格式 {"欄位名稱": 寬度}。
+        用於當同名欄位在不同表格需要不同寬度時，
+        優先於 FIXED_COL_WIDTHS 套用，不影響其他表格。
+        例如：一般陳報「陳報主旨」固定 184px，但刑案「陳報主旨」仍 stretch。
+    """
     table.setColumnCount(len(headers))
     for i, h in enumerate(headers):
         table.setHorizontalHeaderItem(i, QTableWidgetItem(h))
@@ -107,7 +124,8 @@ def setupPreviewTable(table, headers, row_height=30):
     hdr.setSectionResizeMode(QHeaderView.Interactive)
     hdr.setDefaultSectionSize(80)
 
-    stretch_col = 2 if headers[0] == "" else 1
+    if stretch_col is None:
+        stretch_col = 2 if headers[0] == "" else 1
     if headers[0] == "":
         hdr.setSectionResizeMode(0, QHeaderView.Fixed)
         table.setColumnWidth(0, 32)
@@ -115,9 +133,10 @@ def setupPreviewTable(table, headers, row_height=30):
     # 行高
     table.verticalHeader().setDefaultSectionSize(row_height)
 
-    table.setProperty("stretch_col",  stretch_col)
-    table.setProperty("user_resized", False)
-    table.setProperty("init_done",    False)
+    table.setProperty("stretch_col",     stretch_col)
+    table.setProperty("user_resized",    False)
+    table.setProperty("init_done",       False)
+    table.setProperty("fixed_overrides", fixed_overrides or {})
 
     def _onSectionResized(idx, old_w, new_w, t=table, sc=stretch_col):
         if t.property("init_done") and idx != sc:
