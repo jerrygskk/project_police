@@ -32,7 +32,8 @@ pip install PySide6 pandas openpyxl pyinstaller
 ## 目錄結構
 
 ```
-├── main.py               # 進入點 + DocumentManager + MainMenu
+├── main.py               # 進入點 + DocumentManager + MainMenu + Loading 流程
+├── loading_screen.py     # Loading 畫面（LoadingScreen + LoadWorker）
 ├── theme.py              # Apple HIG QSS 樣式
 ├── base_tab.py           # 所有 Tab 的共用基礎類別（BaseTab）
 ├── db_utils.py           # DB / 資源工具（getResourcePath, loadUi, nextDocId）
@@ -61,6 +62,7 @@ pip install PySide6 pandas openpyxl pyinstaller
 ├── arrow.svg             # 下拉箭頭（透過 resources_rc 內嵌，不需外部存取）
 ├── police_badge.svg      # 應用程式 icon（視窗標題列用）
 ├── police_badge.ico      # 應用程式 icon（exe 打包用）
+├── banner.png            # Loading 畫面橫幅圖（需與 exe 放在同層）
 ├── dbfile.db             # SQLite 資料庫（需與 exe 放在同層）
 └── init_ref_tables.sql   # DB 初始化腳本（data_sync_tool 使用）
 ```
@@ -71,7 +73,8 @@ pip install PySide6 pandas openpyxl pyinstaller
 
 | 檔案 | 行數 |
 |------|------|
-| main.py | 135 |
+| main.py | 147 |
+| loading_screen.py | 237 |
 | db_utils.py | 49 |
 | base_tab.py | 43 |
 | ui_utils/status.py | 31 |
@@ -82,7 +85,7 @@ pip install PySide6 pandas openpyxl pyinstaller
 | tabs/tab_receive.py | 181 |
 | tabs/tab_report.py | 410 |
 | tabs/\_\_init\_\_.py | 4 |
-| **合計** | **1360** |
+| **合計** | **1572** |
 
 ---
 
@@ -181,7 +184,7 @@ setupPreviewTable(table, headers, fixed_overrides={"欄位名": 寬度})
 
 ### 主程式
 ```bash
-pyinstaller --clean --onefile --windowed --icon=police_badge.ico --add-data "*.ui;." --add-data "police_badge.svg;." --name Police-Document-Manager main.py
+pyinstaller --clean --onefile --windowed --icon=police_badge.ico --add-data "*.ui;." --add-data "police_badge.svg;." --add-data "banner.png;." --name Police-Document-Manager main.py
 ```
 
 ### 資料同步工具
@@ -192,6 +195,7 @@ pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool d
 ### 注意事項
 
 - `dbfile.db` 不打包進 exe，需與 exe 放在同一資料夾
+- `banner.png` 不打包進 exe，需與 exe 放在同一資料夾
 - `arrow.svg` 已透過 `resources_rc.py` 內嵌，不需 `--add-data`
 - GitHub release 上傳使用英文檔名（中文檔名會被 URL encode）
 - 若修改 `arrow.svg`，需重新執行：

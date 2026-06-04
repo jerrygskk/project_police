@@ -114,22 +114,34 @@ class MainMenu:
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setFont(QFont("Microsoft JhengHei", 14))
-
-    # arrow.svg 已透過 resources_rc 內嵌，直接套用
     app.setStyleSheet(APPLE_STYLE)
 
-    # 設定應用程式 icon
     from PySide6.QtGui import QIcon
     icon_path = getResourcePath("police_badge.svg")
     app.setWindowIcon(QIcon(icon_path))
 
-    menu = MainMenu()
-    if menu.ui.exec() != QDialog.Accepted or menu.selected_tab < 0:
-        sys.exit(0)
+    db_path = getResourcePath("dbfile.db")
 
-    mgr = DocumentManager(tab_index=menu.selected_tab)
-    if hasattr(mgr, 'window') and mgr.window:
-        mgr.window.setWindowIcon(QIcon(icon_path))
-        mgr.window.show()
-        QTimer.singleShot(50, lambda: mgr._onTabChanged(menu.selected_tab))
-        sys.exit(app.exec())
+    # ── Loading 畫面 ──────────────────────────────
+    from loading_screen import LoadingScreen
+
+    _menu_ref  = []   # 用 list 讓 closure 能持有參照
+
+    def _on_loading_done(results):
+        """Loading 完成後顯示主選單"""
+        menu = MainMenu()
+        _menu_ref.append(menu)
+        if menu.ui.exec() != QDialog.Accepted or menu.selected_tab < 0:
+            sys.exit(0)
+
+        mgr = DocumentManager(tab_index=menu.selected_tab)
+        if hasattr(mgr, 'window') and mgr.window:
+            mgr.window.setWindowIcon(QIcon(icon_path))
+            mgr.window.show()
+            QTimer.singleShot(50, lambda: mgr._onTabChanged(menu.selected_tab))
+
+    loading = LoadingScreen(db_path)
+    loading.done.connect(_on_loading_done)
+    loading.show()
+
+    sys.exit(app.exec())
