@@ -1,6 +1,6 @@
 <svg width="340" height="340" viewBox="0 0 340 340" xmlns="http://www.w3.org/2000/svg">
 
-<g transform="translate(45, 10)">
+<g transform="translate(45, 12)">
 
   <!-- 盾牌 -->
   <path d="M125 0 L250 35 L250 195 Q250 285 125 320 Q0 285 0 195 L0 35 Z" fill="#1b3a6b"/>

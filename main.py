@@ -1,8 +1,62 @@
 import sys
 import os
+import traceback
+import logging
 
 # 壓掉 Qt DirectWrite 字型警告（MS Sans Serif 找不到屬正常現象，不影響功能）
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.fonts.warning=false")
+
+# ──────────────────────────────────────────────
+# 全域錯誤處理：寫入 error.log + Windows 事件檢視器
+# ──────────────────────────────────────────────
+def _setup_error_handler():
+    log_path = os.path.join(
+        os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__),
+        'error.log'
+    )
+    logging.basicConfig(
+        filename=log_path,
+        level=logging.ERROR,
+        format='%(asctime)s %(levelname)s\n%(message)s\n' + '-'*60,
+        encoding='utf-8',
+    )
+
+    def _handle_exception(exc_type, exc_value, exc_tb):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_tb)
+            return
+        msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+
+        # 1. 寫入 error.log
+        logging.error(msg)
+
+        # 2. 寫入 Windows 事件檢視器（僅 Windows 且有 pywin32）
+        try:
+            import win32evtlog
+            import win32evtlogutil
+            win32evtlogutil.ReportEvent(
+                '公文管理系統',
+                1,
+                eventType=win32evtlog.EVENTLOG_ERROR_TYPE,
+                strings=[msg],
+            )
+        except Exception:
+            pass  # 沒有 pywin32 或非 Windows 時靜默跳過
+
+        # 3. 彈出錯誤視窗（QApplication 存在時）
+        try:
+            from PySide6.QtWidgets import QApplication, QMessageBox
+            if QApplication.instance():
+                QMessageBox.critical(
+                    None, "系統錯誤",
+                    f"程式發生錯誤，已記錄至 error.log：\n\n{exc_value}"
+                )
+        except Exception:
+            pass
+
+    sys.excepthook = _handle_exception
+
+_setup_error_handler()
 
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 from PySide6.QtCore import QTimer
@@ -122,10 +176,10 @@ if __name__ == "__main__":
 
     db_path = getResourcePath("dbfile.db")
 
-    # ── Loading 畫面 ──────────────────────────────
     from loading_screen import LoadingScreen
 
-    _menu_ref  = []   # 用 list 讓 closure 能持有參照
+    # _menu_ref 用來持有 menu 和 mgr 的引用，防止被 GC 回收導致閃退
+    _menu_ref = []
 
     def _on_loading_done(results):
         """Loading 完成後顯示主選單"""
@@ -135,6 +189,7 @@ if __name__ == "__main__":
             sys.exit(0)
 
         mgr = DocumentManager(tab_index=menu.selected_tab)
+        _menu_ref.append(mgr)  # 防止 GC 回收，否則 QTimer 回呼時物件已消失
         if hasattr(mgr, 'window') and mgr.window:
             mgr.window.setWindowIcon(QIcon(icon_path))
             mgr.window.show()
