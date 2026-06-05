@@ -42,7 +42,7 @@ class LoadWorker(QThread):
         import time
         # ⚠️ DEBUG 用：每個步驟至少停 2 秒，方便觀察進度條
         # 正式上線前把 DEBUG_DELAY 改為 0
-        DEBUG_DELAY = 0.2
+        DEBUG_DELAY = 0.05
 
         results = {}
 

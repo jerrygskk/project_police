@@ -69,26 +69,6 @@ pip install PySide6 pandas openpyxl pyinstaller
 
 ---
 
-## 各檔案行數
-
-| 檔案 | 行數 |
-|------|------|
-| main.py | 147 |
-| loading_screen.py | 237 |
-| db_utils.py | 49 |
-| base_tab.py | 43 |
-| ui_utils/status.py | 31 |
-| ui_utils/widgets.py | 89 |
-| ui_utils/table.py | 189 |
-| ui_utils/\_\_init\_\_.py | 23 |
-| tabs/tab_dispatch.py | 206 |
-| tabs/tab_receive.py | 181 |
-| tabs/tab_report.py | 410 |
-| tabs/\_\_init\_\_.py | 4 |
-| **合計** | **1572** |
-
----
-
 ## 新增 Tab 的標準流程
 
 **步驟 1** — 新增 `tabs/tab_xxx.py`
@@ -180,7 +160,11 @@ setupPreviewTable(table, headers, fixed_overrides={"欄位名": 寬度})
 
 ---
 
-## 打包指令
+### SVG 轉 ICO
+
+使用 [imagestool](https://to.imagestool.com/zh-TW/svg-to-ico) 轉換，可產生 8 個尺寸（16、24、32、48、64、96、128、256px），品質較佳。
+
+
 
 ### 主程式
 ```bash

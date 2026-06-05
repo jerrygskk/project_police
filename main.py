@@ -64,7 +64,7 @@ from PySide6.QtGui import QFont
 
 from theme    import APPLE_STYLE
 from db_utils import getResourcePath, loadUi
-from tabs     import TabDispatch, TabReceive, TabReport
+from tabs     import TabDispatch, TabReceive, TabReport, TabPrint
 import resources_rc  # 註冊 Qt resource（arrow.svg）
 
 
@@ -82,7 +82,7 @@ class DocumentManager:
         0: TabDispatch,
         1: TabReceive,
         2: TabReport,
-        # 3: TabPrint,
+        3: TabPrint,
     }
 
     def __init__(self, tab_index=0):
