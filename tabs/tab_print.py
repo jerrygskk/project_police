@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt, QDate, QThread, Signal
 from PySide6.QtGui  import QPixmap, QImage
 
 from base_tab import BaseTab
+from db_utils import getResourcePath, loadUi
 
 # ── 字型（跨平台）────────────────────────────────────────
 def _find_cjk_fonts():
@@ -56,7 +57,6 @@ def fp(size, bold=False):
 A4_W, A4_H = 8.27, 11.69
 
 # ── 版面常數（normalized 0~1）────────────────────────────
-L        = 0.0
 R        = 0.03
 TOP      = 0.95
 BOT      = 0.03
@@ -152,29 +152,6 @@ def _fit_font(text, col_width_norm, max_size=14, min_size=8, pad=PAD):
     return fp(min_size)
 
 
-def _wrap_text(fig_unused, text, col_width_norm, font_prop, pad=PAD, font_size=12):
-    """依欄寬自動換行，用 A4 實際尺寸計算（跨平台穩定）"""
-    if not text:
-        return text
-    # A4 固定 595pt，不依賴螢幕 DPI
-    A4_PT    = 595.3
-    max_w_pt = (col_width_norm - pad * 2) * A4_PT * 0.86  # 0.86 = TABLE_W ratio
-
-    def char_w(ch):
-        return font_size if ord(ch) > 0x2E80 else font_size * 0.55
-
-    lines, line, line_w = [], '', 0.0
-    for ch in text:
-        cw = char_w(ch)
-        if line_w + cw > max_w_pt and line:
-            lines.append(line)
-            line, line_w = ch, cw
-        else:
-            line  += ch
-            line_w += cw
-    if line:
-        lines.append(line)
-    return "\n".join(lines)
 
 def _rows_per_page():
     avail = TOP - DATE_H - TITLE_H - HDR_H - BOT
@@ -481,73 +458,48 @@ class TabPrint(BaseTab):
         if page is None:
             return
 
-        old = page.layout()
-        if old:
-            while old.count():
-                w = old.takeAt(0).widget()
-                if w: w.deleteLater()
-        else:
-            page.setLayout(QVBoxLayout())
+        # 載入 UI（與 tab_report 相同模式）
+        ui = loadUi(getResourcePath('Layout4.ui'))
+        if not ui:
+            return
+        inner = ui.centralWidget()
 
-        root = QVBoxLayout()
-        root.setContentsMargins(16, 16, 16, 16)
-        root.setSpacing(10)
-        page.layout().addLayout(root)
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(inner)
 
-        # 控制列
-        ctrl = QHBoxLayout()
-        ctrl.setSpacing(10)
-        ctrl.addWidget(QLabel('發文日期：'))
+        # 取得 UI 元件
+        self.date_edit    = inner.findChild(QDateEdit,    'print_date')
+        self.btn_gen      = inner.findChild(QPushButton,  'btn_generate')
+        self.status_lbl   = inner.findChild(QLabel,       'lbl_status')
+        self.btn_download = inner.findChild(QPushButton,  'btn_download')
+        self.btn_print    = inner.findChild(QPushButton,  'btn_print')
+        self.scroll       = inner.findChild(QScrollArea,  'scroll_preview')
 
-        self.date_edit = QDateEdit()
-        self.date_edit.setCalendarPopup(True)
-        self.date_edit.setDate(QDate.currentDate())
-        self.date_edit.setDisplayFormat('yyyy-MM-dd')
-        self.date_edit.setMinimumWidth(120)
-        ctrl.addWidget(self.date_edit)
+        # 初始化日期
+        if self.date_edit:
+            self.date_edit.setDate(QDate.currentDate())
 
-        self.btn_gen = QPushButton('產生預覽')
-        
-        self.btn_gen.clicked.connect(self._on_generate)
-        ctrl.addWidget(self.btn_gen)
-
-        self.status_lbl = QLabel('')
-        self.status_lbl.setStyleSheet('color: gray; font-size: 12px;')
-        ctrl.addWidget(self.status_lbl)
-
-        ctrl.addStretch()
-
+        # 按鈕樣式與信號
         _btn_style = """
             QPushButton { color: #111111; }
             QPushButton:disabled { color: #AAAAAA; background-color: #E0E0E0; border: 1px solid #CCCCCC; }
         """
-        self.btn_download = QPushButton('下載 PDF')
-        self.btn_download.setEnabled(False)
-        self.btn_download.setStyleSheet(_btn_style)
-        self.btn_download.clicked.connect(self._on_download)
-        ctrl.addWidget(self.btn_download)
+        if self.btn_download:
+            self.btn_download.setStyleSheet(_btn_style)
+            self.btn_download.clicked.connect(self._on_download)
+        if self.btn_print:
+            self.btn_print.setStyleSheet(_btn_style)
+            self.btn_print.clicked.connect(self._on_print)
+        if self.btn_gen:
+            self.btn_gen.clicked.connect(self._on_generate)
 
-        self.btn_print = QPushButton('列印表單')
-        self.btn_print.setEnabled(False)
-        self.btn_print.setStyleSheet(_btn_style)
-        self.btn_print.clicked.connect(self._on_print)
-        ctrl.addWidget(self.btn_print)
+        # 捲動預覽容器
+        self._container = inner.findChild(QWidget, 'scroll_contents')
+        self._layout    = self._container.layout() if self._container else QVBoxLayout()
+        if self._layout:
+            self._layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
 
-        root.addLayout(ctrl)
-
-        # 捲動預覽區
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setStyleSheet('background: #D0D0D0;')
-
-        self._container = QWidget()
-        self._layout    = QVBoxLayout(self._container)
-        self._layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
-        self._layout.setSpacing(14)
-        self._layout.setContentsMargins(16, 16, 16, 16)
-
-        self.scroll.setWidget(self._container)
-        root.addWidget(self.scroll, stretch=1)
         self._worker    = None
         self._pdf_bytes = None
 
@@ -617,8 +569,6 @@ class TabPrint(BaseTab):
         try:
             if sys.platform == 'win32':
                 os.startfile(tmp.name, 'print')
-            elif sys.platform == 'darwin':
-                subprocess.run(['lpr', tmp.name])
             else:
                 subprocess.run(['lpr', tmp.name])
         except Exception as e:
