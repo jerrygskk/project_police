@@ -376,6 +376,7 @@
         <item>
          <widget class="QTableWidget" name="crim_tableWidget">
           <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+          <column><property name="text"><string></string></property></column>
           <column><property name="text"><string>刑案編號</string></property></column>
           <column><property name="text"><string>發文分類</string></property></column>
           <column><property name="text"><string>案類</string></property></column>
@@ -401,6 +402,7 @@
         <item>
          <widget class="QTableWidget" name="gen_tableWidget">
           <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+          <column><property name="text"><string></string></property></column>
           <column><property name="text"><string>陳報編號</string></property></column>
           <column><property name="text"><string>發文分類</string></property></column>
           <column><property name="text"><string>案類</string></property></column>

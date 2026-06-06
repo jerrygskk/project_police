@@ -1,5 +1,6 @@
 import sqlite3
 from PySide6.QtWidgets import QMessageBox
+from db_utils import msgCritical
 
 
 class BaseTab:
@@ -39,5 +40,5 @@ class BaseTab:
             conn.close()
             return personnel, depts
         except Exception as e:
-            QMessageBox.critical(None, "DB錯誤", f"載入對照表失敗: {e}")
+            msgCritical("DB錯誤", f"載入對照表失敗: {e}")
             return [], []

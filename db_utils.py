@@ -5,6 +5,63 @@ from PySide6.QtWidgets import QMessageBox
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile
 
+# ── Dialog 按鈕樣式常數 ───────────────────────────────────────
+_BTN_BASE    = "border-radius: 6px; padding: 4px 16px; min-width: 80px; font-weight: bold;"
+BTN_CONFIRM  = f"QPushButton {{ background-color: #D0ECF5; color: #000000; {_BTN_BASE} }} QPushButton:hover {{ background-color: #B8D8E8; }}"
+BTN_DANGER   = f"QPushButton {{ background-color: #F5D4D0; color: #000000; {_BTN_BASE} }} QPushButton:hover {{ background-color: #E0BDB8; }}"
+BTN_CANCEL   = f"QPushButton {{ background-color: #F2F2F7; color: #000000; {_BTN_BASE} }} QPushButton:hover {{ background-color: #E5E5EA; }}"
+
+
+# ── 通用訊息彈窗（確定按鈕中文，統一樣式）────────────────────
+def _makeMsg(icon, title, text, parent=None):
+    msg = QMessageBox(parent)
+    msg.setWindowTitle(title)
+    msg.setText(text)
+    msg.setIcon(icon)
+    btn = msg.addButton("確定", QMessageBox.AcceptRole)
+    btn.setStyleSheet(BTN_CONFIRM)
+    msg.exec()
+
+def msgInfo(title, text, parent=None):
+    _makeMsg(QMessageBox.Information, title, text, parent)
+
+def msgWarning(title, text, parent=None):
+    _makeMsg(QMessageBox.Warning, title, text, parent)
+
+def msgCritical(title, text, parent=None):
+    _makeMsg(QMessageBox.Critical, title, text, parent)
+
+
+# ── 通用確認彈窗 ───────────────────────────────────────────────
+def confirmBox(title, text, confirm_text="確認", cancel_text="取消",
+               confirm_danger=False, default_confirm=True, parent=None):
+    """
+    Apple HIG 風格確認對話框。
+    confirm_danger=True：確認按鈕顯示紅色（破壞性操作）
+    default_confirm=False：預設選取「取消」
+    回傳 True 表示使用者點確認
+    """
+    msg = QMessageBox(parent)
+    msg.setWindowTitle(title)
+    msg.setText(text)
+    msg.setIcon(QMessageBox.Question)
+
+    btn_ok     = msg.addButton(confirm_text, QMessageBox.AcceptRole)
+    btn_cancel = msg.addButton(cancel_text,  QMessageBox.RejectRole)
+
+    btn_ok.setStyleSheet(BTN_DANGER if confirm_danger else BTN_CONFIRM)
+    btn_cancel.setStyleSheet(BTN_CANCEL)
+
+    msg.setDefaultButton(btn_ok if default_confirm else btn_cancel)
+    msg.exec()
+    return msg.clickedButton() == btn_ok
+
+
+# ── 測試開關 ───────────────────────────────────────────────
+# True：所有 disable/greyout 全部開啟（方便測試）
+# False：正式行為，上線前確認為 False
+DEBUG_MODE = False
+
 
 def getResourcePath(relative_path):
     """
@@ -25,7 +82,7 @@ def loadUi(path):
     """載入 .ui 檔案，回傳 widget；找不到檔案時彈出錯誤並回傳 None"""
     f = QFile(path)
     if not f.exists():
-        QMessageBox.critical(None, "錯誤", f"找不到 UI 檔案: {path}")
+        msgCritical("錯誤", f"找不到 UI 檔案: {path}")
         return None
     f.open(QFile.ReadOnly)
     widget = QUiLoader().load(f)

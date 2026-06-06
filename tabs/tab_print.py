@@ -17,7 +17,7 @@ from PySide6.QtCore import Qt, QDate, QThread, Signal
 from PySide6.QtGui  import QPixmap, QImage
 
 from base_tab import BaseTab
-from db_utils import getResourcePath, loadUi
+from db_utils import getResourcePath, loadUi, msgInfo, msgWarning, msgCritical
 
 # ── 字型（跨平台）────────────────────────────────────────
 def _find_cjk_fonts():
@@ -529,9 +529,9 @@ class TabPrint(BaseTab):
         self.btn_print.setEnabled(False)
         self.status_lbl.setText('')
         if msg == '查無資料':
-            QMessageBox.information(None, '提示', '此日期查無發文資料')
+            msgInfo('提示', '此日期查無發文資料')
         else:
-            QMessageBox.warning(None, '錯誤', f'產生失敗：{msg}')
+            msgWarning('錯誤', f'產生失敗：{msg}')
 
     def _render(self, png_list):
         self._clear()
@@ -572,7 +572,7 @@ class TabPrint(BaseTab):
             else:
                 subprocess.run(['lpr', tmp.name])
         except Exception as e:
-            QMessageBox.warning(None, '列印失敗', str(e))
+            msgWarning('列印失敗', str(e))
 
     def _clear(self):
         while self._layout.count():

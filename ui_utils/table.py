@@ -18,10 +18,10 @@ FIXED_COL_WIDTHS = {
     "收文人員":     120,
     # 刑案
     "編號":          56,
-    "狀態":          56,
+    "狀態":          48,
     "案類":         152,
-    "承辦人":        88,
-    "受理人":        88,
+    "承辦人":        72,
+    "受理人":        72,
     "報案人":        72,
     "日期":          80,
     # 一般
@@ -35,6 +35,7 @@ _PAD = 24
 
 def _measureColWidths(table, fm, fixed_overrides=None):
     stretch_col = table.property("stretch_col")
+    cap_mode    = table.property("cap_mode")   # True：FIXED_COL_WIDTHS 當上限，False：當固定值
     overrides   = fixed_overrides or {}
     widths = {}
     for col in range(table.columnCount()):
@@ -44,14 +45,7 @@ def _measureColWidths(table, fm, fixed_overrides=None):
         hdr_item = table.horizontalHeaderItem(col)
         hdr_text = hdr_item.text() if hdr_item else ""
 
-        # fixed_overrides 優先於 FIXED_COL_WIDTHS
-        if hdr_text in overrides:
-            widths[col] = overrides[hdr_text]
-            continue
-        if hdr_text in FIXED_COL_WIDTHS:
-            widths[col] = FIXED_COL_WIDTHS[hdr_text]
-            continue
-
+        # 量出內容實際寬度
         best = fm.horizontalAdvance(hdr_text) + _PAD
         for row in range(table.rowCount()):
             item = table.item(row, col)
@@ -59,6 +53,17 @@ def _measureColWidths(table, fm, fixed_overrides=None):
                 w = fm.horizontalAdvance(item.text()) + _PAD
                 if w > best:
                     best = w
+
+        # fixed_overrides 優先（固定上限）
+        if hdr_text in overrides:
+            widths[col] = min(best, overrides[hdr_text]) if cap_mode else overrides[hdr_text]
+            continue
+
+        # FIXED_COL_WIDTHS：cap_mode 下當上限，否則當固定值
+        if hdr_text in FIXED_COL_WIDTHS:
+            widths[col] = min(best, FIXED_COL_WIDTHS[hdr_text]) if cap_mode else FIXED_COL_WIDTHS[hdr_text]
+            continue
+
         widths[col] = best
     return widths, stretch_col
 
@@ -102,7 +107,7 @@ def makeDeleteBtn(callback):
     return container, btn
 
 
-def setupPreviewTable(table, headers, row_height=30, stretch_col=None, fixed_overrides=None):
+def setupPreviewTable(table, headers, row_height=30, stretch_col=None, fixed_overrides=None, cap_mode=False):
     """
     套用 Apple HIG 風格表格樣式，並設定欄位標題。
 
@@ -137,6 +142,7 @@ def setupPreviewTable(table, headers, row_height=30, stretch_col=None, fixed_ove
     table.setProperty("user_resized",    False)
     table.setProperty("init_done",       False)
     table.setProperty("fixed_overrides", fixed_overrides or {})
+    table.setProperty("cap_mode",        cap_mode)
 
     def _onSectionResized(idx, old_w, new_w, t=table, sc=stretch_col):
         if t.property("init_done") and idx != sc:

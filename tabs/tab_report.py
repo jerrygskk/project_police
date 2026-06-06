@@ -7,14 +7,14 @@ from PySide6.QtWidgets import (
 )
 
 from base_tab import BaseTab
-from db_utils import getResourcePath, loadUi, nextDocId
+from db_utils import getResourcePath, loadUi, nextDocId, msgInfo, msgWarning, msgCritical, confirmBox
 from ui_utils import (
-    setupPreviewTable, autoResizeTable,
+    setupPreviewTable, autoResizeTable, makeDeleteBtn,
     setupFilterCombo, setupDateEditToToday,
 )
 
-CRIM_HEADERS = ["編號", "狀態", "案類", "陳報主旨", "承辦人", "受理人", "日期", "報案人"]
-GEN_HEADERS  = ["編號", "業務單位", "陳報主旨", "承辦人", "分類"]
+CRIM_HEADERS = ["", "編號", "狀態", "案類", "陳報主旨", "承辦人", "受理人", "日期", "報案人"]
+GEN_HEADERS  = ["", "編號", "業務單位", "陳報主旨", "承辦人", "分類"]
 
 # Radio 圓點縮小，選中用較細 border 呈現
 RADIO_STYLE = """
@@ -158,12 +158,12 @@ class TabReport(BaseTab):
         if self.crim_table:
             # 刑案「陳報主旨」固定 184px（10全形），stretch 給「報案人」
             # ⚠️ 一般「陳報主旨」同樣固定 184px，兩者皆用 fixed_overrides 區分 stretch 欄
-            setupPreviewTable(self.crim_table, CRIM_HEADERS, stretch_col=7,
+            setupPreviewTable(self.crim_table, CRIM_HEADERS, cap_mode=True,
                               fixed_overrides={"陳報主旨": 184})
         if self.gen_table:
             # 一般陳報「陳報主旨」固定 184px（10全形），stretch 給「分類」
             # ⚠️ 刑案「陳報主旨」仍為 stretch，兩者同名但行為不同，故用 fixed_overrides 區分
-            setupPreviewTable(self.gen_table, GEN_HEADERS, stretch_col=4,
+            setupPreviewTable(self.gen_table, GEN_HEADERS, cap_mode=True,
                               fixed_overrides={"陳報主旨": 184})
 
         # ── 預設顯示刑案（page 0） ────────────────────────
@@ -201,7 +201,7 @@ class TabReport(BaseTab):
             conn.close()
             return [(r[0], r[1]) for r in rows]
         except Exception as e:
-            QMessageBox.critical(None, "DB錯誤", f"載入對照表失敗: {e}")
+            msgCritical("DB錯誤", f"載入對照表失敗: {e}")
             return []
 
     # ── 互填：同承辦 / 同受理 ────────────────────────────────
@@ -284,7 +284,7 @@ class TabReport(BaseTab):
         if not processor_id: errors.append("承辦人員")
         if not subject:      errors.append("陳報主旨")
         if errors:
-            QMessageBox.warning(None, "欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
+            msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
             return
 
         try:
@@ -314,7 +314,7 @@ class TabReport(BaseTab):
             self._formClear()
 
         except Exception as e:
-            QMessageBox.critical(None, "寫入失敗", str(e))
+            msgCritical("寫入失敗", str(e))
 
     def _submitGeneral(self, report_date, sender_id):
         # 發文分類從 radio 讀取（業務=GC01, 其他=GC03, 相驗=GC02）
@@ -334,7 +334,7 @@ class TabReport(BaseTab):
         if not processor_id: errors.append("承辦人")
         if not subject:      errors.append("陳報主旨")
         if errors:
-            QMessageBox.warning(None, "欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
+            msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
             return
 
         try:
@@ -360,7 +360,7 @@ class TabReport(BaseTab):
             self._formClear()
 
         except Exception as e:
-            QMessageBox.critical(None, "寫入失敗", str(e))
+            msgCritical("寫入失敗", str(e))
 
     # ── 插入預覽列 ───────────────────────────────────────────
     def _insertCrimRow(self, doc_id, status, casetype, subject,
@@ -384,11 +384,13 @@ class TabReport(BaseTab):
 
         pos = self.crim_table.rowCount()
         self.crim_table.insertRow(pos)
+        container, _ = makeDeleteBtn(lambda _, r=pos: self._deleteCrimRow(r))
+        self.crim_table.setCellWidget(pos, 0, container)
         for col, val in enumerate([
             doc_id, status, casetype, subject,
             _trimName(processor), _trimName(receiver),
             _fmtDate(occ_date), _trimName(reporter),
-        ]):
+        ], start=1):
             item = QTableWidgetItem(str(val) if val else "")
             item.setTextAlignment(Qt.AlignCenter)
             self.crim_table.setItem(pos, col, item)
@@ -403,8 +405,77 @@ class TabReport(BaseTab):
 
         pos = self.gen_table.rowCount()
         self.gen_table.insertRow(pos)
-        for col, val in enumerate([doc_id, dept, subject, _trimName(processor), cat]):
+        container, _ = makeDeleteBtn(lambda _, r=pos: self._deleteGenRow(r))
+        self.gen_table.setCellWidget(pos, 0, container)
+        for col, val in enumerate([doc_id, dept, subject, _trimName(processor), cat], start=1):
             item = QTableWidgetItem(str(val) if val else "")
             item.setTextAlignment(Qt.AlignCenter)
             self.gen_table.setItem(pos, col, item)
         autoResizeTable(self.gen_table)
+
+    def _deleteCrimRow(self, row):
+        if not self.crim_table:
+            return
+        doc_id_item = self.crim_table.item(row, 1)
+        if not doc_id_item:
+            return
+        doc_id = doc_id_item.text()
+        if not confirmBox("確認刪除",
+                          f"本筆資料將被刪除，本文號（{doc_id}）無法再被使用，確認刪除？",
+                          confirm_text="刪除", confirm_danger=True, default_confirm=False):
+            return
+        try:
+            conn = self._getConn()
+            conn.execute("""
+                UPDATE Document_Criminal SET
+                    report_date=NULL, sender_id=NULL, case_type=NULL, case_status=NULL,
+                    processor_id=NULL, subject_summary=NULL, occurrence_date=NULL,
+                    reporter_name=NULL, receiver_id=NULL, is_reported=0, is_electronic=0
+                WHERE doc_id=?
+            """, (doc_id,))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            msgCritical("刪除失敗", str(e))
+            return
+        self.crim_table.removeRow(row)
+        for r in range(self.crim_table.rowCount()):
+            container = self.crim_table.cellWidget(r, 0)
+            if container:
+                btn = container.findChild(QPushButton)
+                if btn:
+                    btn.clicked.disconnect()
+                    btn.clicked.connect(lambda _, ri=r: self._deleteCrimRow(ri))
+
+    def _deleteGenRow(self, row):
+        if not self.gen_table:
+            return
+        doc_id_item = self.gen_table.item(row, 1)
+        if not doc_id_item:
+            return
+        doc_id = doc_id_item.text()
+        if not confirmBox("確認刪除",
+                          f"本筆資料將被刪除，本文號（{doc_id}）無法再被使用，確認刪除？",
+                          confirm_text="刪除", confirm_danger=True, default_confirm=False):
+            return
+        try:
+            conn = self._getConn()
+            conn.execute("""
+                UPDATE Document_General SET
+                    report_date=NULL, sender_id=NULL, dept_id=NULL, gen_cat=NULL,
+                    subject=NULL, processor_id=NULL, is_reported=0, is_electronic=0
+                WHERE doc_id=?
+            """, (doc_id,))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            msgCritical("刪除失敗", str(e))
+            return
+        self.gen_table.removeRow(row)
+        for r in range(self.gen_table.rowCount()):
+            container = self.gen_table.cellWidget(r, 0)
+            if container:
+                btn = container.findChild(QPushButton)
+                if btn:
+                    btn.clicked.disconnect()
+                    btn.clicked.connect(lambda _, ri=r: self._deleteGenRow(ri))

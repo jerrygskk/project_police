@@ -9,9 +9,9 @@
 | Tab | 功能 | 說明 |
 |-----|------|------|
 | 0 | 交辦單發文 | 掃入文號 → 預覽清單 → 批次發文 |
-| 1 | 交辦單收文 | 填表 → 立即寫入 DB → 預覽 |
-| 2 | 案件陳報 | 刑案 / 一般陳報，左右並列預覽 |
-| 3 | 簽收單列印 | 尚未開放 |
+| 1 | 交辦單收文 | 填表 → 立即寫入 DB → 預覽，支援刪除 |
+| 2 | 案件陳報 | 刑案 / 一般陳報，左右並列預覽，支援刪除 |
+| 3 | 簽收單列印 | 輸入日期 → 產生 PDF 預覽 → 下載 / 列印 |
 
 ---
 
@@ -24,7 +24,7 @@
 | PyInstaller | 6.20.0 |
 
 ```bash
-pip install PySide6 pandas openpyxl pyinstaller
+pip install PySide6 pandas openpyxl pyinstaller matplotlib
 ```
 
 ---
@@ -37,6 +37,9 @@ pip install PySide6 pandas openpyxl pyinstaller
 ├── theme.py              # Apple HIG QSS 樣式
 ├── base_tab.py           # 所有 Tab 的共用基礎類別（BaseTab）
 ├── db_utils.py           # DB / 資源工具（getResourcePath, loadUi, nextDocId）
+│                         #   通用彈窗：msgInfo, msgWarning, msgCritical, confirmBox
+│                         #   按鈕樣式常數：BTN_CONFIRM, BTN_DANGER, BTN_CANCEL
+│                         #   測試開關：DEBUG_MODE
 ├── resources.qrc         # Qt Resource 設定（arrow.svg 內嵌用）
 ├── resources_rc.py       # 由 pyside6-rcc 產生，勿手動修改
 ├── data_sync_tool.py     # Excel 同步工具（獨立執行）
@@ -47,17 +50,19 @@ pip install PySide6 pandas openpyxl pyinstaller
 │   ├── widgets.py        # 元件行為（setupFilterCombo, setupDateEditToToday）
 │   └── table.py          # 表格工具（setupPreviewTable, autoResizeTable,
 │                         #   makeDeleteBtn, FIXED_COL_WIDTHS）
-│                         #   支援 stretch_col 與 fixed_overrides 參數
+│                         #   支援 stretch_col / fixed_overrides / cap_mode 參數
 │
 ├── tabs/
 │   ├── __init__.py       # re-export 所有 Tab 類別
 │   ├── tab_dispatch.py   # Tab 0：交辦單發文
 │   ├── tab_receive.py    # Tab 1：交辦單收文
-│   └── tab_report.py     # Tab 2：案件陳報（刑案 + 一般）
+│   ├── tab_report.py     # Tab 2：案件陳報（刑案 + 一般）
+│   └── tab_print.py      # Tab 3：簽收單列印
 │
 ├── Layout1.ui            # 主視窗（tabWidget 外框，含交辦單發文 Tab 0 的欄位）
-├── Layout2.ui            # 交辦單收文表單
-├── Layout3.ui            # 案件陳報表單
+├── Layout2.ui            # 交辦單收文表單（含刪除按鈕欄）
+├── Layout3.ui            # 案件陳報表單（含刪除按鈕欄）
+├── Layout4.ui            # 簽收單列印
 ├── main_menu.ui          # 主選單
 ├── arrow.svg             # 下拉箭頭（透過 resources_rc 內嵌，不需外部存取）
 ├── police_badge.svg      # 應用程式 icon（視窗標題列用）
@@ -66,6 +71,27 @@ pip install PySide6 pandas openpyxl pyinstaller
 ├── dbfile.db             # SQLite 資料庫（需與 exe 放在同層）
 └── init_ref_tables.sql   # DB 初始化腳本（data_sync_tool 使用）
 ```
+
+---
+
+## 各檔案行數
+
+| 檔案 | 行數 |
+|------|------|
+| main.py | 202 |
+| loading_screen.py | 237 |
+| db_utils.py | 106 |
+| base_tab.py | 44 |
+| ui_utils/status.py | 31 |
+| ui_utils/widgets.py | 89 |
+| ui_utils/table.py | 195 |
+| ui_utils/\_\_init\_\_.py | 23 |
+| tabs/tab_dispatch.py | 233 |
+| tabs/tab_receive.py | 222 |
+| tabs/tab_report.py | 481 |
+| tabs/tab_print.py | 582 |
+| tabs/\_\_init\_\_.py | 6 |
+| **合計** | **2451** |
 
 ---
 
@@ -92,7 +118,7 @@ TAB_CLASSES = {
 }
 ```
 
-**步驟 4** — 在 `Layout1.ui` 確認對應 tab index 的頁籤存在
+**步驟 4** — 新增對應的 `LayoutN.ui`
 
 > `main.py` 本身只改 `TAB_CLASSES` 那一行，其餘不動。
 
@@ -104,15 +130,41 @@ TAB_CLASSES = {
 |------|------|
 | 新欄位固定寬度 | 在 `table.py` 的 `FIXED_COL_WIDTHS` 加一行 |
 | 同名欄位不同表格不同寬度 | 用 `fixed_overrides` 參數傳入，不改 `FIXED_COL_WIDTHS` |
+| 欄位寬度隨內容縮，卡在上限 | 用 `cap_mode=True` 參數 |
 | 新的狀態顏色邏輯 | 在 `status.py` 的 `colorForStatus` 加條件 |
 | 新的元件行為 | 在 `widgets.py` 新增函式，並在 `__init__.py` export |
 
+---
+
+## 通用彈窗（db_utils.py）
+
+所有彈窗統一從 `db_utils` import，確保按鈕樣式一致：
+
 ```python
-# fixed_overrides 範例
-setupPreviewTable(table, headers, fixed_overrides={"欄位名": 寬度})
+from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 ```
 
-> 不論如何擴充，外部呼叫 `from ui_utils import xxx` 永遠不需要修改。
+| 函式 | 說明 | 按鈕 |
+|------|------|------|
+| `msgInfo(title, text)` | 一般訊息 | 確定（藍） |
+| `msgWarning(title, text)` | 警告 | 確定（藍） |
+| `msgCritical(title, text)` | 錯誤 | 確定（藍） |
+| `confirmBox(title, text, confirm_text, cancel_text, confirm_danger, default_confirm)` | 確認對話框 | 自訂 |
+
+**測試開關：**
+```python
+# db_utils.py
+DEBUG_MODE = True  # 開啟所有 disable/greyout
+```
+
+---
+
+## 刪除行為說明
+
+Tab 1（交辦單收文）和 Tab 2（公文陳報）的刪除：
+- **不是真的 DELETE**，而是清空該筆欄位（`doc_id` 保留）
+- 流水號永久佔用，無法再被使用
+- 彈窗提示：「本筆資料將被刪除，本文號（XXX）無法再被使用，確認刪除？」
 
 ---
 
@@ -130,24 +182,13 @@ setupPreviewTable(table, headers, fixed_overrides={"欄位名": 寬度})
 ### 發文分類 Radio Button
 
 | 表單 | Radio | 顯示 | DB |
-|------|-------|------|----|
+|------|-------|------|-----|
 | 刑案 | radio_status_a | 現行 | CS01 |
 | 刑案 | radio_status_b | 到案 | CS02 |
 | 刑案 | radio_status_c | 未到 | CS03 |
 | 一般 | radio_gen_cat_a | 業務 | GC01 |
 | 一般 | radio_gen_cat_b | 其他 | GC03 |
 | 一般 | radio_gen_cat_c | 相驗 | GC02 |
-
-### 互填按鈕
-
-- `btn_copy_to_receiver` → 同承辦：把承辦人員值填入受理人員
-- `btn_copy_to_processor` → 同受理：把受理人員值填入承辦人員
-
-### 預覽表格欄位
-
-**刑案：** 編號 / 狀態 / 案類 / 陳報主旨（固定） / 承辦人 / 受理人 / 日期 / 報案人（stretch）
-
-**一般：** 編號 / 業務單位 / 陳報主旨（固定） / 承辦人 / 分類（stretch）
 
 ### ⚠️ 預覽顯示與 DB 差異（明年大修資料庫時需一起更新）
 
@@ -160,11 +201,7 @@ setupPreviewTable(table, headers, fixed_overrides={"欄位名": 寬度})
 
 ---
 
-### SVG 轉 ICO
-
-使用 [imagestool](https://to.imagestool.com/zh-TW/svg-to-ico) 轉換，可產生 8 個尺寸（16、24、32、48、64、96、128、256px），品質較佳。
-
-
+## 打包指令
 
 ### 主程式
 ```bash
@@ -196,7 +233,7 @@ pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool d
 | 欄位 | 型態 | 說明 |
 |------|------|------|
 | doc_id | VARCHAR(50) | PK 流水號 |
-| receive_date | DATE | 收文日期 |
+| receive_date | DATE | 收文日期（NULL = 已刪除） |
 | receive_id | VARCHAR(10) | 收文人員 → Ref_Personnel |
 | dept_id | VARCHAR(10) | 業務組 → Ref_Departments |
 | subject | TEXT | 交辦事由 |
@@ -211,7 +248,7 @@ pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool d
 | 欄位 | 型態 | 說明 |
 |------|------|------|
 | doc_id | VARCHAR(50) | PK 流水號 |
-| report_date | DATE | 陳報日期 |
+| report_date | DATE | 陳報日期（NULL = 已刪除） |
 | sender_id | VARCHAR(10) | 發文人員 → Ref_Personnel |
 | case_type | VARCHAR(10) | 案件分類 → Ref_CaseTypes |
 | case_status | VARCHAR(10) | 發文分類 → Ref_Case_Status |
@@ -228,7 +265,7 @@ pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool d
 | 欄位 | 型態 | 說明 |
 |------|------|------|
 | doc_id | VARCHAR(50) | PK 流水號 |
-| report_date | DATE | 陳報日期 |
+| report_date | DATE | 陳報日期（NULL = 已刪除） |
 | sender_id | VARCHAR(10) | 發文人員 → Ref_Personnel |
 | dept_id | VARCHAR(10) | 業務單位 → Ref_Departments |
 | gen_cat_id | VARCHAR(10) | 發文分類 → Ref_General_Category |
@@ -253,5 +290,5 @@ pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool d
 | View | 說明 |
 |------|------|
 | View_Task_Full | 含狀態判斷邏輯（剩餘天數/逾期/已發文） |
-| View_Criminal_Full | 刑案完整資訊（JOIN 所有參照表） |
+| View_Criminal_Full | 刑案完整資訊（JOIN 所有參照表，案類 COALESCE 舊資料） |
 | View_General_Full | 一般完整資訊（JOIN 所有參照表） |

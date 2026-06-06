@@ -45,10 +45,10 @@ def _setup_error_handler():
 
         # 3. 彈出錯誤視窗（QApplication 存在時）
         try:
-            from PySide6.QtWidgets import QApplication, QMessageBox
+            from PySide6.QtWidgets import QApplication
+            from db_utils import msgCritical as _msgCritical
             if QApplication.instance():
-                QMessageBox.critical(
-                    None, "系統錯誤",
+                _msgCritical("系統錯誤",
                     f"程式發生錯誤，已記錄至 error.log：\n\n{exc_value}"
                 )
         except Exception:
@@ -63,7 +63,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
 
 from theme    import APPLE_STYLE
-from db_utils import getResourcePath, loadUi
+from db_utils import getResourcePath, loadUi, msgInfo, msgWarning, msgCritical
 from tabs     import TabDispatch, TabReceive, TabReport, TabPrint
 import resources_rc  # 註冊 Qt resource（arrow.svg）
 
@@ -156,7 +156,7 @@ class MainMenu:
 
     def _onSelect(self, index):
         if index not in DocumentManager.TAB_CLASSES:
-            QMessageBox.information(self.ui, "提示", "此功能尚未開放，敬請期待")
+            msgInfo("提示", "此功能尚未開放，敬請期待")
             return
         self.selected_tab = index
         self.ui.accept()

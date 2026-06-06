@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, QDate
 from PySide6.QtWidgets import QTableWidgetItem, QPushButton, QMessageBox
 
 from base_tab import BaseTab
+from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn,
     setupFilterCombo, setupDateEditToToday,
@@ -34,7 +35,8 @@ class TabDispatch(BaseTab):
         btn_clear            = getattr(mw, 'btn_clear_all',   None)
 
         if self.table:
-            setupPreviewTable(self.table, self.HEADERS)
+            setupPreviewTable(self.table, self.HEADERS, stretch_col=2,
+                              fixed_overrides={'狀態': 210})
 
         if self.dispatch_date:
             self.dispatch_date.setDate(QDate.currentDate())
@@ -65,17 +67,47 @@ class TabDispatch(BaseTab):
             row  = conn.execute(sql, (serial,)).fetchone()
             conn.close()
         except Exception as e:
-            QMessageBox.critical(None, "SQL 錯誤", str(e))
+            msgCritical("SQL 錯誤", str(e))
             return
 
         if row:
+            # 另外查 receive_date 判斷是否已刪除
+            try:
+                conn2  = self._getConn()
+                rd_row = conn2.execute(
+                    "SELECT receive_date FROM Document_Task WHERE doc_id=?", (serial,)
+                ).fetchone()
+                conn2.close()
+            except Exception:
+                rd_row = None
+
+            recv_date = rd_row[0] if rd_row else None
+            if recv_date is None:
+                msgWarning("查無資料", f"找不到文號「{serial}」，可能已被刪除")
+                self.lineEdit.clear()
+                return
+
             if self._rowExists(str(row[0])):
-                QMessageBox.information(None, "提示", f"「{serial}」已在清單中")
+                msgInfo("提示", f"「{serial}」已在清單中")
             else:
+                # DB_COLS = ["編號", "交辦事由", "業務組", "所承辦人", "限辦日期", "發文日期"]
+                # row[0]=編號, row[1]=交辦事由, row[2]=業務組, row[3]=所承辦人
+                missing = []
+                if not row[2]: missing.append("業務組")
+                if not row[1]: missing.append("交辦事由")
+                if not row[3]: missing.append("所承辦人")
+                if missing:
+                    if not confirmBox(
+                        "資料不完整",
+                        f"此文號資料不完整（缺少：{'、'.join(missing)}），仍可發文，確認加入清單？",
+                        confirm_text="仍要加入", default_confirm=True
+                    ):
+                        self.lineEdit.clear()
+                        return
                 self._insertRow(row)
             self.lineEdit.clear()
         else:
-            QMessageBox.warning(None, "查無資料", f"找不到：{serial}")
+            msgWarning("查無資料", f"找不到：{serial}")
 
     def _rowExists(self, doc_id):
         if not self.table:
@@ -133,20 +165,16 @@ class TabDispatch(BaseTab):
     # ── 全部清除 ──────────────────────────────────────────
     def handleClearAll(self):
         if not self.table or self.table.rowCount() == 0:
-            QMessageBox.information(None, "提示", "清單已經是空的")
+            msgInfo("提示", "清單已經是空的")
             return
-        reply = QMessageBox.question(
-            None, "確認清除",
-            f"確定要清除全部 {self.table.rowCount()} 筆資料？",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
+        if confirmBox("確認清除", f"確定要清除全部 {self.table.rowCount()} 筆資料？",
+                      confirm_text="清除", confirm_danger=True, default_confirm=True):
             self.table.setRowCount(0)
 
     # ── 批次發文 ──────────────────────────────────────────
     def handleDispatch(self):
         if not self.table or self.table.rowCount() == 0:
-            QMessageBox.information(None, "提示", "清單是空的，請先掃入文號")
+            msgInfo("提示", "清單是空的，請先掃入文號")
             return
 
         today   = datetime.now().strftime("%Y-%m-%d")
@@ -163,13 +191,12 @@ class TabDispatch(BaseTab):
         sender_id   = self.dispatch_sender.currentData() if self.dispatch_sender else None
         sender_name = self.dispatch_sender.currentText() if self.dispatch_sender else "未選擇"
 
-        reply = QMessageBox.question(
-            None, "確認發文",
+        if not confirmBox(
+            "確認發文",
             f"發文日期：{dispatch_day}\n發文人員：{sender_name}\n"
             f"將對 {len(pending)} 筆資料寫入（已有資料者將被覆蓋）\n確認送出？",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if reply != QMessageBox.Yes:
+            confirm_text="發文", default_confirm=True
+        ):
             return
 
         sql = (
@@ -201,6 +228,6 @@ class TabDispatch(BaseTab):
 
             conn.commit()
             conn.close()
-            QMessageBox.information(None, "完成", f"已成功更新 {len(pending)} 筆發文日期（{dispatch_day}）")
+            msgInfo("完成", f"已成功更新 {len(pending)} 筆發文日期（{dispatch_day}）")
         except Exception as e:
-            QMessageBox.critical(None, "更新失敗", str(e))
+            msgCritical("更新失敗", str(e))
