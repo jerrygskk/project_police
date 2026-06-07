@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QDate
-from PySide6.QtWidgets import QTableWidgetItem, QPushButton, QMessageBox
+from PySide6.QtWidgets import QTableWidgetItem, QPushButton
 
 from base_tab import BaseTab
 from db_utils import msgInfo, msgWarning, msgCritical, confirmBox, DEBUG_MODE

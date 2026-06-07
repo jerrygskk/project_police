@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QRadioButton, QVBoxLayout, QHBoxLayout,
     QStackedWidget, QSizePolicy,
     QDateEdit, QComboBox, QLineEdit, QLabel,
-    QTableWidget, QMessageBox, QPushButton
+    QTableWidget, QPushButton
 )
 
 from base_tab import BaseTab

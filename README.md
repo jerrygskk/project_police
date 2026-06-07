@@ -1,6 +1,6 @@
 # 公文管理系統
 
-> 版本：115年度
+> 版本：115年度 v0.9.0-beta.5
 
 ---
 
@@ -9,8 +9,8 @@
 | Tab | 功能 | 說明 |
 |-----|------|------|
 | 0 | 交辦單發文 | 掃入文號 → 預覽清單 → 批次發文 |
-| 1 | 交辦單收文 | 填表 → 立即寫入 DB → 預覽，支援刪除 |
-| 2 | 案件陳報 | 刑案 / 一般陳報，左右並列預覽，支援刪除 |
+| 1 | 交辦單收文 | 填表 → 立即寫入 DB → 預覽，支援刪除／修改 |
+| 2 | 案件陳報 | 刑案 / 一般陳報，左右並列預覽，支援刪除／修改 |
 | 3 | 簽收單列印 | 輸入日期 → 產生 PDF 預覽 → 下載 / 列印 |
 
 ---
@@ -48,9 +48,10 @@ pip install PySide6 pandas openpyxl pyinstaller matplotlib
 │   ├── __init__.py       # 統一 re-export
 │   ├── status.py         # 狀態/日期邏輯（calcOverdue, colorForStatus）
 │   ├── widgets.py        # 元件行為（setupFilterCombo, setupDateEditToToday）
-│   └── table.py          # 表格工具（setupPreviewTable, autoResizeTable,
-│                         #   makeDeleteBtn, FIXED_COL_WIDTHS）
-│                         #   支援 stretch_col / fixed_overrides / cap_mode 參數
+│   ├── table.py          # 表格工具（setupPreviewTable, autoResizeTable,
+│   │                     #   makeDeleteBtn, FIXED_COL_WIDTHS）
+│   │                     #   支援 stretch_col / fixed_overrides / cap_mode 參數
+│   └── edit_dialog.py    # 修改彈窗（TaskEditDialog, CriminalEditDialog, GeneralEditDialog）
 │
 ├── tabs/
 │   ├── __init__.py       # re-export 所有 Tab 類別
@@ -74,24 +75,20 @@ pip install PySide6 pandas openpyxl pyinstaller matplotlib
 
 ---
 
-## 各檔案行數
+## DEBUG_MODE
 
-| 檔案 | 行數 |
-|------|------|
-| main.py | 202 |
-| loading_screen.py | 237 |
-| db_utils.py | 106 |
-| base_tab.py | 44 |
-| ui_utils/status.py | 31 |
-| ui_utils/widgets.py | 89 |
-| ui_utils/table.py | 195 |
-| ui_utils/\_\_init\_\_.py | 23 |
-| tabs/tab_dispatch.py | 233 |
-| tabs/tab_receive.py | 222 |
-| tabs/tab_report.py | 481 |
-| tabs/tab_print.py | 582 |
-| tabs/\_\_init\_\_.py | 6 |
-| **合計** | **2451** |
+位置：`db_utils.py` 第一行，**上線前務必改為 `False`**。
+
+```python
+DEBUG_MODE = True   # 開發測試用
+DEBUG_MODE = False  # 上線正式版
+```
+
+| 功能 | `False`（正式） | `True`（測試） |
+|------|----------------|---------------|
+| Tab 0 已發文編號 | 純文字，不可點修改 | 超連結，可點修改 |
+| Tab 1 送出收文後 | 清除表單 | 保留表單內容 |
+| Tab 2 送出陳報後 | 清除表單 | 保留表單內容 |
 
 ---
 
@@ -125,6 +122,36 @@ TAB_CLASSES = {
 
 ---
 
+## 新增 UI 元件注意事項
+
+> ⚠️ 本專案使用自訂 Apple HIG QSS 樣式（`theme.py`），所有新增的 `QDialog`、`QWidget` 都必須明確設定背景色與文字色，否則會繼承到深色背景導致文字不可見。
+
+> ⚠️ 全域字體為 **14pt**（`theme.py`），目標環境 Windows 顯示縮放為 **125%**，計算元件寬度時以此為基準：
+> - 全型字寬：`24 * 1.8 = 43px`
+> - 半型字寬：`24 * 0.65 = 16px`
+> - ComboBox / DateEdit 需額外加 36px（padding + dropdown arrow）
+> - CheckBox indicator：25px
+
+```python
+self.setStyleSheet("""
+    QDialog, QWidget {
+        background-color: #FFFFFF;
+        color: #000000;
+    }
+    QLineEdit, QComboBox, QDateEdit {
+        background-color: #FFFFFF;
+        color: #000000;
+        border: 1px solid #CCCCCC;
+        border-radius: 4px;
+        padding: 4px 8px;
+    }
+    QCheckBox, QRadioButton { color: #000000; }
+    QLabel { color: #000000; }
+""")
+```
+
+---
+
 ## ui_utils 擴充規則
 
 | 需求 | 做法 |
@@ -152,17 +179,36 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 | `msgCritical(title, text)` | 錯誤 | 確定（藍） |
 | `confirmBox(title, text, confirm_text, cancel_text, confirm_danger, default_confirm)` | 確認對話框 | 自訂 |
 
-**測試開關：**
+---
+
+## 修改功能（EditDialog）
+
+所有修改彈窗放在 `ui_utils/edit_dialog.py`，動態產生表單，不使用 `.ui` 檔。
+
+| Class | 對應 Tab | 標題 |
+|-------|---------|------|
+| `TaskEditDialog` | Tab 0 / Tab 1 | 交辦單修改 |
+| `CriminalEditDialog` | Tab 2 刑案 | 刑案陳報修改 |
+| `GeneralEditDialog` | Tab 2 一般 | 一般陳報修改 |
+
+**觸發方式**：點擊預覽表格的編號欄超連結。
+
+**版面常數**（以 TaskEditDialog 為例）：
 ```python
-# db_utils.py
-DEBUG_MODE = True  # 開啟所有 disable/greyout
+self._LABEL_W = 120   # label 區寬度
+self._FIELD_W = 340   # 輸入元件總寬度
+self._MARGIN  = 40    # 左右 margin
+# Dialog 總寬 = 500px
 ```
+
+**刪除後重新綁定**：刪除列後需同時重新綁定刪除按鈕和編號 QLabel 的 row index，
+否則點擊會指向錯誤的列。實作參考各 Tab 的 `_rebindDocIdCell`。
 
 ---
 
 ## 刪除行為說明
 
-Tab 1（交辦單收文）和 Tab 2（公文陳報）的刪除：
+Tab 1（交辦單收文）和 Tab 2（案件陳報）的刪除：
 - **不是真的 DELETE**，而是清空該筆欄位（`doc_id` 保留）
 - 流水號永久佔用，無法再被使用
 - 彈窗提示：「本筆資料將被刪除，本文號（XXX）無法再被使用，確認刪除？」
@@ -200,13 +246,9 @@ Tab 1（交辦單收文）和 Tab 2（公文陳報）的刪除：
 | 人名 | 王小明 | 王小明-19.06（去掉 `-` 後綴） |
 | 日期 | MM-DD-YYYY | YYYY-MM-DD |
 
-> ⚠️ **EditDialog 刷新注意**：`get_updated()` 從 View 拉回的刑案狀態是 DB 原始值（`A_現行犯` 等），
-> 刷新表格前必須透過 `_STATUS_MAP` 轉換成預覽短名（`現行/到案/未到`），
-> 不可直接將 View 的值寫入表格。轉換邏輯在 `tab_report.py` 的 `_onEditCrimRow`。
->
-> 同樣地，一般陳報的分類也是 DB 原始值（`D_業務陳報` 等），
-> 須透過 `_CAT_MAP` 轉換成預覽短名（`業務/其他/相驗`）。
-> 轉換邏輯在 `tab_report.py` 的 `_onEditGenRow`。
+> ⚠️ **EditDialog 刷新注意**：`get_updated()` 從 View 拉回的值是 DB 原始值，刷新表格前必須轉換：
+> - 刑案狀態：透過 `_STATUS_MAP` 轉成 `現行/到案/未到`，位於 `_onEditCrimRow`
+> - 一般分類：透過 `_CAT_MAP` 轉成 `業務/其他/相驗`，位於 `_onEditGenRow`
 
 ---
 

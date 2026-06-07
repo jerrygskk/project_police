@@ -2,11 +2,11 @@ from PySide6.QtCore import Qt, QDate
 from PySide6.QtWidgets import (
     QTableWidgetItem, QPushButton, QVBoxLayout,
     QDateEdit, QComboBox, QLineEdit, QCheckBox,
-    QTableWidget, QMessageBox
+    QTableWidget
 )
 
 from base_tab import BaseTab
-from db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgInfo, msgWarning, msgCritical, confirmBox
+from db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgWarning, msgCritical, confirmBox
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, TaskEditDialog,
     setupFilterCombo, setupDateEditToToday,

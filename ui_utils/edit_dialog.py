@@ -8,7 +8,7 @@ import sqlite3
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QComboBox, QDateEdit, QCheckBox,
-    QPushButton, QDialogButtonBox, QRadioButton,
+    QPushButton, QRadioButton,
 )
 from PySide6.QtCore import Qt, QDate
 
