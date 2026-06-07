@@ -6,7 +6,8 @@ from PySide6.QtWidgets import QTableWidgetItem, QPushButton
 from base_tab import BaseTab
 from db_utils import msgInfo, msgWarning, msgCritical, confirmBox, DEBUG_MODE
 from ui_utils import (
-    setupPreviewTable, autoResizeTable, makeDeleteBtn, TaskEditDialog,
+    setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
+    TaskEditDialog,
     setupFilterCombo, setupDateEditToToday,
     calcOverdue, colorForStatus,
 )
@@ -52,6 +53,13 @@ class TabDispatch(BaseTab):
         if btn_send:  btn_send.clicked.connect(self.handleDispatch)
         if btn_clear: btn_clear.clicked.connect(self.handleClearAll)
 
+    # ── BaseTab 介面 ──────────────────────────────────────
+    def get_tables(self):
+        return [self.table] if self.table else []
+
+    def get_focus_widget(self):
+        return self.lineEdit
+
     # ── 查詢單筆 ──────────────────────────────────────────
     def handleQuery(self):
         if not self.lineEdit:
@@ -91,7 +99,6 @@ class TabDispatch(BaseTab):
                 msgInfo("提示", f"「{serial}」已在清單中")
             else:
                 # DB_COLS = ["編號", "交辦事由", "業務組", "所承辦人", "限辦日期", "發文日期"]
-                # row[0]=編號, row[1]=交辦事由, row[2]=業務組, row[3]=所承辦人
                 missing = []
                 if not row[2]: missing.append("業務組")
                 if not row[1]: missing.append("交辦事由")
@@ -110,8 +117,14 @@ class TabDispatch(BaseTab):
             msgWarning("查無資料", f"找不到：{serial}")
 
     def _rowExists(self, doc_id):
+        """檢查 doc_id 是否已在表格中（從 QLabel widget 讀取）"""
         if not self.table:
             return False
+        for r in range(self.table.rowCount()):
+            lbl = self.table.cellWidget(r, 1)
+            if lbl and self._docIdFromLabel(lbl) == doc_id:
+                return True
+        # fallback：純文字 item（已發文且非 DEBUG_MODE）
         for r in range(self.table.rowCount()):
             item = self.table.item(r, 1)
             if item and item.text() == doc_id:
@@ -124,16 +137,17 @@ class TabDispatch(BaseTab):
         pos = self.table.rowCount()
         self.table.insertRow(pos)
 
-        container, _ = makeDeleteBtn(lambda _, r=pos: self._deleteRow(r))
-        self.table.setCellWidget(pos, 0, container)
-
+        doc_id       = str(data[0]) if data[0] else ""
         deadline_str = str(data[4]) if data[4] else ""
         dispatch_str = str(data[5]) if data[5] else ""
-        doc_id       = str(data[0]) if data[0] else ""
 
-        # 編號欄（col 1）：已發文 → 純文字；未發文 → 超連結
-        is_dispatched = bool(dispatch_str)
-        self._setDocIdCell(pos, 1, doc_id, is_dispatched)
+        # 刪除按鈕（col 0）：以 doc_id 為準，不用 row index
+        container, _ = makeDeleteBtn(lambda _, d=doc_id: self._deleteByDocId(d))
+        self.table.setCellWidget(pos, 0, container)
+
+        # 編號欄（col 1）：已發文 + 非 DEBUG_MODE → 純文字，否則超連結
+        clickable = not dispatch_str or DEBUG_MODE
+        setDocIdLinkCell(self.table, pos, 1, doc_id, self._onEditRow, clickable=clickable)
 
         # 其他欄位（col 2~4）
         for i in range(1, 4):
@@ -155,27 +169,12 @@ class TabDispatch(BaseTab):
         self.table.setItem(pos, 7, status_item)
         autoResizeTable(self.table)
 
-    def _setDocIdCell(self, row, col, doc_id, is_dispatched):
-        """編號欄：已發文 → 純文字，未發文 → 超連結（DEBUG_MODE 下全部可點）"""
-        from PySide6.QtWidgets import QLabel
-        if (is_dispatched and not DEBUG_MODE) or not doc_id:
-            item = QTableWidgetItem(doc_id)
-            item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(row, col, item)
-        else:
-            lbl = QLabel(f'<a href="{doc_id}" style="color:#4A7FA5;">{doc_id}</a>')
-            lbl.setAlignment(Qt.AlignCenter)
-            lbl.setOpenExternalLinks(False)
-            lbl.linkActivated.connect(lambda link: self._onEditRow(row, link))
-            self.table.setCellWidget(row, col, lbl)
-
     def _onEditRow(self, row, doc_id):
         """點擊超連結 → 開啟 EditDialog"""
         dlg = TaskEditDialog(self.db_path, doc_id, self.table)
         if dlg.exec():
             updated = dlg.get_updated()
             if updated:
-                # 刷新表格該列（col 2~7）
                 # updated = (編號, 交辦事由, 業務組, 所承辦人, 限辦日期, 發文日期, 狀態)
                 _, subject, dept, proc, deadline, dispatch, status = updated
                 for col, val in enumerate([subject, dept, proc], start=2):
@@ -193,27 +192,22 @@ class TabDispatch(BaseTab):
                     status_item.setForeground(color)
                 self.table.setItem(row, 7, status_item)
 
-    def _rebindDocIdCell(self, row, col):
-        """重新綁定 QLabel 的 linkActivated（刪除後 row index 變動時使用）"""
-        lbl = self.table.cellWidget(row, col)
-        if not lbl:
-            return
-        lbl.linkActivated.disconnect()
-        lbl.linkActivated.connect(lambda link, r=row: self._onEditRow(r, link))
-
-    def _deleteRow(self, row):
+    # ── 刪除（第1點：doc_id 驅動，不需重新綁定）────────────
+    def _deleteByDocId(self, doc_id):
+        """從 doc_id 找到對應列並移除，不操作 row index。"""
         if not self.table:
             return
-        self.table.removeRow(row)
-        # 刪除後重新綁定所有刪除按鈕和編號超連結的 row index
         for r in range(self.table.rowCount()):
-            container = self.table.cellWidget(r, 0)
-            if container:
-                btn = container.findChild(QPushButton)
-                if btn:
-                    btn.clicked.disconnect()
-                    btn.clicked.connect(lambda _, ri=r: self._deleteRow(ri))
-            self._rebindDocIdCell(r, 1)
+            # 先找 QLabel（超連結欄）
+            lbl = self.table.cellWidget(r, 1)
+            if lbl and self._docIdFromLabel(lbl) == doc_id:
+                self.table.removeRow(r)
+                return
+            # fallback：純文字 item
+            item = self.table.item(r, 1)
+            if item and item.text() == doc_id:
+                self.table.removeRow(r)
+                return
 
     # ── 全部清除 ──────────────────────────────────────────
     def handleClearAll(self):
@@ -230,12 +224,18 @@ class TabDispatch(BaseTab):
             msgInfo("提示", "清單是空的，請先掃入文號")
             return
 
-        today   = datetime.now().strftime("%Y-%m-%d")
-        pending = [
-            (r, self.table.item(r, 1).text())
-            for r in range(self.table.rowCount())
-            if self.table.item(r, 1)
-        ]
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        # 收集所有列的 doc_id（從 widget 或 item 讀取）
+        pending = []
+        for r in range(self.table.rowCount()):
+            lbl = self.table.cellWidget(r, 1)
+            doc_id = self._docIdFromLabel(lbl) if lbl else None
+            if not doc_id:
+                item = self.table.item(r, 1)
+                doc_id = item.text() if item else None
+            if doc_id:
+                pending.append((r, doc_id))
 
         dispatch_day = (
             self.dispatch_date.date().toString("yyyy-MM-dd")

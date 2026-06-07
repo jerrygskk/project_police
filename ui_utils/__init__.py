@@ -8,6 +8,7 @@ from .table   import (
     setupPreviewTable,
     autoResizeTable,
     makeDeleteBtn,
+    setDocIdLinkCell,
     FIXED_COL_WIDTHS,
 )
 
@@ -21,6 +22,7 @@ __all__ = [
     "setupPreviewTable",
     "autoResizeTable",
     "makeDeleteBtn",
+    "setDocIdLinkCell",
     "TaskEditDialog",
     "CriminalEditDialog",
     "GeneralEditDialog",

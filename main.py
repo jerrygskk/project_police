@@ -110,18 +110,14 @@ class DocumentManager:
             return
 
         def _resize():
-            for attr in ['table', 'recv_table', 'crim_table', 'gen_table']:
-                t = getattr(tab_obj, attr, None)
+            for t in tab_obj.get_tables():
                 if t and t.columnCount() > 0:
                     autoResizeTable(t)
 
         def _setFocus():
-            if hasattr(tab_obj, 'lineEdit') and tab_obj.lineEdit:
-                tab_obj.lineEdit.setFocus()
-            elif hasattr(tab_obj, 'recv_subject') and tab_obj.recv_subject:
-                tab_obj.recv_subject.setFocus()
-            elif hasattr(tab_obj, 'crim_subject') and tab_obj.crim_subject:
-                tab_obj.crim_subject.setFocus()
+            w = tab_obj.get_focus_widget()
+            if w:
+                w.setFocus()
 
         QTimer.singleShot(150, _resize)
         QTimer.singleShot(50, _setFocus)

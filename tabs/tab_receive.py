@@ -8,7 +8,8 @@ from PySide6.QtWidgets import (
 from base_tab import BaseTab
 from db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgWarning, msgCritical, confirmBox
 from ui_utils import (
-    setupPreviewTable, autoResizeTable, makeDeleteBtn, TaskEditDialog,
+    setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
+    TaskEditDialog,
     setupFilterCombo, setupDateEditToToday,
     calcOverdue, colorForStatus,
 )
@@ -68,6 +69,13 @@ class TabReceive(BaseTab):
         if btn_clear:  btn_clear.clicked.connect(self._formClear)
         if btn_submit: btn_submit.clicked.connect(self._submit)
         if self.recv_subject: self.recv_subject.setFocus()
+
+    # ── BaseTab 介面 ──────────────────────────────────────
+    def get_tables(self):
+        return [self.recv_table] if self.recv_table else []
+
+    def get_focus_widget(self):
+        return self.recv_subject
 
     # ── 免覆 Checkbox ─────────────────────────────────────
     def _onNoDeadlineChanged(self, state):
@@ -151,8 +159,6 @@ class TabReceive(BaseTab):
         except Exception as e:
             msgCritical("寫入失敗", str(e))
 
-
-
     # ── 預覽表格 ──────────────────────────────────────────
     def _insertPreviewRow(self, doc_id, subject, dept_name, processor_name, recv_date, deadline):
         if not self.recv_table:
@@ -160,12 +166,12 @@ class TabReceive(BaseTab):
         pos = self.recv_table.rowCount()
         self.recv_table.insertRow(pos)
 
-        # 刪除按鈕（col 0）
-        container, btn = makeDeleteBtn(lambda _, r=pos: self._deleteRow(r))
+        # 刪除按鈕（col 0）：以 doc_id 為準
+        container, _ = makeDeleteBtn(lambda _, d=doc_id: self._deleteByDocId(d))
         self.recv_table.setCellWidget(pos, 0, container)
 
-        # 編號欄（col 1）：超連結
-        self._setDocIdCell(pos, 1, doc_id)
+        # 編號欄（col 1）：收文全部可點
+        setDocIdLinkCell(self.recv_table, pos, 1, doc_id, self._onEditRow, clickable=True)
 
         # 資料欄（col 2~6）
         for col, val in enumerate([subject, dept_name, processor_name, recv_date, deadline], start=2):
@@ -182,23 +188,6 @@ class TabReceive(BaseTab):
             status_item.setForeground(color)
         self.recv_table.setItem(pos, 7, status_item)
         autoResizeTable(self.recv_table)
-
-    def _setDocIdCell(self, row, col, doc_id):
-        """編號欄：超連結（收文無發文限制，全部可點）"""
-        from PySide6.QtWidgets import QLabel
-        lbl = QLabel(f'<a href="{doc_id}" style="color:#4A7FA5;">{doc_id}</a>')
-        lbl.setAlignment(Qt.AlignCenter)
-        lbl.setOpenExternalLinks(False)
-        lbl.linkActivated.connect(lambda link, r=row: self._onEditRow(r, link))
-        self.recv_table.setCellWidget(row, col, lbl)
-
-    def _rebindDocIdCell(self, row, col):
-        """重新綁定 QLabel 的 linkActivated（刪除後 row index 變動時使用）"""
-        lbl = self.recv_table.cellWidget(row, col)
-        if not lbl:
-            return
-        lbl.linkActivated.disconnect()
-        lbl.linkActivated.connect(lambda link, r=row: self._onEditRow(r, link))
 
     def _onEditRow(self, row, doc_id):
         """點擊超連結 → 開啟 TaskEditDialog"""
@@ -223,18 +212,10 @@ class TabReceive(BaseTab):
                     status_item.setForeground(color)
                 self.recv_table.setItem(row, 7, status_item)
 
-    def _deleteRow(self, row):
+    # ── 刪除（第1點：doc_id 驅動，不需重新綁定）────────────
+    def _deleteByDocId(self, doc_id):
         if not self.recv_table:
             return
-        # col 1 是 QLabel widget，用 linkActivated 的 href 取 doc_id
-        lbl = self.recv_table.cellWidget(row, 1)
-        if not lbl:
-            return
-        import re
-        m = re.search(r'href="([^"]+)"', lbl.text())
-        if not m:
-            return
-        doc_id = m.group(1)
 
         reply = confirmBox(
             "確認刪除",
@@ -259,13 +240,9 @@ class TabReceive(BaseTab):
             msgCritical("刪除失敗", str(e))
             return
 
-        self.recv_table.removeRow(row)
-        # 重新綁定刪除按鈕和編號超連結的 row index
+        # 從 doc_id 找到對應列移除，不操作 row index
         for r in range(self.recv_table.rowCount()):
-            container = self.recv_table.cellWidget(r, 0)
-            if container:
-                btn = container.findChild(QPushButton)
-                if btn:
-                    btn.clicked.disconnect()
-                    btn.clicked.connect(lambda _, ri=r: self._deleteRow(ri))
-            self._rebindDocIdCell(r, 1)
+            lbl = self.recv_table.cellWidget(r, 1)
+            if lbl and self._docIdFromLabel(lbl) == doc_id:
+                self.recv_table.removeRow(r)
+                return

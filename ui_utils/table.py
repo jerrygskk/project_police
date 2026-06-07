@@ -97,6 +97,26 @@ def autoResizeTable(table):
     table.setProperty("init_done", True)
 
 
+def setDocIdLinkCell(table, row, col, doc_id, on_click, clickable=True):
+    """
+    在表格 (row, col) 放一個編號欄。
+    clickable=True  → 顯示超連結，點擊觸發 on_click(row, doc_id)
+    clickable=False → 純文字，不可點擊
+    權限控管時，呼叫端自行計算 clickable 值再傳入，此函式不需知道權限邏輯。
+    """
+    from PySide6.QtWidgets import QLabel, QTableWidgetItem
+    if clickable and doc_id:
+        lbl = QLabel(f'<a href="{doc_id}" style="color:#4A7FA5;">{doc_id}</a>')
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setOpenExternalLinks(False)
+        lbl.linkActivated.connect(lambda link, r=row: on_click(r, link))
+        table.setCellWidget(row, col, lbl)
+    else:
+        item = QTableWidgetItem(doc_id or "")
+        item.setTextAlignment(Qt.AlignCenter)
+        table.setItem(row, col, item)
+
+
 def makeDeleteBtn(callback):
     btn = QPushButton("✕")
     btn.setObjectName("deleteBtn")

@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, QDate
+from PySide6.QtCore import Qt, QDate, QTimer
 from PySide6.QtWidgets import (
     QTableWidgetItem, QRadioButton, QVBoxLayout, QHBoxLayout,
     QStackedWidget, QSizePolicy,
@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 from base_tab import BaseTab
 from db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgInfo, msgWarning, msgCritical, confirmBox
 from ui_utils import (
-    setupPreviewTable, autoResizeTable, makeDeleteBtn,
+    setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
     setupFilterCombo, setupDateEditToToday,
     CriminalEditDialog, GeneralEditDialog,
 )
@@ -45,6 +45,10 @@ QRadioButton:checked {
 class TabReport(BaseTab):
     """公文陳報：刑案 / 一般陳報，左右並列預覽"""
 
+    # ── 第4點：DB 原始值 → 預覽顯示名 的對照表提成類別常數 ──
+    _STATUS_MAP = {'A_現行犯': '現行', 'B_到案': '到案', 'B_未到案': '未到'}
+    _CAT_MAP    = {'D_業務陳報': '業務', 'J_其他': '其他', 'F_司法相驗': '相驗'}
+
     def setup(self, tab_index):
         tab = self.tab_widget.widget(tab_index)
         if not tab:
@@ -75,11 +79,9 @@ class TabReport(BaseTab):
         self.form_stack = inner.findChild(QStackedWidget, 'formStack')
 
         # ── 刑案欄位（page 0） ────────────────────────────
-        # 發文分類改用 radio button（現行犯/到案/未到案）
         self.radio_status_a = inner.findChild(QRadioButton, 'radio_status_a')  # CS01 現行犯
         self.radio_status_b = inner.findChild(QRadioButton, 'radio_status_b')  # CS02 到案
         self.radio_status_c = inner.findChild(QRadioButton, 'radio_status_c')  # CS03 未到案
-        # 套用與陳報類型相同的 radio 樣式
         for rb in [self.radio_status_a, self.radio_status_b, self.radio_status_c]:
             if rb:
                 rb.setStyleSheet(RADIO_STYLE)
@@ -91,7 +93,6 @@ class TabReport(BaseTab):
         self.crim_reporter  = inner.findChild(QLineEdit, 'crim_reporter')
 
         # ── 一般欄位（page 1） ────────────────────────────
-        # 發文分類改用 radio（業務/其他/相驗）
         self.radio_gen_cat_a = inner.findChild(QRadioButton, 'radio_gen_cat_a')  # GC01 業務陳報
         self.radio_gen_cat_b = inner.findChild(QRadioButton, 'radio_gen_cat_b')  # GC03 其他
         self.radio_gen_cat_c = inner.findChild(QRadioButton, 'radio_gen_cat_c')  # GC02 司法相驗
@@ -106,8 +107,6 @@ class TabReport(BaseTab):
         self.crim_table = inner.findChild(QTableWidget, 'crim_tableWidget')
         self.gen_table  = inner.findChild(QTableWidget, 'gen_tableWidget')
 
-        # 找到 previewLayout 並設定 stretch
-        # （findChild 對 layout 不可靠，用迴圈找）
         if self.crim_table:
             self.crim_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         if self.gen_table:
@@ -147,23 +146,17 @@ class TabReport(BaseTab):
 
         # ── 填入下拉選單 ──────────────────────────────────
         setupFilterCombo(self.rpt_sender,     self._personnel)
-        # crim_status 已改為 radio，不需要 setupFilterCombo
         setupFilterCombo(self.crim_casetype,  self._case_types)
         setupFilterCombo(self.crim_processor, self._personnel)
         setupFilterCombo(self.crim_receiver,  self._personnel)
-        # gen_cat 已改為 radio，不需要 setupFilterCombo
         setupFilterCombo(self.gen_dept,       self._depts)
         setupFilterCombo(self.gen_processor,  self._personnel)
 
         # ── 預覽表格初始化 ────────────────────────────────
         if self.crim_table:
-            # 刑案「陳報主旨」固定 184px（10全形），stretch 給「報案人」
-            # ⚠️ 一般「陳報主旨」同樣固定 184px，兩者皆用 fixed_overrides 區分 stretch 欄
             setupPreviewTable(self.crim_table, CRIM_HEADERS, cap_mode=True,
                               stretch_col=8, fixed_overrides={"陳報主旨": 184})
         if self.gen_table:
-            # 一般陳報「陳報主旨」固定 184px（10全形），stretch 給「分類」
-            # ⚠️ 刑案「陳報主旨」仍為 stretch，兩者同名但行為不同，故用 fixed_overrides 區分
             setupPreviewTable(self.gen_table, GEN_HEADERS, cap_mode=True,
                               stretch_col=5, fixed_overrides={"陳報主旨": 184})
 
@@ -194,6 +187,13 @@ class TabReport(BaseTab):
         if btn_copy_to_processor:
             btn_copy_to_processor.clicked.connect(self._copyReceiverToProcessor)
 
+    # ── BaseTab 介面 ──────────────────────────────────────
+    def get_tables(self):
+        return [t for t in [self.crim_table, self.gen_table] if t]
+
+    def get_focus_widget(self):
+        return self.crim_subject
+
     # ── 輔助：從 DB 載入二元組列表 ──────────────────────────
     def _loadTable(self, sql):
         try:
@@ -207,23 +207,18 @@ class TabReport(BaseTab):
 
     # ── 互填：同承辦 / 同受理 ────────────────────────────────
     def _copyProcessorToReceiver(self):
-        """同承辦：把承辦人員的值填入受理人員"""
         if not self.crim_processor or not self.crim_receiver:
             return
-        idx = self.crim_processor.currentIndex()
         data = self.crim_processor.currentData()
         text = self.crim_processor.currentText()
         if data:
-            # 在 receiver combo 找對應 data 的 index
             for i in range(self.crim_receiver.count()):
                 if self.crim_receiver.itemData(i) == data:
                     self.crim_receiver.setCurrentIndex(i)
                     return
-            # 找不到就直接設文字
             self.crim_receiver.setEditText(text)
 
     def _copyReceiverToProcessor(self):
-        """同受理：把受理人員的值填入承辦人員"""
         if not self.crim_receiver or not self.crim_processor:
             return
         data = self.crim_receiver.currentData()
@@ -237,7 +232,6 @@ class TabReport(BaseTab):
 
     # ── 清除表單（保留送文日期、發文人員）──────────────────
     def _formClear(self):
-        # 發文分類 radio 重設為現行犯
         if self.radio_status_a:
             self.radio_status_a.setChecked(True)
         setupFilterCombo(self.crim_casetype,  self._case_types)
@@ -246,7 +240,6 @@ class TabReport(BaseTab):
         if self.crim_subject:  self.crim_subject.clear()
         if self.crim_occdate:  self.crim_occdate.setDate(QDate.currentDate())
         if self.crim_reporter: self.crim_reporter.clear()
-        # gen_cat 已改為 radio，重設為業務
         if self.radio_gen_cat_a: self.radio_gen_cat_a.setChecked(True)
         setupFilterCombo(self.gen_dept,      self._depts)
         setupFilterCombo(self.gen_processor, self._personnel)
@@ -264,8 +257,7 @@ class TabReport(BaseTab):
             self._submitGeneral(report_date, sender_id)
 
     def _submitCriminal(self, report_date, sender_id):
-        # 發文分類從 radio 讀取
-        # ⚠️ 以下顯示名稱與 DB 不同，若修改 Ref_Case_Status 需一起更新
+        # ⚠️ 顯示名稱與 DB 不同，若修改 Ref_Case_Status 需一起更新
         if self.radio_status_a and self.radio_status_a.isChecked():
             status_id, status_name = 'CS01', '現行'   # DB: A_現行犯
         elif self.radio_status_b and self.radio_status_b.isChecked():
@@ -319,8 +311,7 @@ class TabReport(BaseTab):
             msgCritical("寫入失敗", str(e))
 
     def _submitGeneral(self, report_date, sender_id):
-        # 發文分類從 radio 讀取（業務=GC01, 其他=GC03, 相驗=GC02）
-        # ⚠️ 以下顯示名稱與 DB 不同，若修改 Ref_General_Category 需一起更新
+        # ⚠️ 顯示名稱與 DB 不同，若修改 Ref_General_Category 需一起更新
         if self.radio_gen_cat_a and self.radio_gen_cat_a.isChecked():
             cat_id, cat_name = 'GC01', '業務'   # DB: D_業務陳報
         elif self.radio_gen_cat_b and self.radio_gen_cat_b.isChecked():
@@ -370,31 +361,20 @@ class TabReport(BaseTab):
                        processor, receiver, reporter, occ_date):
         if not self.crim_table:
             return
-
-        def _trimName(name):
-            """去掉 - 後面的內容，例如 匿名-19.06 → 匿名"""
-            return name.split('-')[0] if name and '-' in name else (name or "")
-
-        def _fmtDate(d):
-            """YYYY-MM-DD → MM-DD-YYYY，只改預覽顯示"""
-            if not d:
-                return ""
-            try:
-                from datetime import datetime
-                return datetime.strptime(str(d), "%Y-%m-%d").strftime("%m-%d-%Y")
-            except Exception:
-                return str(d)
-
         pos = self.crim_table.rowCount()
         self.crim_table.insertRow(pos)
-        container, _ = makeDeleteBtn(lambda _, r=pos: self._deleteCrimRow(r))
+
+        # 刪除按鈕（col 0）：以 doc_id 為準
+        container, _ = makeDeleteBtn(lambda _, d=doc_id: self._deleteCrimByDocId(d))
         self.crim_table.setCellWidget(pos, 0, container)
+
         # 編號欄（col 1）：超連結
-        self._setCrimDocIdCell(pos, 1, doc_id)
+        setDocIdLinkCell(self.crim_table, pos, 1, doc_id, self._onEditCrimRow, clickable=True)
+
         for col, val in enumerate([
             status, casetype, subject,
-            _trimName(processor), _trimName(receiver),
-            _fmtDate(occ_date), _trimName(reporter),
+            self._trimName(processor), self._trimName(receiver),
+            self._fmtDate(occ_date), self._trimName(reporter),
         ], start=2):
             item = QTableWidgetItem(str(val) if val else "")
             item.setTextAlignment(Qt.AlignCenter)
@@ -404,38 +384,23 @@ class TabReport(BaseTab):
     def _insertGenRow(self, doc_id, dept, subject, processor, cat):
         if not self.gen_table:
             return
-
-        def _trimName(name):
-            return name.split('-')[0] if name and '-' in name else (name or "")
-
         pos = self.gen_table.rowCount()
         self.gen_table.insertRow(pos)
-        container, _ = makeDeleteBtn(lambda _, r=pos: self._deleteGenRow(r))
+
+        # 刪除按鈕（col 0）：以 doc_id 為準
+        container, _ = makeDeleteBtn(lambda _, d=doc_id: self._deleteGenByDocId(d))
         self.gen_table.setCellWidget(pos, 0, container)
+
         # 編號欄（col 1）：超連結
-        self._setGenDocIdCell(pos, 1, doc_id)
-        for col, val in enumerate([dept, subject, _trimName(processor), cat], start=2):
+        setDocIdLinkCell(self.gen_table, pos, 1, doc_id, self._onEditGenRow, clickable=True)
+
+        for col, val in enumerate([dept, subject, self._trimName(processor), cat], start=2):
             item = QTableWidgetItem(str(val) if val else "")
             item.setTextAlignment(Qt.AlignCenter)
             self.gen_table.setItem(pos, col, item)
         autoResizeTable(self.gen_table)
 
-    # ── 刑案編號超連結 ───────────────────────────────────────
-    def _setCrimDocIdCell(self, row, col, doc_id):
-        from PySide6.QtWidgets import QLabel
-        lbl = QLabel(f'<a href="{doc_id}" style="color:#4A7FA5;">{doc_id}</a>')
-        lbl.setAlignment(Qt.AlignCenter)
-        lbl.setOpenExternalLinks(False)
-        lbl.linkActivated.connect(lambda link, r=row: self._onEditCrimRow(r, link))
-        self.crim_table.setCellWidget(row, col, lbl)
-
-    def _rebindCrimDocIdCell(self, row, col):
-        lbl = self.crim_table.cellWidget(row, col)
-        if not lbl:
-            return
-        lbl.linkActivated.disconnect()
-        lbl.linkActivated.connect(lambda link, r=row: self._onEditCrimRow(r, link))
-
+    # ── 修改回呼 ────────────────────────────────────────────
     def _onEditCrimRow(self, row, doc_id):
         dlg = CriminalEditDialog(self.db_path, doc_id, self.crim_table)
         if dlg.exec():
@@ -443,41 +408,18 @@ class TabReport(BaseTab):
             if updated:
                 # updated = (送文編號, 發文分類, 案類, 嫌疑人_案由, 主承辦人, 受理人, 受理日期, 報案人)
                 _, status_raw, casetype, subject, processor, receiver, occ_date, reporter = updated
-                # View 回傳原始值（A_現行犯/B_到案/B_未到案），轉成預覽顯示短名
-                _STATUS_MAP = {'A_現行犯': '現行', 'B_到案': '到案', 'B_未到案': '未到'}
-                status = _STATUS_MAP.get(str(status_raw) if status_raw else '', str(status_raw) if status_raw else '')
-                def _trim(n): return n.split('-')[0] if n and '-' in n else (n or "")
-                def _fmtDate(d):
-                    if not d: return ""
-                    try:
-                        from datetime import datetime as dt
-                        return dt.strptime(str(d), "%Y-%m-%d").strftime("%m-%d-%Y")
-                    except Exception: return str(d)
+                # 第4點：使用類別常數轉換
+                status = self._STATUS_MAP.get(str(status_raw) if status_raw else '',
+                                              str(status_raw) if status_raw else '')
                 for col, val in enumerate([
                     status, casetype, subject,
-                    _trim(processor), _trim(receiver),
-                    _fmtDate(occ_date), _trim(reporter),
+                    self._trimName(processor), self._trimName(receiver),
+                    self._fmtDate(occ_date), self._trimName(reporter),
                 ], start=2):
                     item = QTableWidgetItem(str(val) if val else "")
                     item.setTextAlignment(Qt.AlignCenter)
                     self.crim_table.setItem(row, col, item)
                 autoResizeTable(self.crim_table)
-
-    # ── 一般編號超連結 ───────────────────────────────────────
-    def _setGenDocIdCell(self, row, col, doc_id):
-        from PySide6.QtWidgets import QLabel
-        lbl = QLabel(f'<a href="{doc_id}" style="color:#4A7FA5;">{doc_id}</a>')
-        lbl.setAlignment(Qt.AlignCenter)
-        lbl.setOpenExternalLinks(False)
-        lbl.linkActivated.connect(lambda link, r=row: self._onEditGenRow(r, link))
-        self.gen_table.setCellWidget(row, col, lbl)
-
-    def _rebindGenDocIdCell(self, row, col):
-        lbl = self.gen_table.cellWidget(row, col)
-        if not lbl:
-            return
-        lbl.linkActivated.disconnect()
-        lbl.linkActivated.connect(lambda link, r=row: self._onEditGenRow(r, link))
 
     def _onEditGenRow(self, row, doc_id):
         dlg = GeneralEditDialog(self.db_path, doc_id, self.gen_table)
@@ -486,27 +428,19 @@ class TabReport(BaseTab):
             if updated:
                 # updated = (送文編號, 業務單位, 陳報主旨, 陳報人, 分類)
                 _, dept, subject, processor, cat_raw = updated
-                _CAT_MAP = {'D_業務陳報': '業務', 'J_其他': '其他', 'F_司法相驗': '相驗'}
-                cat = _CAT_MAP.get(str(cat_raw) if cat_raw else '', str(cat_raw) if cat_raw else '')
-                def _trim(n): return n.split('-')[0] if n and '-' in n else (n or "")
-                for col, val in enumerate([dept, subject, _trim(processor), cat], start=2):
+                # 第4點：使用類別常數轉換
+                cat = self._CAT_MAP.get(str(cat_raw) if cat_raw else '',
+                                        str(cat_raw) if cat_raw else '')
+                for col, val in enumerate([dept, subject, self._trimName(processor), cat], start=2):
                     item = QTableWidgetItem(str(val) if val else "")
                     item.setTextAlignment(Qt.AlignCenter)
                     self.gen_table.setItem(row, col, item)
-                from PySide6.QtCore import QTimer
                 QTimer.singleShot(0, lambda: autoResizeTable(self.gen_table))
 
-    def _deleteCrimRow(self, row):
+    # ── 刪除（第1點：doc_id 驅動，不需重新綁定）────────────
+    def _deleteCrimByDocId(self, doc_id):
         if not self.crim_table:
             return
-        lbl = self.crim_table.cellWidget(row, 1)
-        if not lbl:
-            return
-        import re as _re
-        m = _re.search(r'href="([^"]+)"', lbl.text())
-        if not m:
-            return
-        doc_id = m.group(1)
         if not confirmBox("確認刪除",
                           f"本筆資料將被刪除，本文號（{doc_id}）無法再被使用，確認刪除？",
                           confirm_text="刪除", confirm_danger=True, default_confirm=False):
@@ -525,27 +459,15 @@ class TabReport(BaseTab):
         except Exception as e:
             msgCritical("刪除失敗", str(e))
             return
-        self.crim_table.removeRow(row)
         for r in range(self.crim_table.rowCount()):
-            container = self.crim_table.cellWidget(r, 0)
-            if container:
-                btn = container.findChild(QPushButton)
-                if btn:
-                    btn.clicked.disconnect()
-                    btn.clicked.connect(lambda _, ri=r: self._deleteCrimRow(ri))
-            self._rebindCrimDocIdCell(r, 1)
+            lbl = self.crim_table.cellWidget(r, 1)
+            if lbl and self._docIdFromLabel(lbl) == doc_id:
+                self.crim_table.removeRow(r)
+                return
 
-    def _deleteGenRow(self, row):
+    def _deleteGenByDocId(self, doc_id):
         if not self.gen_table:
             return
-        lbl = self.gen_table.cellWidget(row, 1)
-        if not lbl:
-            return
-        import re as _re
-        m = _re.search(r'href="([^"]+)"', lbl.text())
-        if not m:
-            return
-        doc_id = m.group(1)
         if not confirmBox("確認刪除",
                           f"本筆資料將被刪除，本文號（{doc_id}）無法再被使用，確認刪除？",
                           confirm_text="刪除", confirm_danger=True, default_confirm=False):
@@ -563,12 +485,8 @@ class TabReport(BaseTab):
         except Exception as e:
             msgCritical("刪除失敗", str(e))
             return
-        self.gen_table.removeRow(row)
         for r in range(self.gen_table.rowCount()):
-            container = self.gen_table.cellWidget(r, 0)
-            if container:
-                btn = container.findChild(QPushButton)
-                if btn:
-                    btn.clicked.disconnect()
-                    btn.clicked.connect(lambda _, ri=r: self._deleteGenRow(ri))
-            self._rebindGenDocIdCell(r, 1)
+            lbl = self.gen_table.cellWidget(r, 1)
+            if lbl and self._docIdFromLabel(lbl) == doc_id:
+                self.gen_table.removeRow(r)
+                return
