@@ -110,22 +110,37 @@ class TaskEditDialog(QDialog):
         form.addRow("承辦人：", self.w_proc)
 
         # 限辦日期 + 免覆
-        deadline_row = QHBoxLayout()
-        deadline_row.setContentsMargins(0, 0, 0, 0)
+        from PySide6.QtWidgets import QStackedWidget
+
+        self.w_no_deadline = QCheckBox("免覆")
+        self.w_no_deadline.setFixedWidth(self._CHECKBOX_W)
+
+        # 限辦日期欄：QStackedWidget 切換 DateEdit（index 0）和免覆提示（index 1）
+        self._deadline_stack = QStackedWidget()
+        self._deadline_stack.setFixedWidth(self._DATE_W)
+
         self.w_deadline = QDateEdit()
         self.w_deadline.setCalendarPopup(True)
         self.w_deadline.setDisplayFormat("yyyy-MM-dd")
-        self.w_deadline.setFixedWidth(self._DATE_W)
-        
-        self.w_deadline.setSizePolicy(
-            self.w_deadline.sizePolicy().horizontalPolicy(),
-            self.w_deadline.sizePolicy().verticalPolicy()
+        self._deadline_stack.addWidget(self.w_deadline)   # index 0：有日期
+
+        lbl_exempt = QLabel("")
+        lbl_exempt.setAlignment(Qt.AlignCenter)
+        lbl_exempt.setStyleSheet(
+            "background-color: #e5e5ea; border: 1px solid #d1d1d6; border-radius: 4px; padding: 4px 8px;"
         )
-        self.w_no_deadline = QCheckBox("免覆")
-        self.w_no_deadline.setFixedWidth(self._CHECKBOX_W)
-        self.w_no_deadline.toggled.connect(
-            lambda checked: self.w_deadline.setEnabled(not checked))
-        deadline_row.addWidget(self.w_deadline)
+        self._deadline_stack.addWidget(lbl_exempt)         # index 1：免覆
+
+        def _onNoDeadlineToggled(checked):
+            self._deadline_stack.setCurrentIndex(1 if checked else 0)
+            if not checked:
+                self.w_deadline.setDate(QDate.currentDate())
+
+        self.w_no_deadline.toggled.connect(_onNoDeadlineToggled)
+
+        deadline_row = QHBoxLayout()
+        deadline_row.setContentsMargins(0, 0, 0, 0)
+        deadline_row.addWidget(self._deadline_stack)
         deadline_row.addSpacing(self._SPACING_W)
         deadline_row.addWidget(self.w_no_deadline)
         form.addRow("限辦日期：", deadline_row)
@@ -186,10 +201,11 @@ class TaskEditDialog(QDialog):
         if deadline:
             self.w_deadline.setDate(QDate.fromString(str(deadline), "yyyy-MM-dd"))
             self.w_no_deadline.setChecked(False)
+            self._deadline_stack.setCurrentIndex(0)
         else:
             self.w_deadline.setDate(QDate.currentDate())
             self.w_no_deadline.setChecked(True)
-            self.w_deadline.setEnabled(False)
+            self._deadline_stack.setCurrentIndex(1)
 
     def _set_combo(self, combo, value):
         """依 data（id）設定 ComboBox 選項，找不到時插入原始值提示"""
@@ -204,18 +220,34 @@ class TaskEditDialog(QDialog):
         combo.setCurrentIndex(0)
 
     def _on_save(self):
+        from db_utils import msgWarning, msgCritical
         recv_date = self.w_recv_date.date().toString("yyyy-MM-dd")
         recv_id   = self.w_recv_id.currentData()
         dept_id   = self.w_dept.currentData()
         subject   = self.w_subject.text().strip()
         proc_id   = self.w_proc.currentData()
-        deadline  = None if self.w_no_deadline.isChecked() \
+        no_deadline = self.w_no_deadline.isChecked()
+        deadline  = None if no_deadline \
                     else self.w_deadline.date().toString("yyyy-MM-dd")
 
         if not subject:
-            from db_utils import msgWarning
             msgWarning("欄位未填", "交辦事由不可為空")
             return
+
+        # 限辦日期確認（與 tab_receive 一致）
+        if not no_deadline:
+            dl    = self.w_deadline.date()
+            today = QDate.currentDate()
+            if dl == today:
+                if not confirmBox("限辦日期確認",
+                                  f"限辦日期為今天（{deadline}），確定要儲存嗎？",
+                                  confirm_text="確認儲存", default_confirm=True):
+                    return
+            elif dl < today:
+                if not confirmBox("限辦日期已逾期",
+                                  f"限辦日期（{deadline}）早於今天，儲存後將立即逾期，確定要儲存嗎？",
+                                  confirm_text="確認儲存", confirm_danger=True, default_confirm=True):
+                    return
 
         try:
             conn = _get_conn(self.db_path)
@@ -228,7 +260,6 @@ class TaskEditDialog(QDialog):
             conn.commit()
             conn.close()
         except Exception as e:
-            from db_utils import msgCritical
             msgCritical("儲存失敗", str(e))
             return
 

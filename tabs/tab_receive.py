@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtWidgets import (
-    QTableWidgetItem, QPushButton, QVBoxLayout,
-    QDateEdit, QComboBox, QLineEdit, QCheckBox,
+    QTableWidgetItem, QPushButton, QVBoxLayout, QStackedWidget,
+    QDateEdit, QComboBox, QLineEdit, QCheckBox, QLabel,
     QTableWidget
 )
 
@@ -44,6 +44,27 @@ class TabReceive(BaseTab):
         self.chk_no_deadline = inner.findChild(QCheckBox,   'chk_no_deadline')
         self.recv_table      = inner.findChild(QTableWidget, 'recv_tableWidget')
 
+        # 用 QStackedWidget 替換 recv_deadline（在 QGridLayout row=4, col=3）
+        # index 0 = DateEdit，index 1 = 空白灰框（免覆狀態）
+        grid = inner.layout().itemAt(0).layout()
+        grid.removeWidget(self.recv_deadline)
+        self.recv_deadline.setParent(None)
+
+        self._deadline_stack = QStackedWidget()
+        self._deadline_stack.setFixedSize(
+            self.recv_deadline.maximumWidth(),
+            self.recv_deadline.maximumHeight(),
+        )
+        self._deadline_stack.addWidget(self.recv_deadline)   # index 0
+
+        lbl_exempt = QLabel("")
+        lbl_exempt.setStyleSheet(
+            "background-color: #e5e5ea; border: 1px solid #d1d1d6; border-radius: 8px;"
+        )
+        self._deadline_stack.addWidget(lbl_exempt)           # index 1
+
+        grid.addWidget(self._deadline_stack, 4, 3)
+
         # 日期初始化
         self.recv_date.setDate(QDate.currentDate())
         setupDateEditToToday(self.recv_date)
@@ -80,12 +101,9 @@ class TabReceive(BaseTab):
     # ── 免覆 Checkbox ─────────────────────────────────────
     def _onNoDeadlineChanged(self, state):
         checked = self.chk_no_deadline.isChecked()
-        self.recv_deadline.setEnabled(not checked)
-        self.recv_deadline.setStyleSheet(
-            "background-color: #e5e5ea; color: #aeaeb2; border-color: #d1d1d6;"
-            if checked else ""
-        )
-        if checked:
+        if self._deadline_stack:
+            self._deadline_stack.setCurrentIndex(1 if checked else 0)
+        if not checked:
             self.recv_deadline.setDate(QDate.currentDate())
 
     # ── 清除表單 ──────────────────────────────────────────
@@ -94,9 +112,9 @@ class TabReceive(BaseTab):
         setupFilterCombo(self.recv_dept,      self._depts)
         setupFilterCombo(self.recv_processor, self._personnel)
         self.recv_subject.clear()
-        self.recv_deadline.setEnabled(True)
-        self.recv_deadline.setStyleSheet("")
         self.recv_deadline.setDate(QDate.currentDate())
+        if self._deadline_stack:
+            self._deadline_stack.setCurrentIndex(0)
         if self.chk_no_deadline:
             self.chk_no_deadline.setChecked(False)
         self.recv_subject.setFocus()
@@ -127,12 +145,12 @@ class TabReceive(BaseTab):
             today = QDate.currentDate()
             if dl == today:
                 if not confirmBox("限辦日期確認", f"限辦日期為今天（{deadline}），確定要寫入嗎？",
-                              confirm_text="確認寫入", default_confirm=False):
+                              confirm_text="確認寫入", default_confirm=True):
                     return
             elif dl < today:
                 if not confirmBox("限辦日期已逾期",
                               f"限辦日期（{deadline}）早於今天，此交辦單收文後將立即逾期，確定要寫入嗎？",
-                              confirm_text="確認寫入", confirm_danger=True, default_confirm=False):
+                              confirm_text="確認寫入", confirm_danger=True, default_confirm=True):
                     return
 
         try:
@@ -196,7 +214,7 @@ class TabReceive(BaseTab):
             updated = dlg.get_updated()
             if updated:
                 # updated = (編號, 交辦事由, 業務組, 所承辦人, 限辦日期, 發文日期, 狀態)
-                _, subject, dept, proc, deadline, dispatch, status = updated
+                _, subject, dept, proc, deadline, dispatch, _ = updated
                 for col, val in enumerate([subject, dept, proc], start=2):
                     item = QTableWidgetItem(str(val) if val else "")
                     item.setTextAlignment(Qt.AlignCenter)
@@ -205,9 +223,11 @@ class TabReceive(BaseTab):
                 deadline_item = QTableWidgetItem(str(deadline) if deadline else "")
                 deadline_item.setTextAlignment(Qt.AlignCenter)
                 self.recv_table.setItem(row, 6, deadline_item)
-                status_item = QTableWidgetItem(str(status) if status else "")
+                # 狀態欄從 deadline 重新計算（免覆時 deadline=None → 顯示「免覆」）
+                status      = calcOverdue(deadline, str(dispatch) if dispatch else "")
+                status_item = QTableWidgetItem(status)
                 status_item.setTextAlignment(Qt.AlignCenter)
-                color = colorForStatus(str(status) if status else "")
+                color = colorForStatus(status)
                 if color:
                     status_item.setForeground(color)
                 self.recv_table.setItem(row, 7, status_item)
