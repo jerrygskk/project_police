@@ -4,9 +4,9 @@ from PySide6.QtCore import Qt, QDate
 from PySide6.QtWidgets import QTableWidgetItem, QPushButton, QMessageBox
 
 from base_tab import BaseTab
-from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
+from db_utils import msgInfo, msgWarning, msgCritical, confirmBox, DEBUG_MODE
 from ui_utils import (
-    setupPreviewTable, autoResizeTable, makeDeleteBtn,
+    setupPreviewTable, autoResizeTable, makeDeleteBtn, TaskEditDialog,
     setupFilterCombo, setupDateEditToToday,
     calcOverdue, colorForStatus,
 )
@@ -129,8 +129,14 @@ class TabDispatch(BaseTab):
 
         deadline_str = str(data[4]) if data[4] else ""
         dispatch_str = str(data[5]) if data[5] else ""
+        doc_id       = str(data[0]) if data[0] else ""
 
-        for i in range(4):
+        # 編號欄（col 1）：已發文 → 純文字；未發文 → 超連結
+        is_dispatched = bool(dispatch_str)
+        self._setDocIdCell(pos, 1, doc_id, is_dispatched)
+
+        # 其他欄位（col 2~4）
+        for i in range(1, 4):
             item = QTableWidgetItem(str(data[i]) if data[i] else "")
             item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(pos, i + 1, item)
@@ -148,6 +154,44 @@ class TabDispatch(BaseTab):
             status_item.setForeground(color)
         self.table.setItem(pos, 7, status_item)
         autoResizeTable(self.table)
+
+    def _setDocIdCell(self, row, col, doc_id, is_dispatched):
+        """編號欄：已發文 → 純文字，未發文 → 超連結（DEBUG_MODE 下全部可點）"""
+        from PySide6.QtWidgets import QLabel
+        if (is_dispatched and not DEBUG_MODE) or not doc_id:
+            item = QTableWidgetItem(doc_id)
+            item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, col, item)
+        else:
+            lbl = QLabel(f'<a href="{doc_id}" style="color:#4A7FA5;">{doc_id}</a>')
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setOpenExternalLinks(False)
+            lbl.linkActivated.connect(lambda link: self._onEditRow(row, link))
+            self.table.setCellWidget(row, col, lbl)
+
+    def _onEditRow(self, row, doc_id):
+        """點擊超連結 → 開啟 EditDialog"""
+        dlg = TaskEditDialog(self.db_path, doc_id, self.table)
+        if dlg.exec():
+            updated = dlg.get_updated()
+            if updated:
+                # 刷新表格該列（col 2~7）
+                # updated = (編號, 交辦事由, 業務組, 所承辦人, 限辦日期, 發文日期, 狀態)
+                _, subject, dept, proc, deadline, dispatch, status = updated
+                for col, val in enumerate([subject, dept, proc], start=2):
+                    item = QTableWidgetItem(str(val) if val else "")
+                    item.setTextAlignment(Qt.AlignCenter)
+                    self.table.setItem(row, col, item)
+                for col, val in [(5, deadline), (6, dispatch)]:
+                    item = QTableWidgetItem(str(val) if val else "")
+                    item.setTextAlignment(Qt.AlignCenter)
+                    self.table.setItem(row, col, item)
+                status_item = QTableWidgetItem(str(status) if status else "")
+                status_item.setTextAlignment(Qt.AlignCenter)
+                color = colorForStatus(str(status) if status else "")
+                if color:
+                    status_item.setForeground(color)
+                self.table.setItem(row, 7, status_item)
 
     def _deleteRow(self, row):
         if not self.table:

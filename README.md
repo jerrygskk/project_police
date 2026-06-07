@@ -120,6 +120,7 @@ TAB_CLASSES = {
 
 **步驟 4** — 新增對應的 `LayoutN.ui`
 
+> ⚠️ 每個 Tab 都必須有對應的 `.ui` 檔，無例外。
 > `main.py` 本身只改 `TAB_CLASSES` 那一行，其餘不動。
 
 ---
@@ -204,9 +205,42 @@ Tab 1（交辦單收文）和 Tab 2（公文陳報）的刪除：
 ## 打包指令
 
 ### 主程式
-```bash
-pyinstaller --clean --onefile --windowed --icon=police_badge.ico --add-data "*.ui;." --add-data "police_badge.svg;." --add-data "banner.png;." --name Police-Document-Manager main.py
+```cmd
+pyinstaller --clean --onefile --windowed --icon=police_badge.ico ^
+  --add-data "*.ui;." --add-data "police_badge.svg;." --add-data "banner.png;." ^
+  --exclude-module matplotlib.backends.backend_cairo ^
+  --exclude-module matplotlib.backends.backend_gtk3 ^
+  --exclude-module matplotlib.backends.backend_gtk3agg ^
+  --exclude-module matplotlib.backends.backend_gtk3cairo ^
+  --exclude-module matplotlib.backends.backend_gtk4 ^
+  --exclude-module matplotlib.backends.backend_gtk4agg ^
+  --exclude-module matplotlib.backends.backend_gtk4cairo ^
+  --exclude-module matplotlib.backends.backend_macosx ^
+  --exclude-module matplotlib.backends.backend_mixed ^
+  --exclude-module matplotlib.backends.backend_nbagg ^
+  --exclude-module matplotlib.backends.backend_pgf ^
+  --exclude-module matplotlib.backends.backend_ps ^
+  --exclude-module matplotlib.backends.backend_qt ^
+  --exclude-module matplotlib.backends.backend_qt5 ^
+  --exclude-module matplotlib.backends.backend_qt5agg ^
+  --exclude-module matplotlib.backends.backend_qt5cairo ^
+  --exclude-module matplotlib.backends.backend_qtagg ^
+  --exclude-module matplotlib.backends.backend_qtcairo ^
+  --exclude-module matplotlib.backends.backend_svg ^
+  --exclude-module matplotlib.backends.backend_template ^
+  --exclude-module matplotlib.backends.backend_tkagg ^
+  --exclude-module matplotlib.backends.backend_tkcairo ^
+  --exclude-module matplotlib.backends.backend_webagg ^
+  --exclude-module matplotlib.backends.backend_webagg_core ^
+  --exclude-module matplotlib.backends.backend_wx ^
+  --exclude-module matplotlib.backends.backend_wxagg ^
+  --exclude-module matplotlib.backends.backend_wxcairo ^
+  --exclude-module tkinter ^
+  --name Police-Document-Manager main.py
 ```
+
+> PyInstaller 採黑名單機制（無白名單），只能用 `--exclude-module` 排除用不到的後端。
+> 目前程式只用 `backend_agg`（PNG 預覽）和 `backend_pdf`（PDF 輸出），其餘全排除。
 
 ### 資料同步工具
 ```bash

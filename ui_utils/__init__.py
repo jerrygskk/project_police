@@ -11,6 +11,8 @@ from .table   import (
     FIXED_COL_WIDTHS,
 )
 
+from .edit_dialog import TaskEditDialog
+
 __all__ = [
     "calcOverdue",
     "colorForStatus",
@@ -19,5 +21,6 @@ __all__ = [
     "setupPreviewTable",
     "autoResizeTable",
     "makeDeleteBtn",
+    "TaskEditDialog",
     "FIXED_COL_WIDTHS",
 ]

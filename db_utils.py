@@ -60,7 +60,7 @@ def confirmBox(title, text, confirm_text="確認", cancel_text="取消",
 # ── 測試開關 ───────────────────────────────────────────────
 # True：所有 disable/greyout 全部開啟（方便測試）
 # False：正式行為，上線前確認為 False
-DEBUG_MODE = False
+DEBUG_MODE = True
 
 
 def getResourcePath(relative_path):
