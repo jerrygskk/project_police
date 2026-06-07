@@ -23,7 +23,7 @@
 | PySide6 | 6.x（`pip show PySide6`） |
 | PyInstaller | 6.20.0 |
 
-```bash
+```cmd
 pip install PySide6 pandas openpyxl pyinstaller matplotlib
 ```
 
@@ -200,6 +200,14 @@ Tab 1（交辦單收文）和 Tab 2（公文陳報）的刪除：
 | 人名 | 王小明 | 王小明-19.06（去掉 `-` 後綴） |
 | 日期 | MM-DD-YYYY | YYYY-MM-DD |
 
+> ⚠️ **EditDialog 刷新注意**：`get_updated()` 從 View 拉回的刑案狀態是 DB 原始值（`A_現行犯` 等），
+> 刷新表格前必須透過 `_STATUS_MAP` 轉換成預覽短名（`現行/到案/未到`），
+> 不可直接將 View 的值寫入表格。轉換邏輯在 `tab_report.py` 的 `_onEditCrimRow`。
+>
+> 同樣地，一般陳報的分類也是 DB 原始值（`D_業務陳報` 等），
+> 須透過 `_CAT_MAP` 轉換成預覽短名（`業務/其他/相驗`）。
+> 轉換邏輯在 `tab_report.py` 的 `_onEditGenRow`。
+
 ---
 
 ## 打包指令
@@ -243,7 +251,7 @@ pyinstaller --clean --onefile --windowed --icon=police_badge.ico ^
 > 目前程式只用 `backend_agg`（PNG 預覽）和 `backend_pdf`（PDF 輸出），其餘全排除。
 
 ### 資料同步工具
-```bash
+```cmd
 pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool data_sync_tool.py
 ```
 
@@ -254,7 +262,7 @@ pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool d
 - `arrow.svg` 已透過 `resources_rc.py` 內嵌，不需 `--add-data`
 - GitHub release 上傳使用英文檔名（中文檔名會被 URL encode）
 - 若修改 `arrow.svg`，需重新執行：
-  ```bash
+  ```cmd
   pyside6-rcc resources.qrc -o resources_rc.py
   ```
 

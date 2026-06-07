@@ -193,11 +193,19 @@ class TabDispatch(BaseTab):
                     status_item.setForeground(color)
                 self.table.setItem(row, 7, status_item)
 
+    def _rebindDocIdCell(self, row, col):
+        """重新綁定 QLabel 的 linkActivated（刪除後 row index 變動時使用）"""
+        lbl = self.table.cellWidget(row, col)
+        if not lbl:
+            return
+        lbl.linkActivated.disconnect()
+        lbl.linkActivated.connect(lambda link, r=row: self._onEditRow(r, link))
+
     def _deleteRow(self, row):
         if not self.table:
             return
         self.table.removeRow(row)
-        # 刪除後重新綁定所有刪除按鈕的 row index
+        # 刪除後重新綁定所有刪除按鈕和編號超連結的 row index
         for r in range(self.table.rowCount()):
             container = self.table.cellWidget(r, 0)
             if container:
@@ -205,6 +213,7 @@ class TabDispatch(BaseTab):
                 if btn:
                     btn.clicked.disconnect()
                     btn.clicked.connect(lambda _, ri=r: self._deleteRow(ri))
+            self._rebindDocIdCell(r, 1)
 
     # ── 全部清除 ──────────────────────────────────────────
     def handleClearAll(self):

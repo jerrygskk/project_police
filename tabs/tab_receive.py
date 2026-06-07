@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 from base_tab import BaseTab
 from db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgInfo, msgWarning, msgCritical, confirmBox
 from ui_utils import (
-    setupPreviewTable, autoResizeTable, makeDeleteBtn,
+    setupPreviewTable, autoResizeTable, makeDeleteBtn, TaskEditDialog,
     setupFilterCombo, setupDateEditToToday,
     calcOverdue, colorForStatus,
 )
@@ -145,7 +145,8 @@ class TabReceive(BaseTab):
                 self.recv_processor.currentText(),
                 recv_date, deadline
             )
-            self._formClear()
+            if not DEBUG_MODE:
+                self._formClear()
 
         except Exception as e:
             msgCritical("寫入失敗", str(e))
@@ -161,11 +162,13 @@ class TabReceive(BaseTab):
 
         # 刪除按鈕（col 0）
         container, btn = makeDeleteBtn(lambda _, r=pos: self._deleteRow(r))
-        # 已無限辦日期或狀態非待發文才允許刪（目前收文都可刪，DEBUG_MODE 不影響此處）
         self.recv_table.setCellWidget(pos, 0, container)
 
-        # 資料欄（col 1~6）
-        for col, val in enumerate([doc_id, subject, dept_name, processor_name, recv_date, deadline], start=1):
+        # 編號欄（col 1）：超連結
+        self._setDocIdCell(pos, 1, doc_id)
+
+        # 資料欄（col 2~6）
+        for col, val in enumerate([subject, dept_name, processor_name, recv_date, deadline], start=2):
             item = QTableWidgetItem(str(val) if val else "")
             item.setTextAlignment(Qt.AlignCenter)
             self.recv_table.setItem(pos, col, item)
@@ -180,13 +183,58 @@ class TabReceive(BaseTab):
         self.recv_table.setItem(pos, 7, status_item)
         autoResizeTable(self.recv_table)
 
+    def _setDocIdCell(self, row, col, doc_id):
+        """編號欄：超連結（收文無發文限制，全部可點）"""
+        from PySide6.QtWidgets import QLabel
+        lbl = QLabel(f'<a href="{doc_id}" style="color:#4A7FA5;">{doc_id}</a>')
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setOpenExternalLinks(False)
+        lbl.linkActivated.connect(lambda link, r=row: self._onEditRow(r, link))
+        self.recv_table.setCellWidget(row, col, lbl)
+
+    def _rebindDocIdCell(self, row, col):
+        """重新綁定 QLabel 的 linkActivated（刪除後 row index 變動時使用）"""
+        lbl = self.recv_table.cellWidget(row, col)
+        if not lbl:
+            return
+        lbl.linkActivated.disconnect()
+        lbl.linkActivated.connect(lambda link, r=row: self._onEditRow(r, link))
+
+    def _onEditRow(self, row, doc_id):
+        """點擊超連結 → 開啟 TaskEditDialog"""
+        dlg = TaskEditDialog(self.db_path, doc_id, self.recv_table)
+        if dlg.exec():
+            updated = dlg.get_updated()
+            if updated:
+                # updated = (編號, 交辦事由, 業務組, 所承辦人, 限辦日期, 發文日期, 狀態)
+                _, subject, dept, proc, deadline, dispatch, status = updated
+                for col, val in enumerate([subject, dept, proc], start=2):
+                    item = QTableWidgetItem(str(val) if val else "")
+                    item.setTextAlignment(Qt.AlignCenter)
+                    self.recv_table.setItem(row, col, item)
+                # 收文日期（col 5）不在 View_Task_Full 回傳值，保留原值不動
+                deadline_item = QTableWidgetItem(str(deadline) if deadline else "")
+                deadline_item.setTextAlignment(Qt.AlignCenter)
+                self.recv_table.setItem(row, 6, deadline_item)
+                status_item = QTableWidgetItem(str(status) if status else "")
+                status_item.setTextAlignment(Qt.AlignCenter)
+                color = colorForStatus(str(status) if status else "")
+                if color:
+                    status_item.setForeground(color)
+                self.recv_table.setItem(row, 7, status_item)
+
     def _deleteRow(self, row):
         if not self.recv_table:
             return
-        doc_id_item = self.recv_table.item(row, 1)
-        if not doc_id_item:
+        # col 1 是 QLabel widget，用 linkActivated 的 href 取 doc_id
+        lbl = self.recv_table.cellWidget(row, 1)
+        if not lbl:
             return
-        doc_id = doc_id_item.text()
+        import re
+        m = re.search(r'href="([^"]+)"', lbl.text())
+        if not m:
+            return
+        doc_id = m.group(1)
 
         reply = confirmBox(
             "確認刪除",
@@ -212,7 +260,7 @@ class TabReceive(BaseTab):
             return
 
         self.recv_table.removeRow(row)
-        # 重新綁定刪除按鈕 row index
+        # 重新綁定刪除按鈕和編號超連結的 row index
         for r in range(self.recv_table.rowCount()):
             container = self.recv_table.cellWidget(r, 0)
             if container:
@@ -220,3 +268,4 @@ class TabReceive(BaseTab):
                 if btn:
                     btn.clicked.disconnect()
                     btn.clicked.connect(lambda _, ri=r: self._deleteRow(ri))
+            self._rebindDocIdCell(r, 1)

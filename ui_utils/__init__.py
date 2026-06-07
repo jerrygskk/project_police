@@ -11,7 +11,7 @@ from .table   import (
     FIXED_COL_WIDTHS,
 )
 
-from .edit_dialog import TaskEditDialog
+from .edit_dialog import TaskEditDialog, CriminalEditDialog, GeneralEditDialog
 
 __all__ = [
     "calcOverdue",
@@ -22,5 +22,7 @@ __all__ = [
     "autoResizeTable",
     "makeDeleteBtn",
     "TaskEditDialog",
+    "CriminalEditDialog",
+    "GeneralEditDialog",
     "FIXED_COL_WIDTHS",
 ]

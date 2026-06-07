@@ -85,6 +85,8 @@ def autoResizeTable(table):
     other_total = sum(w for c, w in widths.items() if c != stretch_col)
     stretch_min = max(widths.get(stretch_col, 80), 60)
 
+    # 暫時關閉 init_done，避免 setColumnWidth 觸發 sectionResized 誤設 user_resized
+    table.setProperty("init_done", False)
     if other_total + stretch_min > usable:
         for col, w in widths.items():
             table.setColumnWidth(col, w)
@@ -92,6 +94,7 @@ def autoResizeTable(table):
         stretch_w = usable - other_total
         for col, w in widths.items():
             table.setColumnWidth(col, stretch_w if col == stretch_col else w)
+    table.setProperty("init_done", True)
 
 
 def makeDeleteBtn(callback):
@@ -185,8 +188,8 @@ def setupPreviewTable(table, headers, row_height=30, stretch_col=None, fixed_ove
             border-bottom: 1px solid #e5e5ea;
         }
         QTableWidget::item:selected {
-            background-color: #007aff;
-            color: #ffffff;
+            background-color: #ccdaeb;
+            color: #1c1c1e;
         }
         QTableWidget::item:selected:!active {
             background-color: #d1d1d6;
