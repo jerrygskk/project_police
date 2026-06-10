@@ -266,7 +266,6 @@ pyinstaller --clean --onefile --windowed --icon=police_badge.ico ^
   --exclude-module matplotlib.backends.backend_gtk4agg ^
   --exclude-module matplotlib.backends.backend_gtk4cairo ^
   --exclude-module matplotlib.backends.backend_macosx ^
-  --exclude-module matplotlib.backends.backend_mixed ^
   --exclude-module matplotlib.backends.backend_nbagg ^
   --exclude-module matplotlib.backends.backend_pgf ^
   --exclude-module matplotlib.backends.backend_ps ^
