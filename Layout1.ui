@@ -113,6 +113,15 @@
       <widget class="QWidget" name="tab_print">
        <attribute name="title"><string>簽收單列印</string></attribute>
       </widget>
+      <widget class="QWidget" name="tab_dbbrowse">
+       <attribute name="title"><string>資料庫瀏覽</string></attribute>
+      </widget>
+      <widget class="QWidget" name="tab_archive">
+       <attribute name="title"><string>檔案歸檔</string></attribute>
+      </widget>
+      <widget class="QWidget" name="tab_settings">
+       <attribute name="title"><string>資料庫設定</string></attribute>
+      </widget>
      </widget>
     </item>
    </layout>

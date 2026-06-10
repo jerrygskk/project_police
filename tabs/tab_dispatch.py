@@ -8,7 +8,7 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox, DEBUG_MODE
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
     TaskEditDialog,
-    setupFilterCombo, setupDateEditToToday,
+    setupFilterCombo, setupDateEditToToday, refreshFilterCombo,
     calcOverdue, colorForStatus,
 )
 
@@ -59,6 +59,41 @@ class TabDispatch(BaseTab):
 
     def get_focus_widget(self):
         return self.lineEdit
+
+    def on_activated(self):
+        personnel, _ = self._loadRef()
+        if self.dispatch_sender:
+            refreshFilterCombo(self.dispatch_sender, personnel)
+        self._refreshPreviewNames()
+
+    def _refreshPreviewNames(self):
+        """掃預覽表每一列，用最新 DB 資料重寫業務組/承辦人欄。"""
+        if not self.table:
+            return
+        try:
+            conn = self._getConn()
+            for r in range(self.table.rowCount()):
+                doc_item = self.table.item(r, 1)
+                if not doc_item:
+                    continue
+                doc_id = doc_item.text()
+                row = conn.execute("""
+                    SELECT d.dept_name, p.staff_name
+                    FROM Document_Task t
+                    LEFT JOIN Ref_Departments d ON t.dept_id      = d.dept_id
+                    LEFT JOIN Ref_Personnel   p ON t.processor_id = p.staff_id
+                    WHERE t.doc_id = ?
+                """, (doc_id,)).fetchone()
+                if not row:
+                    continue
+                dept_name, processor_name = row
+                if dept_name is not None:
+                    self.table.item(r, 3).setText(dept_name)
+                if processor_name is not None:
+                    self.table.item(r, 4).setText(self._trimName(processor_name))
+            conn.close()
+        except Exception as e:
+            msgCritical("DB錯誤", f"刷新預覽列失敗: {e}")
 
     # ── 查詢單筆 ──────────────────────────────────────────
     def handleQuery(self):

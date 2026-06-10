@@ -34,6 +34,10 @@ class BaseTab:
         """回傳此 Tab 預設取得焦點的元件，切換時自動 setFocus。"""
         return None
 
+    def on_activated(self):
+        """Tab 被切換到時呼叫，子類別可 override 以刷新參照表等。"""
+        pass
+
     # ── DB 工具 ─────────────────────────────────────────────
     def _getConn(self):
         """回傳新的 sqlite3 連線，呼叫端負責 close()"""

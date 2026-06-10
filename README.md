@@ -120,6 +120,61 @@ TAB_CLASSES = {
 > ⚠️ 每個 Tab 都必須有對應的 `.ui` 檔，無例外。
 > `main.py` 本身只改 `TAB_CLASSES` 那一行，其餘不動。
 
+**步驟 5（若 Tab 有人員 / 部門 / 案件類型下拉選單）** — override `on_activated()`
+
+當使用者在「資料庫設定」Tab 改動參照表（人員離職、部門新增等），
+離開設定 Tab 時 `main.py` 會自動呼叫**所有其他 Tab** 的 `on_activated()`，
+讓下拉選單即時反映最新資料。新 Tab 要記得實作這個方法：
+
+```python
+from ui_utils import refreshFilterCombo
+
+class TabXxx(BaseTab):
+    def on_activated(self):
+        personnel, depts = self._loadRef()
+        refreshFilterCombo(self.combo_processor, personnel)
+        refreshFilterCombo(self.combo_dept,      depts)
+```
+
+- 沒下拉選單的 Tab 可以不用 override，預設是空方法
+- `refreshFilterCombo` 會保留目前選取的值，若該值已不存在（例如人員離職）自動清空
+- 觸發條件：從設定 Tab 切出 + `_ref_dirty=True`（有實際改動才觸發，無動作不會浪費效能）
+
+> ⚠️ **預覽表的人員名稱不會自動跟著 rename 更新**
+>
+> 預覽表的儲存格存的是「當下抓的字串」（例如「匿名」），不是即時從 DB 撈的。
+> 如果在設定 Tab 對人員 / 部門 / 案件類型做 **rename**，預覽表還會顯示舊名字。
+> 解法：在 `on_activated()` 裡掃預覽表每一列，用 `doc_id` 反查 DB 更新顯示。
+> 參考 `tab_receive._refreshPreviewNames()` 和 `tab_report._refreshCrimPreviewNames()` /
+> `_refreshGenPreviewNames()` 的寫法。
+>
+> 新 Tab 如果預覽表也有顯示參照表的字串欄位，**必須**自行加上類似的刷新方法，
+> 否則使用者 rename 後不會反映在預覽表上。
+
+---
+
+## `.ui` 檔撰寫規則
+
+> ⚠️ `QUiLoader` **不認識** `contentsMargins` + `<rect>` 的 margin 寫法，載入時會拋出
+> `RuntimeError: Unable to open/read ui device`。
+> 必須改用四個獨立 `property`：
+
+```xml
+<!-- ❌ 錯誤：QUiLoader 無法解析 -->
+<property name="contentsMargins">
+ <rect><left>24</left><top>24</top><right>24</right><bottom>24</bottom></rect>
+</property>
+
+<!-- ✅ 正確 -->
+<property name="leftMargin"><number>24</number></property>
+<property name="topMargin"><number>24</number></property>
+<property name="rightMargin"><number>24</number></property>
+<property name="bottomMargin"><number>24</number></property>
+```
+
+> ⚠️ `centralWidget` 的物件名稱必須是 `centralwidget`（全小寫），
+> 否則 `widget.centralWidget()` 回傳 `None`。
+
 ---
 
 ## 新增 UI 元件注意事項

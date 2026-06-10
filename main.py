@@ -64,7 +64,8 @@ from PySide6.QtGui import QFont
 
 from theme    import APPLE_STYLE
 from db_utils import getResourcePath, loadUi, msgInfo, msgWarning, msgCritical
-from tabs     import TabDispatch, TabReceive, TabReport, TabPrint
+from auth_manager import AuthManager
+from tabs     import TabDispatch, TabReceive, TabReport, TabPrint, TabDBBrowse, TabArchive, TabSettings
 import resources_rc  # 註冊 Qt resource（arrow.svg）
 
 
@@ -83,6 +84,9 @@ class DocumentManager:
         1: TabReceive,
         2: TabReport,
         3: TabPrint,
+        4: TabDBBrowse,
+        5: TabArchive,
+        6: TabSettings,
     }
 
     def __init__(self, tab_index=0):
@@ -102,12 +106,74 @@ class DocumentManager:
         if self.tab_widget:
             self.tab_widget.setCurrentIndex(tab_index)
             self.tab_widget.currentChanged.connect(self._onTabChanged)
+            self._prev_tab_index = tab_index
+
+        # 標題隨身份切換
+        self._base_title = "公文管理系統"
+        self._updateTitle(AuthManager.instance().current_role)
+        AuthManager.instance().role_changed.connect(self._updateTitle)
+
+        # 閒置 20 分鐘自動登出
+        self._IDLE_TIMEOUT_MS = 20 * 60 * 1000
+        self._idle_timer = QTimer(self.window)
+        self._idle_timer.setSingleShot(True)
+        self._idle_timer.timeout.connect(self._onIdleTimeout)
+        self._installIdleFilter()
+
+    def _updateTitle(self, role):
+        suffix = "管理者模式" if role == 'admin' else "一般使用者"
+        self.window.setWindowTitle(f"{self._base_title}  [{suffix}]")
+        # 登入時啟動計時，登出時停掉
+        if hasattr(self, '_idle_timer'):
+            if role == 'admin':
+                self._idle_timer.start(self._IDLE_TIMEOUT_MS)
+            else:
+                self._idle_timer.stop()
+
+    def _installIdleFilter(self):
+        """安裝全域事件過濾器，監聽使用者操作以重設閒置計時。"""
+        from PySide6.QtCore import QObject, QEvent
+
+        mgr = self
+        class _IdleFilter(QObject):
+            def eventFilter(self, obj, ev):
+                t = ev.type()
+                if t in (QEvent.MouseButtonPress, QEvent.MouseMove,
+                         QEvent.KeyPress, QEvent.Wheel):
+                    if AuthManager.instance().current_role == 'admin':
+                        mgr._idle_timer.start(mgr._IDLE_TIMEOUT_MS)
+                return False
+
+        self._idle_filter = _IdleFilter()
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance().installEventFilter(self._idle_filter)
+
+    def _onIdleTimeout(self):
+        if AuthManager.instance().current_role == 'admin':
+            AuthManager.instance().logout()
+            msgInfo("自動登出", "閒置已超過 20 分鐘，已自動登出管理者身份。", self.window)
+
+    _IDX_SETTINGS = 6          # 資料庫設定 Tab index
 
     def _onTabChanged(self, index):
         from ui_utils import autoResizeTable
         tab_obj = self.tabs.get(index)
         if not tab_obj:
+            self._prev_tab_index = index
             return
+
+        # 只有「從設定 Tab 切出來 且 有實際改過資料」才刷新參照表
+        # 一次刷新所有 Tab，避免之後切其他 Tab 時 dirty 已被清掉
+        settings_tab = self.tabs.get(self._IDX_SETTINGS)
+        if (self._prev_tab_index == self._IDX_SETTINGS
+                and settings_tab
+                and getattr(settings_tab, '_ref_dirty', False)):
+            for idx, t in self.tabs.items():
+                if idx != self._IDX_SETTINGS:
+                    t.on_activated()
+            settings_tab._ref_dirty = False
+
+        self._prev_tab_index = index
 
         def _resize():
             for t in tab_obj.get_tables():
@@ -132,6 +198,9 @@ class MainMenu:
         'btn_receive_assignment': 1,
         'btn_report_case':        2,
         'btn_generate_receipt':   3,
+        'btn_dbbrowse':           4,
+        'btn_archive':            5,
+        'btn_settings':           6,
     }
 
     def __init__(self):

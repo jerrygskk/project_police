@@ -3,7 +3,7 @@
 # 不論內部如何拆分，這裡都不需要改動外部呼叫端
 
 from .status  import calcOverdue, colorForStatus
-from .widgets import setupFilterCombo, setupDateEditToToday
+from .widgets import setupFilterCombo, setupDateEditToToday, refreshFilterCombo
 from .table   import (
     setupPreviewTable,
     autoResizeTable,
@@ -13,11 +13,18 @@ from .table   import (
 )
 
 from .edit_dialog import TaskEditDialog, CriminalEditDialog, GeneralEditDialog
+from .settings_dialogs import (
+    PersonnelAddDialog, PersonnelEditDialog,
+    DeptAddDialog, DeptEditDialog,
+    CaseTypeAddDialog, CaseTypeEditDialog,
+    ChangePasswordDialog,
+)
 
 __all__ = [
     "calcOverdue",
     "colorForStatus",
     "setupFilterCombo",
+    "refreshFilterCombo",
     "setupDateEditToToday",
     "setupPreviewTable",
     "autoResizeTable",
@@ -27,4 +34,8 @@ __all__ = [
     "CriminalEditDialog",
     "GeneralEditDialog",
     "FIXED_COL_WIDTHS",
+    "PersonnelAddDialog", "PersonnelEditDialog",
+    "DeptAddDialog", "DeptEditDialog",
+    "CaseTypeAddDialog", "CaseTypeEditDialog",
+    "ChangePasswordDialog",
 ]

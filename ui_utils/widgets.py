@@ -87,3 +87,19 @@ def setupFilterCombo(combo, data_list):
         combo.blockSignals(False)
 
     combo.lineEdit().textEdited.connect(_onTextChanged)
+
+
+def refreshFilterCombo(combo, data_list):
+    """
+    重新載入 combo 的選項，保留目前選取。
+    若原選取項目已不在新列表中（例如離職），自動回到空白。
+    """
+    current_data = combo.currentData()
+    setupFilterCombo(combo, data_list)
+    if current_data is not None:
+        for i in range(combo.count()):
+            if combo.itemData(i) == current_data:
+                combo.setCurrentIndex(i)
+                return
+    # 找不到 → 保持空白（index 0）
+    combo.setCurrentIndex(0)

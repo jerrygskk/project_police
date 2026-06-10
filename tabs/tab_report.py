@@ -10,7 +10,7 @@ from base_tab import BaseTab
 from db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgInfo, msgWarning, msgCritical, confirmBox
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
-    setupFilterCombo, setupDateEditToToday,
+    setupFilterCombo, setupDateEditToToday, refreshFilterCombo,
     CriminalEditDialog, GeneralEditDialog,
 )
 
@@ -193,6 +193,83 @@ class TabReport(BaseTab):
 
     def get_focus_widget(self):
         return self.crim_subject
+
+    def on_activated(self):
+        self._personnel, self._depts = self._loadRef()
+        self._case_types = self._loadTable(
+            "SELECT case_type_id, case_type_name FROM Ref_CaseTypes ORDER BY case_type_id"
+        )
+        refreshFilterCombo(self.rpt_sender,     self._personnel)
+        refreshFilterCombo(self.crim_casetype,  self._case_types)
+        refreshFilterCombo(self.crim_processor, self._personnel)
+        refreshFilterCombo(self.crim_receiver,  self._personnel)
+        refreshFilterCombo(self.gen_dept,       self._depts)
+        refreshFilterCombo(self.gen_processor,  self._personnel)
+        self._refreshCrimPreviewNames()
+        self._refreshGenPreviewNames()
+
+    def _refreshCrimPreviewNames(self):
+        """掃刑案預覽表，更新案類/承辦人/受理人欄。"""
+        if not self.crim_table:
+            return
+        try:
+            conn = self._getConn()
+            for r in range(self.crim_table.rowCount()):
+                doc_item = self.crim_table.item(r, 1)
+                if not doc_item:
+                    continue
+                doc_id = doc_item.text()
+                row = conn.execute("""
+                    SELECT ct.case_type_name,
+                           pp.staff_name,
+                           pr.staff_name
+                    FROM Document_Criminal c
+                    LEFT JOIN Ref_CaseTypes ct ON c.case_type    = ct.case_type_id
+                    LEFT JOIN Ref_Personnel pp ON c.processor_id = pp.staff_id
+                    LEFT JOIN Ref_Personnel pr ON c.receiver_id  = pr.staff_id
+                    WHERE c.doc_id = ?
+                """, (doc_id,)).fetchone()
+                if not row:
+                    continue
+                ct_name, proc_name, recv_name = row
+                if ct_name is not None:
+                    self.crim_table.item(r, 3).setText(ct_name)
+                if proc_name is not None:
+                    self.crim_table.item(r, 5).setText(self._trimName(proc_name))
+                if recv_name is not None:
+                    self.crim_table.item(r, 6).setText(self._trimName(recv_name))
+            conn.close()
+        except Exception as e:
+            msgCritical("DB錯誤", f"刷新刑案預覽列失敗: {e}")
+
+    def _refreshGenPreviewNames(self):
+        """掃一般陳報預覽表，更新業務單位/承辦人欄。"""
+        if not self.gen_table:
+            return
+        try:
+            conn = self._getConn()
+            for r in range(self.gen_table.rowCount()):
+                doc_item = self.gen_table.item(r, 1)
+                if not doc_item:
+                    continue
+                doc_id = doc_item.text()
+                row = conn.execute("""
+                    SELECT d.dept_name, p.staff_name
+                    FROM Document_General g
+                    LEFT JOIN Ref_Departments d ON g.dept_id      = d.dept_id
+                    LEFT JOIN Ref_Personnel   p ON g.processor_id = p.staff_id
+                    WHERE g.doc_id = ?
+                """, (doc_id,)).fetchone()
+                if not row:
+                    continue
+                dept_name, proc_name = row
+                if dept_name is not None:
+                    self.gen_table.item(r, 2).setText(dept_name)
+                if proc_name is not None:
+                    self.gen_table.item(r, 4).setText(self._trimName(proc_name))
+            conn.close()
+        except Exception as e:
+            msgCritical("DB錯誤", f"刷新一般陳報預覽列失敗: {e}")
 
     # ── 輔助：從 DB 載入二元組列表 ──────────────────────────
     def _loadTable(self, sql):

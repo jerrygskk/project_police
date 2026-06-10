@@ -10,7 +10,7 @@ from db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgWarning,
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
     TaskEditDialog,
-    setupFilterCombo, setupDateEditToToday,
+    setupFilterCombo, setupDateEditToToday, refreshFilterCombo,
     calcOverdue, colorForStatus,
 )
 
@@ -97,6 +97,43 @@ class TabReceive(BaseTab):
 
     def get_focus_widget(self):
         return self.recv_subject
+
+    def on_activated(self):
+        self._personnel, self._depts = self._loadRef()
+        refreshFilterCombo(self.recv_receiver,  self._personnel)
+        refreshFilterCombo(self.recv_processor, self._personnel)
+        refreshFilterCombo(self.recv_dept,      self._depts)
+        self._refreshPreviewNames()
+
+    def _refreshPreviewNames(self):
+        """掃預覽表每一列，用最新 DB 資料重寫業務組/承辦人欄。"""
+        if not self.recv_table:
+            return
+        try:
+            conn = self._getConn()
+            for r in range(self.recv_table.rowCount()):
+                doc_item = self.recv_table.item(r, 1)
+                if not doc_item:
+                    continue
+                doc_id = doc_item.text()
+                row = conn.execute("""
+                    SELECT d.dept_name, p.staff_name
+                    FROM Document_Task t
+                    LEFT JOIN Ref_Departments d ON t.dept_id      = d.dept_id
+                    LEFT JOIN Ref_Personnel   p ON t.processor_id = p.staff_id
+                    WHERE t.doc_id = ?
+                """, (doc_id,)).fetchone()
+                if not row:
+                    continue
+                dept_name, processor_name = row
+                if dept_name is not None:
+                    self.recv_table.item(r, 3).setText(dept_name)
+                if processor_name is not None:
+                    self.recv_table.item(r, 4).setText(self._trimName(processor_name))
+            conn.close()
+        except Exception as e:
+            from db_utils import msgCritical
+            msgCritical("DB錯誤", f"刷新預覽列失敗: {e}")
 
     # ── 免覆 Checkbox ─────────────────────────────────────
     def _onNoDeadlineChanged(self, state):

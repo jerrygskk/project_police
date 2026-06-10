@@ -163,11 +163,10 @@ class TaskEditDialog(QDialog):
         root.addSpacing(8)
         root.addLayout(btn_row)
 
+        self.w_subject.returnPressed.connect(self._on_save)
         self.w_subject.setFocus()
 
     def _load_data(self):
-        """從 DB 撈原始資料填入欄位"""
-        conn = _get_conn(self.db_path)
         row = conn.execute("""
             SELECT receive_date, receive_id, dept_id, subject,
                    processor_id, deadline
@@ -436,6 +435,8 @@ QRadioButton:checked {
         root.addSpacing(8)
         root.addLayout(btn_row)
 
+        self.w_subject.returnPressed.connect(self._on_save)
+        self.w_reporter.returnPressed.connect(self._on_save)
         self.w_subject.setFocus()
 
     def _load_data(self):
@@ -665,6 +666,7 @@ class GeneralEditDialog(QDialog):
         root.addSpacing(8)
         root.addLayout(btn_row)
 
+        self.w_subject.returnPressed.connect(self._on_save)
         self.w_subject.setFocus()
 
     def _load_data(self):

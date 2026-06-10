@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>1024</width><height>768</height></rect>
+  </property>
+  <property name="windowTitle"><string>公文管理系統 - 資料庫設定</string></property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainVerticalLayout">
+    <property name="spacing"><number>8</number></property>
+    <property name="leftMargin"><number>24</number></property>
+    <property name="topMargin"><number>24</number></property>
+    <property name="rightMargin"><number>24</number></property>
+    <property name="bottomMargin"><number>24</number></property>
+    <item>
+     <widget class="QLabel" name="lbl_placeholder">
+      <property name="text"><string>（資料庫設定功能尚未開放，敬請期待）</string></property>
+      <property name="alignment"><set>Qt::AlignCenter</set></property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+</ui>
