@@ -25,7 +25,7 @@ class TabReceive(BaseTab):
         if not tab:
             return
 
-        recv_widget = loadUi(getResourcePath("Layout2.ui"))
+        recv_widget = loadUi(getResourcePath("layouts/Layout2.ui"))
         if not recv_widget:
             return
 

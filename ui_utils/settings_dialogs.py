@@ -43,7 +43,7 @@ _FIELD_W = 280
 _MARGIN  = 40
 
 
-def _add_buttons(dlg, layout, confirm_text='儲存', danger=False):
+def _add_buttons(dlg, layout, confirm_text='儲存', danger=False, default_confirm=True):
     row = QHBoxLayout()
     row.addStretch()
     btn_cancel = QPushButton('取消')
@@ -54,6 +54,14 @@ def _add_buttons(dlg, layout, confirm_text='儲存', danger=False):
     row.addWidget(btn_ok)
     layout.addLayout(row)
     btn_cancel.clicked.connect(dlg.reject)
+    # default_confirm=True：Enter 確認（確認鈕為 default）
+    # default_confirm=False：Enter 不確認，改由取消鈕為 default（高風險操作用，防誤按）
+    if default_confirm:
+        btn_cancel.setAutoDefault(False); btn_cancel.setDefault(False)
+        btn_ok.setAutoDefault(True);      btn_ok.setDefault(True)
+    else:
+        btn_ok.setAutoDefault(False);     btn_ok.setDefault(False)
+        btn_cancel.setAutoDefault(True);  btn_cancel.setDefault(True)
     return btn_cancel, btn_ok
 
 
@@ -125,9 +133,11 @@ class PersonnelAddDialog(QDialog):
             return
         try:
             conn = sqlite3.connect(self.db_path)
+            row = conn.execute("SELECT MIN(sort_order) FROM Ref_Personnel").fetchone()
+            new_sort = (row[0] - 1) if row and row[0] is not None else 1
             conn.execute(
-                "INSERT INTO Ref_Personnel (staff_id, staff_name, is_active) VALUES (?,?,?)",
-                (self._new_id, name, is_active))
+                "INSERT INTO Ref_Personnel (staff_id, staff_name, is_active, sort_order) VALUES (?,?,?,?)",
+                (self._new_id, name, is_active, new_sort))
             conn.commit()
             conn.close()
             self._result = (self._new_id, name, bool(is_active))
@@ -241,6 +251,10 @@ class DeptAddDialog(QDialog):
         self.w_name.setFixedWidth(_FIELD_W)
         form.addRow("部門名稱：", self.w_name)
 
+        self.w_retired = QCheckBox("停用")
+        self.w_retired.setChecked(False)
+        form.addRow("狀態：", self.w_retired)
+
         vlay.addLayout(form)
         _, btn_ok = _add_buttons(self, vlay, confirm_text='新增')
         btn_ok.clicked.connect(self._submit)
@@ -248,19 +262,22 @@ class DeptAddDialog(QDialog):
         self.w_name.setFocus()
 
     def _submit(self):
-        name = self.w_name.text().strip()
+        name      = self.w_name.text().strip()
+        is_active = 0 if self.w_retired.isChecked() else 1
         if not name:
             self.w_name.setStyleSheet(
                 "border: 1px solid #e74c3c; border-radius: 4px; padding: 4px 8px;")
             return
         try:
             conn = sqlite3.connect(self.db_path)
+            row = conn.execute("SELECT MIN(sort_order) FROM Ref_Departments").fetchone()
+            new_sort = (row[0] - 1) if row and row[0] is not None else 1
             conn.execute(
-                "INSERT INTO Ref_Departments (dept_id, dept_name) VALUES (?,?)",
-                (self._new_id, name))
+                "INSERT INTO Ref_Departments (dept_id, dept_name, is_active, sort_order) VALUES (?,?,?,?)",
+                (self._new_id, name, is_active, new_sort))
             conn.commit()
             conn.close()
-            self._result = (self._new_id, name)
+            self._result = (self._new_id, name, bool(is_active))
             self.accept()
         except Exception as e:
             from db_utils import msgCritical
@@ -272,7 +289,7 @@ class DeptAddDialog(QDialog):
 
 class DeptEditDialog(QDialog):
 
-    def __init__(self, db_path, dept_id, dept_name, parent=None):
+    def __init__(self, db_path, dept_id, dept_name, is_active, parent=None):
         super().__init__(parent)
         self.db_path = db_path
         self.dept_id = dept_id
@@ -280,9 +297,9 @@ class DeptEditDialog(QDialog):
         self.setWindowTitle('修改部門')
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
         self.setStyleSheet(_DIALOG_SS)
-        self._build(dept_name)
+        self._build(dept_name, is_active)
 
-    def _build(self, dept_name):
+    def _build(self, dept_name, is_active):
         vlay = QVBoxLayout(self)
         vlay.setSpacing(16)
         vlay.setContentsMargins(24, 20, 24, 16)
@@ -299,6 +316,10 @@ class DeptEditDialog(QDialog):
         self.w_name.setFixedWidth(_FIELD_W)
         form.addRow("部門名稱：", self.w_name)
 
+        self.w_retired = QCheckBox("停用")
+        self.w_retired.setChecked(not bool(is_active))
+        form.addRow("狀態：", self.w_retired)
+
         vlay.addLayout(form)
         _, btn_ok = _add_buttons(self, vlay, confirm_text='儲存')
         btn_ok.clicked.connect(self._submit)
@@ -306,7 +327,8 @@ class DeptEditDialog(QDialog):
         self.w_name.setFocus()
 
     def _submit(self):
-        name = self.w_name.text().strip()
+        name      = self.w_name.text().strip()
+        is_active = 0 if self.w_retired.isChecked() else 1
         if not name:
             self.w_name.setStyleSheet(
                 "border: 1px solid #e74c3c; border-radius: 4px; padding: 4px 8px;")
@@ -314,11 +336,11 @@ class DeptEditDialog(QDialog):
         try:
             conn = sqlite3.connect(self.db_path)
             conn.execute(
-                "UPDATE Ref_Departments SET dept_name=? WHERE dept_id=?",
-                (name, self.dept_id))
+                "UPDATE Ref_Departments SET dept_name=?, is_active=? WHERE dept_id=?",
+                (name, is_active, self.dept_id))
             conn.commit()
             conn.close()
-            self._result = (self.dept_id, name)
+            self._result = (self.dept_id, name, bool(is_active))
             self.accept()
         except Exception as e:
             from db_utils import msgCritical
@@ -366,6 +388,10 @@ class CaseTypeAddDialog(QDialog):
         self.w_name.setFixedWidth(_FIELD_W)
         form.addRow("類型名稱：", self.w_name)
 
+        self.w_retired = QCheckBox("停用")
+        self.w_retired.setChecked(False)
+        form.addRow("狀態：", self.w_retired)
+
         vlay.addLayout(form)
         _, btn_ok = _add_buttons(self, vlay, confirm_text='新增')
         btn_ok.clicked.connect(self._submit)
@@ -373,19 +399,22 @@ class CaseTypeAddDialog(QDialog):
         self.w_name.setFocus()
 
     def _submit(self):
-        name = self.w_name.text().strip()
+        name      = self.w_name.text().strip()
+        is_active = 0 if self.w_retired.isChecked() else 1
         if not name:
             self.w_name.setStyleSheet(
                 "border: 1px solid #e74c3c; border-radius: 4px; padding: 4px 8px;")
             return
         try:
             conn = sqlite3.connect(self.db_path)
+            row = conn.execute("SELECT MIN(sort_order) FROM Ref_CaseTypes").fetchone()
+            new_sort = (row[0] - 1) if row and row[0] is not None else 1
             conn.execute(
-                "INSERT INTO Ref_CaseTypes (case_type_id, case_type_name) VALUES (?,?)",
-                (self._new_id, name))
+                "INSERT INTO Ref_CaseTypes (case_type_id, case_type_name, is_active, sort_order) VALUES (?,?,?,?)",
+                (self._new_id, name, is_active, new_sort))
             conn.commit()
             conn.close()
-            self._result = (self._new_id, name)
+            self._result = (self._new_id, name, bool(is_active))
             self.accept()
         except Exception as e:
             from db_utils import msgCritical
@@ -397,7 +426,7 @@ class CaseTypeAddDialog(QDialog):
 
 class CaseTypeEditDialog(QDialog):
 
-    def __init__(self, db_path, type_id, type_name, parent=None):
+    def __init__(self, db_path, type_id, type_name, is_active, parent=None):
         super().__init__(parent)
         self.db_path = db_path
         self.type_id = type_id
@@ -405,9 +434,9 @@ class CaseTypeEditDialog(QDialog):
         self.setWindowTitle('修改案件類型')
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
         self.setStyleSheet(_DIALOG_SS)
-        self._build(type_name)
+        self._build(type_name, is_active)
 
-    def _build(self, type_name):
+    def _build(self, type_name, is_active):
         vlay = QVBoxLayout(self)
         vlay.setSpacing(16)
         vlay.setContentsMargins(24, 20, 24, 16)
@@ -424,6 +453,10 @@ class CaseTypeEditDialog(QDialog):
         self.w_name.setFixedWidth(_FIELD_W)
         form.addRow("類型名稱：", self.w_name)
 
+        self.w_retired = QCheckBox("停用")
+        self.w_retired.setChecked(not bool(is_active))
+        form.addRow("狀態：", self.w_retired)
+
         vlay.addLayout(form)
         _, btn_ok = _add_buttons(self, vlay, confirm_text='儲存')
         btn_ok.clicked.connect(self._submit)
@@ -431,7 +464,8 @@ class CaseTypeEditDialog(QDialog):
         self.w_name.setFocus()
 
     def _submit(self):
-        name = self.w_name.text().strip()
+        name      = self.w_name.text().strip()
+        is_active = 0 if self.w_retired.isChecked() else 1
         if not name:
             self.w_name.setStyleSheet(
                 "border: 1px solid #e74c3c; border-radius: 4px; padding: 4px 8px;")
@@ -439,11 +473,11 @@ class CaseTypeEditDialog(QDialog):
         try:
             conn = sqlite3.connect(self.db_path)
             conn.execute(
-                "UPDATE Ref_CaseTypes SET case_type_name=? WHERE case_type_id=?",
-                (name, self.type_id))
+                "UPDATE Ref_CaseTypes SET case_type_name=?, is_active=? WHERE case_type_id=?",
+                (name, is_active, self.type_id))
             conn.commit()
             conn.close()
-            self._result = (self.type_id, name)
+            self._result = (self.type_id, name, bool(is_active))
             self.accept()
         except Exception as e:
             from db_utils import msgCritical
@@ -500,9 +534,9 @@ class ChangePasswordDialog(QDialog):
 
         vlay.addLayout(form)
         vlay.addWidget(self.lbl_err)
-        _, btn_ok = _add_buttons(self, vlay, confirm_text='變更密碼')
+        _, btn_ok = _add_buttons(self, vlay, confirm_text='變更密碼', default_confirm=False)
         btn_ok.clicked.connect(self._submit)
-        self.w_confirm.returnPressed.connect(self._submit)
+        # 變更密碼為高風險操作，不綁 Enter 送出，須以滑鼠點按「變更密碼」
         self.w_old.setFocus()
 
     def _submit(self):

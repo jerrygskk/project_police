@@ -8,8 +8,8 @@ tab_settings.py — 資料庫設定 Tab
 """
 import sqlite3
 
-from PySide6.QtCore    import Qt
-from PySide6.QtGui     import QColor
+from PySide6.QtCore    import Qt, QSize
+from PySide6.QtGui     import QColor, QIcon
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QStackedWidget,
     QLabel, QLineEdit, QPushButton,
@@ -21,7 +21,7 @@ from base_tab     import BaseTab
 from auth_manager import AuthManager
 from db_utils     import (
     msgInfo, msgWarning, msgCritical, confirmBox,
-    BTN_CONFIRM, BTN_CANCEL, BTN_DANGER,
+    BTN_CONFIRM, BTN_CANCEL,
 )
 from ui_utils import (
     PersonnelAddDialog, PersonnelEditDialog,
@@ -70,17 +70,47 @@ _TABLE_SS = """
     }
     QTableWidget::item {
         padding: 4px 8px;
-        color: #1c1c1e;
         border-bottom: 1px solid #e5e5ea;
     }
     QTableWidget::item:selected {
         background-color: #ccdaeb;
-        color: #1c1c1e;
     }
 """
 
-# ── 離職人員文字色 ───────────────────────────────────────────────
+# 排序小按鈕樣式（表格內四顆）
+_SORT_BTN_SS = """
+    QPushButton {
+        font-size: 12pt;
+        padding: 0px;
+        border: 1px solid #c6c6c8;
+        border-radius: 4px;
+        background-color: #ffffff;
+        color: #1c1c1e;
+    }
+    QPushButton:hover   { background-color: #e8e8ed; }
+    QPushButton:pressed { background-color: #d1d1d6; }
+"""
+
+# 停用列灰字
 _COLOR_INACTIVE = "#aeaeb2"
+
+# 儲存排序鈕樣式（含 disabled 灰色狀態）
+_SAVE_BTN_SS = """
+    QPushButton {
+        background-color: #D0ECF5;
+        color: #000000;
+        border: 1px solid #b0d4e0;
+        border-radius: 6px;
+        padding: 6px 16px;
+        font-size: 13pt;
+    }
+    QPushButton:hover    { background-color: #B8D8E8; }
+    QPushButton:disabled {
+        background-color: #e8e8ed;
+        color: #aeaeb2;
+        border: 1px solid #d1d1d6;
+    }
+"""
 
 
 class TabSettings(BaseTab):
@@ -97,6 +127,8 @@ class TabSettings(BaseTab):
 
         self._my_tab_index = tab_index
         self._ref_dirty    = False
+        # 排序暫存狀態：每頁一份 {鍵: {'rows': [...], 'dirty': bool, 'save_btn': btn, 'table': tbl}}
+        self._sort_state = {}
 
         # 外層 QStackedWidget：index 0 = 密碼驗證，index 1 = 設定主畫面
         self._outer_stack = QStackedWidget(tab)
@@ -242,68 +274,47 @@ class TabSettings(BaseTab):
 
     # ── 人員管理頁 ──────────────────────────────────────────────
     def _build_personnel_page(self):
-        w = QWidget()
-        lay = QVBoxLayout(w)
-        lay.setContentsMargins(20, 16, 20, 16)
-        lay.setSpacing(8)
-
-        self.tbl_personnel = self._make_table(
-            ["編號", "姓名", "狀態"],
-            col_widths={0: 80, 2: 80},
-            stretch_col=1,
-        )
-        self.tbl_personnel.cellDoubleClicked.connect(
-            lambda row, col: self._editPersonnel(row)
-        )
-        lay.addWidget(self.tbl_personnel)
-
-        lay.addLayout(self._make_action_row(
-            self._addPersonnel, self._editPersonnel, self._deletePersonnel
-        ))
-        return w
+        return self._build_ref_page(
+            key="personnel", name_header="姓名",
+            edit_cb=self._editPersonnel, add_cb=self._addPersonnel,
+            table_attr="tbl_personnel")
 
     # ── 部門管理頁 ──────────────────────────────────────────────
     def _build_dept_page(self):
-        w = QWidget()
-        lay = QVBoxLayout(w)
-        lay.setContentsMargins(20, 16, 20, 16)
-        lay.setSpacing(8)
-
-        self.tbl_dept = self._make_table(
-            ["編號", "部門名稱"],
-            col_widths={0: 80},
-            stretch_col=1,
-        )
-        self.tbl_dept.cellDoubleClicked.connect(
-            lambda row, col: self._editDept(row)
-        )
-        lay.addWidget(self.tbl_dept)
-
-        lay.addLayout(self._make_action_row(
-            self._addDept, self._editDept, self._deleteDept
-        ))
-        return w
+        return self._build_ref_page(
+            key="dept", name_header="部門名稱",
+            edit_cb=self._editDept, add_cb=self._addDept,
+            table_attr="tbl_dept")
 
     # ── 案件類型頁 ──────────────────────────────────────────────
     def _build_casetype_page(self):
+        return self._build_ref_page(
+            key="casetype", name_header="案件類型名稱",
+            edit_cb=self._editCaseType, add_cb=self._addCaseType,
+            table_attr="tbl_casetype")
+
+    # ── 泛型參照頁建立器 ────────────────────────────────────────
+    def _build_ref_page(self, key, name_header, edit_cb, add_cb, table_attr):
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(20, 16, 20, 16)
         lay.setSpacing(8)
 
-        self.tbl_casetype = self._make_table(
-            ["編號", "案件類型名稱"],
-            col_widths={0: 80},
+        tbl = self._make_table(
+            ["編號", name_header, "狀態", "排序"],
+            col_widths={0: 80, 2: 80, 3: 140},
             stretch_col=1,
         )
-        self.tbl_casetype.cellDoubleClicked.connect(
-            lambda row, col: self._editCaseType(row)
-        )
-        lay.addWidget(self.tbl_casetype)
+        tbl.cellDoubleClicked.connect(lambda row, col: edit_cb(row))
+        setattr(self, table_attr, tbl)
 
-        lay.addLayout(self._make_action_row(
-            self._addCaseType, self._editCaseType, self._deleteCaseType
-        ))
+        action_row, btn_save = self._make_action_row(
+            add_cb, edit_cb, lambda _=False, k=key: self._saveSort(k))
+        lay.addLayout(action_row)
+        lay.addWidget(tbl)
+
+        self._sort_state[key] = {
+            "rows": [], "dirty": False, "save_btn": btn_save, "table": tbl}
         return w
 
     # ════════════════════════════════════════════════════════════
@@ -319,7 +330,7 @@ class TabSettings(BaseTab):
         t.setSelectionMode(QTableWidget.SingleSelection)
         t.setAlternatingRowColors(True)
         t.setShowGrid(False)
-        t.verticalHeader().setDefaultSectionSize(32)
+        t.verticalHeader().setDefaultSectionSize(36)
         t.setStyleSheet(_TABLE_SS)
 
         hdr = t.horizontalHeader()
@@ -331,27 +342,53 @@ class TabSettings(BaseTab):
             hdr.setSectionResizeMode(stretch_col, QHeaderView.Stretch)
         return t
 
-    def _make_action_row(self, add_cb, edit_cb, del_cb):
+    # ── 排序欄四顆小按鈕 ────────────────────────────────────────
+    def _make_sort_cell(self, page_key, get_row_fn):
+        """產生一格含四顆排序小鈕的 widget；get_row_fn() 動態回傳當前列號"""
+        cell = QWidget()
+        h = QHBoxLayout(cell)
+        h.setContentsMargins(2, 0, 2, 0)
+        h.setSpacing(2)
+        specs = [(":/sort_top.svg",    "置頂", "top"),
+                 (":/sort_up.svg",     "上移", "up"),
+                 (":/sort_down.svg",   "下移", "down"),
+                 (":/sort_bottom.svg", "置底", "bottom")]
+        for icon_path, tip, act in specs:
+            b = QPushButton()
+            b.setIcon(QIcon(icon_path))
+            b.setIconSize(QSize(14, 14))
+            b.setToolTip(tip)
+            b.setFixedSize(26, 26)
+            b.setStyleSheet(_SORT_BTN_SS)
+            b.clicked.connect(
+                lambda _=False, a=act, k=page_key, f=get_row_fn: self._moveRow(k, f(), a)
+            )
+            h.addWidget(b)
+        h.addStretch()
+        return cell
+
+    def _make_action_row(self, add_cb, edit_cb, save_cb):
         row = QHBoxLayout()
-        row.addStretch()
         btn_add  = QPushButton("＋ 新增")
         btn_edit = QPushButton("✎ 修改")
-        btn_del  = QPushButton("✕ 刪除")
         btn_add.setStyleSheet(BTN_CONFIRM)
         btn_edit.setStyleSheet(BTN_CANCEL)
-        btn_del.setStyleSheet(BTN_DANGER)
-        btn_add.clicked.connect(add_cb)
+        btn_add.clicked.connect(lambda: add_cb())
         btn_edit.clicked.connect(lambda: edit_cb())
-        btn_del.clicked.connect(del_cb)
-        for b in [btn_add, btn_edit, btn_del]:
-            row.addWidget(b)
-        return row
+        row.addWidget(btn_add)
+        row.addWidget(btn_edit)
+        row.addStretch()
+        btn_save = QPushButton("💾 儲存排序")
+        btn_save.setStyleSheet(_SAVE_BTN_SS)
+        btn_save.setEnabled(False)
+        btn_save.clicked.connect(save_cb)
+        row.addWidget(btn_save)
+        return row, btn_save
 
     def _item(self, text, color=None):
         it = QTableWidgetItem(str(text) if text is not None else "")
         it.setTextAlignment(Qt.AlignCenter)
-        if color:
-            it.setForeground(QColor(color))
+        it.setForeground(QColor(color if color else "#1c1c1e"))
         return it
 
     def _selected_row(self, table):
@@ -360,11 +397,28 @@ class TabSettings(BaseTab):
 
     # ── 左側導航切換 ────────────────────────────────────────────
     def _switchPage(self, idx):
+        # 切子頁前：若有未儲存排序，先詢問。取消則不切頁、保留排序（回原狀）
+        if hasattr(self, "_sort_state") and self._sort_state:
+            if not self._promptUnsaved(context="switch"):
+                return
         self._inner_stack.setCurrentIndex(idx)
         for i, btn in enumerate(self._nav_btns):
             btn.setStyleSheet(_NAV_ACTIVE if i == idx else _NAV_INACTIVE)
         loaders = [self._loadPersonnel, self._loadDept, self._loadCaseType]
         loaders[idx]()
+
+    def on_activated(self):
+        """被切回設定 Tab 時重載當前子頁，確保畫面與 DB 一致
+        （未存排序會被 DB 真實順序蓋掉 = 離開即放棄）。
+        未登入（停在驗證頁）時不動作。"""
+        if not hasattr(self, "_inner_stack"):
+            return
+        if not hasattr(self, "_outer_stack") or self._outer_stack.currentIndex() == 0:
+            return  # 還在密碼驗證頁
+        idx = self._inner_stack.currentIndex()
+        loaders = [self._loadPersonnel, self._loadDept, self._loadCaseType]
+        if 0 <= idx < len(loaders):
+            loaders[idx]()
 
     # ── 登入 ────────────────────────────────────────────────────
     def _doLogin(self):
@@ -412,25 +466,141 @@ class TabSettings(BaseTab):
     # ════════════════════════════════════════════════════════════
     # 人員管理
     # ════════════════════════════════════════════════════════════
-    def _loadPersonnel(self):
-        self.tbl_personnel.setRowCount(0)
+    # ════════════════════════════════════════════════════════════
+    # 排序 — 泛型核心（人員/部門/案類共用）
+    # ════════════════════════════════════════════════════════════
+    # 每頁的 DB 對應：table 名、id 欄、name 欄、啟用詞、停用詞
+    _REF_CFG = {
+        "personnel": ("Ref_Personnel",   "staff_id",     "staff_name",     "在職", "離職"),
+        "dept":      ("Ref_Departments",  "dept_id",      "dept_name",      "啟用", "停用"),
+        "casetype":  ("Ref_CaseTypes",    "case_type_id", "case_type_name", "啟用", "停用"),
+    }
+
+    def _loadRefGeneric(self, key):
+        """從 DB 依 sort_order 撈進記憶體，清掉暫存 dirty，重繪表格"""
+        tbl_name, idc, namec, _, _ = self._REF_CFG[key]
         try:
             conn = self._getConn()
             rows = conn.execute(
-                "SELECT staff_id, staff_name, is_active FROM Ref_Personnel ORDER BY staff_id"
+                f"SELECT {idc}, {namec}, is_active FROM {tbl_name} "
+                f"ORDER BY sort_order"
             ).fetchall()
             conn.close()
         except Exception as e:
             msgCritical("DB錯誤", str(e))
             return
-        for sid, sname, active in rows:
-            r = self.tbl_personnel.rowCount()
-            self.tbl_personnel.insertRow(r)
+        st = self._sort_state[key]
+        st["rows"]  = [list(r) for r in rows]   # [id, name, is_active]
+        st["dirty"] = False
+        st["save_btn"].setEnabled(False)
+        self._renderSortTable(key)
+
+    def _renderSortTable(self, key):
+        """依記憶體 rows 重繪整張表（含排序欄四鈕、停用灰字）"""
+        _, _, _, word_on, word_off = self._REF_CFG[key]
+        st  = self._sort_state[key]
+        tbl = st["table"]
+        tbl.setRowCount(0)
+        for r, (rid, rname, active) in enumerate(st["rows"]):
+            tbl.insertRow(r)
             color  = None if active else _COLOR_INACTIVE
-            status = "在職" if active else "離職"
-            self.tbl_personnel.setItem(r, 0, self._item(sid,    color))
-            self.tbl_personnel.setItem(r, 1, self._item(sname,  color))
-            self.tbl_personnel.setItem(r, 2, self._item(status, color))
+            status = word_on if active else word_off
+            tbl.setItem(r, 0, self._item(rid,    color))
+            tbl.setItem(r, 1, self._item(rname,  color))
+            tbl.setItem(r, 2, self._item(status, color))
+            # 排序欄：用當前列的 id 動態定位列號（重繪後列號會變）
+            cell = self._make_sort_cell(key, lambda rid=rid, k=key: self._rowOfId(k, rid))
+            tbl.setCellWidget(r, 3, cell)
+
+    def _rowOfId(self, key, rid):
+        for i, row in enumerate(self._sort_state[key]["rows"]):
+            if row[0] == rid:
+                return i
+        return -1
+
+    def _moveRow(self, key, row, action):
+        """記憶體層移動列，標 dirty，亮儲存鈕，重繪"""
+        st   = self._sort_state[key]
+        rows = st["rows"]
+        n    = len(rows)
+        if row < 0 or n < 2:
+            return
+        if action == "up":
+            if row == 0: return
+            rows[row-1], rows[row] = rows[row], rows[row-1]
+        elif action == "down":
+            if row == n-1: return
+            rows[row+1], rows[row] = rows[row], rows[row+1]
+        elif action == "top":
+            if row == 0: return
+            rows.insert(0, rows.pop(row))
+        elif action == "bottom":
+            if row == n-1: return
+            rows.append(rows.pop(row))
+        st["dirty"] = True
+        st["save_btn"].setEnabled(True)
+        self._renderSortTable(key)
+
+    def _saveSort(self, key, silent=False):
+        """把記憶體順序寫回 DB sort_order（連續整數），清 dirty，設 _ref_dirty。
+        silent=True 時不跳「已儲存」提示（由修改流程觸發時用）"""
+        tbl_name, idc, _, _, _ = self._REF_CFG[key]
+        st = self._sort_state[key]
+        try:
+            conn = self._getConn()
+            for i, row in enumerate(st["rows"], start=1):
+                conn.execute(
+                    f"UPDATE {tbl_name} SET sort_order=? WHERE {idc}=?",
+                    (i, row[0]))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            msgCritical("儲存失敗", str(e))
+            return
+        st["dirty"] = False
+        st["save_btn"].setEnabled(False)
+        self._ref_dirty = True
+        if not silent:
+            msgInfo("已儲存", "排序已更新", self.tab_widget)
+
+    def _hasUnsavedSort(self):
+        return any(s["dirty"] for s in self._sort_state.values())
+
+    def _promptUnsaved(self, context="edit"):
+        """有未存排序時詢問。
+        context='edit'  ：取消=保留排序、中止動作（回 False）
+        context='switch'：同 edit，文字為切換頁面
+        context='leave' ：一律回傳 True(按離開=放棄排序、按儲存=存檔)"""
+        if not self._hasUnsavedSort():
+            return True
+        if context == "leave":
+            title, msg, confirm, cancel = "排序未儲存", "離開將遺失排序資料", "儲存", "離開"
+        elif context == "switch":
+            title, msg, confirm, cancel = "排序未儲存", "儲存目前排序後切換頁面？", "儲存", "取消"
+        else:
+            title, msg, confirm, cancel = "排序未儲存", "儲存目前排序後繼續編輯？", "儲存", "取消"
+        ret = confirmBox(
+            title, msg,
+            confirm_text=confirm, cancel_text=cancel, parent=self.tab_widget)
+        if ret:
+            for k, s in self._sort_state.items():
+                if s["dirty"]:
+                    self._saveSort(k, silent=True)
+            return True
+        # 按了取消 / 離開
+        if context == "leave":
+            for s in self._sort_state.values():
+                s["dirty"] = False
+                s["save_btn"].setEnabled(False)
+            return True
+        # edit / switch 取消：保留排序、回報中止
+        return False
+
+    # ════════════════════════════════════════════════════════════
+    # 人員管理
+    # ════════════════════════════════════════════════════════════
+    def _loadPersonnel(self):
+        self._loadRefGeneric("personnel")
 
     def _addPersonnel(self):
         dlg = PersonnelAddDialog(self.db_path, self.tab_widget)
@@ -447,69 +617,19 @@ class TabSettings(BaseTab):
         sid    = self.tbl_personnel.item(row, 0).text()
         sname  = self.tbl_personnel.item(row, 1).text()
         active = self.tbl_personnel.item(row, 2).text() == "在職"
+        if not self._promptUnsaved():
+            return
         dlg = PersonnelEditDialog(self.db_path, sid, sname, active, self.tab_widget)
         if dlg.exec():
-            result = dlg.get_result()
-            if result:
+            if dlg.get_result():
                 self._ref_dirty = True
-                _, new_name, new_active = result
-                color  = None if new_active else _COLOR_INACTIVE
-                status = "在職" if new_active else "離職"
-                self.tbl_personnel.setItem(row, 0, self._item(sid,      color))
-                self.tbl_personnel.setItem(row, 1, self._item(new_name, color))
-                self.tbl_personnel.setItem(row, 2, self._item(status,   color))
-
-    def _deletePersonnel(self):
-        row = self._selected_row(self.tbl_personnel)
-        if row < 0:
-            msgWarning("請選擇項目", "請先點選要設為離職的人員", self.tab_widget)
-            return
-        sid   = self.tbl_personnel.item(row, 0).text()
-        sname = self.tbl_personnel.item(row, 1).text()
-        if self.tbl_personnel.item(row, 2).text() == "離職":
-            msgInfo("提示", f"人員「{sname}」已是離職狀態", self.tab_widget)
-            return
-        if not confirmBox(
-            "確認離職",
-            f"將人員「{sname}」設為離職，該人員將不再出現於下拉選單。\n確認離職？",
-            confirm_text="離職", confirm_danger=True, default_confirm=False,
-            parent=self.tab_widget
-        ):
-            return
-        try:
-            conn = self._getConn()
-            conn.execute(
-                "UPDATE Ref_Personnel SET is_active=0 WHERE staff_id=?", (sid,)
-            )
-            conn.commit()
-            conn.close()
-            self._ref_dirty = True
-            color = _COLOR_INACTIVE
-            self.tbl_personnel.setItem(row, 0, self._item(sid,   color))
-            self.tbl_personnel.setItem(row, 1, self._item(sname, color))
-            self.tbl_personnel.setItem(row, 2, self._item("離職", color))
-        except Exception as e:
-            msgCritical("更新失敗", str(e))
+                self._loadPersonnel()
 
     # ════════════════════════════════════════════════════════════
     # 部門管理
     # ════════════════════════════════════════════════════════════
     def _loadDept(self):
-        self.tbl_dept.setRowCount(0)
-        try:
-            conn = self._getConn()
-            rows = conn.execute(
-                "SELECT dept_id, dept_name FROM Ref_Departments ORDER BY dept_id"
-            ).fetchall()
-            conn.close()
-        except Exception as e:
-            msgCritical("DB錯誤", str(e))
-            return
-        for did, dname in rows:
-            r = self.tbl_dept.rowCount()
-            self.tbl_dept.insertRow(r)
-            self.tbl_dept.setItem(r, 0, self._item(did))
-            self.tbl_dept.setItem(r, 1, self._item(dname))
+        self._loadRefGeneric("dept")
 
     def _addDept(self):
         dlg = DeptAddDialog(self.db_path, self.tab_widget)
@@ -523,81 +643,22 @@ class TabSettings(BaseTab):
         if row < 0:
             msgWarning("請選擇項目", "請先點選要修改的部門", self.tab_widget)
             return
-        did   = self.tbl_dept.item(row, 0).text()
-        dname = self.tbl_dept.item(row, 1).text()
-        dlg = DeptEditDialog(self.db_path, did, dname, self.tab_widget)
+        did    = self.tbl_dept.item(row, 0).text()
+        dname  = self.tbl_dept.item(row, 1).text()
+        active = self.tbl_dept.item(row, 2).text() == "啟用"
+        if not self._promptUnsaved():
+            return
+        dlg = DeptEditDialog(self.db_path, did, dname, active, self.tab_widget)
         if dlg.exec():
-            result = dlg.get_result()
-            if result:
+            if dlg.get_result():
                 self._ref_dirty = True
-                _, new_name = result
-                self.tbl_dept.setItem(row, 1, self._item(new_name))
-
-    def _deleteDept(self):
-        row = self._selected_row(self.tbl_dept)
-        if row < 0:
-            msgWarning("請選擇項目", "請先點選要刪除的部門", self.tab_widget)
-            return
-        did   = self.tbl_dept.item(row, 0).text()
-        dname = self.tbl_dept.item(row, 1).text()
-        try:
-            conn  = self._getConn()
-            count = conn.execute(
-                "SELECT COUNT(*) FROM Document_Task WHERE dept_id=? AND subject IS NOT NULL",
-                (did,)
-            ).fetchone()[0]
-            count2 = conn.execute(
-                "SELECT COUNT(*) FROM Document_General WHERE dept_id=? AND subject IS NOT NULL",
-                (did,)
-            ).fetchone()[0]
-            conn.close()
-        except Exception as e:
-            msgCritical("DB錯誤", str(e))
-            return
-        total = count + count2
-        if total > 0:
-            msgWarning(
-                "無法刪除",
-                f"部門「{dname}」已有 {total} 筆公文資料引用，無法刪除。",
-                self.tab_widget
-            )
-            return
-        if not confirmBox(
-            "確認刪除",
-            f"確定要刪除部門「{dname}」？此操作無法復原。",
-            confirm_text="刪除", confirm_danger=True, default_confirm=False,
-            parent=self.tab_widget
-        ):
-            return
-        try:
-            conn = self._getConn()
-            conn.execute("DELETE FROM Ref_Departments WHERE dept_id=?", (did,))
-            conn.commit()
-            conn.close()
-            self._ref_dirty = True
-            self.tbl_dept.removeRow(row)
-        except Exception as e:
-            msgCritical("刪除失敗", str(e))
+                self._loadDept()
 
     # ════════════════════════════════════════════════════════════
     # 案件類型管理
     # ════════════════════════════════════════════════════════════
     def _loadCaseType(self):
-        self.tbl_casetype.setRowCount(0)
-        try:
-            conn = self._getConn()
-            rows = conn.execute(
-                "SELECT case_type_id, case_type_name FROM Ref_CaseTypes ORDER BY case_type_id"
-            ).fetchall()
-            conn.close()
-        except Exception as e:
-            msgCritical("DB錯誤", str(e))
-            return
-        for tid, tname in rows:
-            r = self.tbl_casetype.rowCount()
-            self.tbl_casetype.insertRow(r)
-            self.tbl_casetype.setItem(r, 0, self._item(tid))
-            self.tbl_casetype.setItem(r, 1, self._item(tname))
+        self._loadRefGeneric("casetype")
 
     def _addCaseType(self):
         dlg = CaseTypeAddDialog(self.db_path, self.tab_widget)
@@ -611,53 +672,13 @@ class TabSettings(BaseTab):
         if row < 0:
             msgWarning("請選擇項目", "請先點選要修改的案件類型", self.tab_widget)
             return
-        tid   = self.tbl_casetype.item(row, 0).text()
-        tname = self.tbl_casetype.item(row, 1).text()
-        dlg = CaseTypeEditDialog(self.db_path, tid, tname, self.tab_widget)
+        tid    = self.tbl_casetype.item(row, 0).text()
+        tname  = self.tbl_casetype.item(row, 1).text()
+        active = self.tbl_casetype.item(row, 2).text() == "啟用"
+        if not self._promptUnsaved():
+            return
+        dlg = CaseTypeEditDialog(self.db_path, tid, tname, active, self.tab_widget)
         if dlg.exec():
-            result = dlg.get_result()
-            if result:
+            if dlg.get_result():
                 self._ref_dirty = True
-                _, new_name = result
-                self.tbl_casetype.setItem(row, 1, self._item(new_name))
-
-    def _deleteCaseType(self):
-        row = self._selected_row(self.tbl_casetype)
-        if row < 0:
-            msgWarning("請選擇項目", "請先點選要刪除的案件類型", self.tab_widget)
-            return
-        tid   = self.tbl_casetype.item(row, 0).text()
-        tname = self.tbl_casetype.item(row, 1).text()
-        try:
-            conn  = self._getConn()
-            count = conn.execute(
-                "SELECT COUNT(*) FROM Document_Criminal WHERE case_type=? AND report_date IS NOT NULL",
-                (tid,)
-            ).fetchone()[0]
-            conn.close()
-        except Exception as e:
-            msgCritical("DB錯誤", str(e))
-            return
-        if count > 0:
-            msgWarning(
-                "無法刪除",
-                f"案件類型「{tname}」已有 {count} 筆刑案資料引用，無法刪除。",
-                self.tab_widget
-            )
-            return
-        if not confirmBox(
-            "確認刪除",
-            f"確定要刪除案件類型「{tname}」？此操作無法復原。",
-            confirm_text="刪除", confirm_danger=True, default_confirm=False,
-            parent=self.tab_widget
-        ):
-            return
-        try:
-            conn = self._getConn()
-            conn.execute("DELETE FROM Ref_CaseTypes WHERE case_type_id=?", (tid,))
-            conn.commit()
-            conn.close()
-            self._ref_dirty = True
-            self.tbl_casetype.removeRow(row)
-        except Exception as e:
-            msgCritical("刪除失敗", str(e))
+                self._loadCaseType()

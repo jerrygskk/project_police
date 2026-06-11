@@ -14,7 +14,8 @@ from PySide6.QtWidgets import (
     QPushButton, QScrollArea, QWidget, QDateEdit, QMessageBox, QFileDialog,
 )
 from PySide6.QtCore import Qt, QDate, QThread, Signal
-from PySide6.QtGui  import QPixmap, QImage
+from PySide6.QtGui  import QPixmap, QImage, QPainter, QPageSize
+from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from base_tab import BaseTab
 from db_utils import getResourcePath, loadUi, msgInfo, msgWarning, msgCritical
@@ -327,10 +328,11 @@ def _draw_page(side_label, table_title, print_date, disp_date,
 # ── 產生所有頁（回傳 figures + pdf_bytes）────────────────
 def generate_pages(db_path, date_str):
     """
-    回傳 (png_list, pdf_bytes)
-      png_list  — list of PNG bytes，每頁一個（直接給 QImage，不需 poppler）
-      pdf_bytes — 完整 PDF bytes
-    查無資料回傳 (None, None)
+    回傳 (png_list, pdf_bytes, print_pngs)
+      png_list   — list of PNG bytes，每頁一個（200 dpi，螢幕預覽用）
+      pdf_bytes  — 完整 PDF bytes（另存用）
+      print_pngs — list of PNG bytes，每頁一個（300 dpi 全頁，列印用）
+    查無資料回傳 (None, None, None)
     """
     conn = sqlite3.connect(db_path)
     task = conn.execute(
@@ -348,7 +350,7 @@ def generate_pages(db_path, date_str):
     conn.close()
 
     if not task and not crim and not gen:
-        return None, None
+        return None, None, None
 
     print_date = _today()
     disp_date  = _fmt_date(date_str)
@@ -415,7 +417,7 @@ def generate_pages(db_path, date_str):
         buf.seek(0)
         png_list.append(buf.read())
 
-    # PDF bytes（用於另存）
+    # PNG bytes（用於另存 / 列印）
     pdf_buf = io.BytesIO()
     with PdfPages(pdf_buf) as pdf:
         for fig in figs:
@@ -423,15 +425,23 @@ def generate_pages(db_path, date_str):
     pdf_buf.seek(0)
     pdf_bytes = pdf_buf.read()
 
+    # 列印用全頁影像（300 dpi，不裁切，維持 A4 比例對齊紙張）
+    print_pngs = []
+    for fig in figs:
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=300, facecolor='white')
+        buf.seek(0)
+        print_pngs.append(buf.read())
+
     for fig in figs:
         plt.close(fig)
 
-    return png_list, pdf_bytes
+    return png_list, pdf_bytes, print_pngs
 
 
 # ── 背景執行緒 ────────────────────────────────────────────
 class _PdfWorker(QThread):
-    done   = Signal(object, bytes)   # (png_list, pdf_bytes)
+    done   = Signal(object, bytes, object)   # (png_list, pdf_bytes, print_pngs)
     failed = Signal(str)
 
     def __init__(self, db_path, date_str):
@@ -441,11 +451,11 @@ class _PdfWorker(QThread):
 
     def run(self):
         try:
-            png_list, pdf_bytes = generate_pages(self.db_path, self.date_str)
+            png_list, pdf_bytes, print_pngs = generate_pages(self.db_path, self.date_str)
             if png_list is None:
                 self.failed.emit('查無資料')
             else:
-                self.done.emit(png_list, pdf_bytes)
+                self.done.emit(png_list, pdf_bytes, print_pngs)
         except Exception as e:
             self.failed.emit(str(e))
 
@@ -459,7 +469,7 @@ class TabPrint(BaseTab):
             return
 
         # 載入 UI（與 tab_report 相同模式）
-        ui = loadUi(getResourcePath('Layout4.ui'))
+        ui = loadUi(getResourcePath('layouts/Layout4.ui'))
         if not ui:
             return
         inner = ui.centralWidget()
@@ -500,8 +510,9 @@ class TabPrint(BaseTab):
         if self._layout:
             self._layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
 
-        self._worker    = None
-        self._pdf_bytes = None
+        self._worker     = None
+        self._pdf_bytes  = None
+        self._print_pngs = None
 
     def _on_generate(self):
         if self._worker and self._worker.isRunning():
@@ -516,8 +527,9 @@ class TabPrint(BaseTab):
         self._worker.failed.connect(self._on_fail)
         self._worker.start()
 
-    def _on_done(self, png_list, pdf_bytes):
-        self._pdf_bytes = pdf_bytes
+    def _on_done(self, png_list, pdf_bytes, print_pngs):
+        self._pdf_bytes  = pdf_bytes
+        self._print_pngs = print_pngs
         self.btn_gen.setEnabled(True)
         self.btn_download.setEnabled(True)
         self.btn_print.setEnabled(True)
@@ -559,20 +571,36 @@ class TabPrint(BaseTab):
                 f.write(self._pdf_bytes)
 
     def _on_print(self):
-        if not self._pdf_bytes:
+        if not self._print_pngs:
             return
-        import tempfile, os, subprocess, sys
-        # 存到暫存檔再用系統預設印表機列印
-        tmp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
-        tmp.write(self._pdf_bytes)
-        tmp.close()
-        try:
-            if sys.platform == 'win32':
-                os.startfile(tmp.name, 'print')
-            else:
-                subprocess.run(['lpr', tmp.name])
-        except Exception as e:
-            msgWarning('列印失敗', str(e))
+        printer = QPrinter(QPrinter.HighResolution)
+        printer.setPageSize(QPageSize(QPageSize.A4))
+        dlg = QPrintPreviewDialog(printer, self.tab_widget)
+        dlg.setWindowTitle('列印預覽')
+        dlg.resize(900, 1000)
+        dlg.paintRequested.connect(self._paint_pages)
+        dlg.exec()
+
+    def _paint_pages(self, printer):
+        """把 300 dpi 全頁影像逐頁畫到印表機頁面（等比置中填滿）"""
+        painter = QPainter(printer)
+        first = True
+        for png_bytes in self._print_pngs:
+            img = QImage.fromData(png_bytes)
+            if img.isNull():
+                continue
+            if not first:
+                printer.newPage()
+            first = False
+            # viewport = 當前可列印區域（device pixel），避開 enum 命名空間差異
+            vp = painter.viewport()
+            scaled = img.scaled(
+                vp.width(), vp.height(),
+                Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            x = vp.x() + (vp.width()  - scaled.width())  // 2
+            y = vp.y() + (vp.height() - scaled.height()) // 2
+            painter.drawImage(x, y, scaled)
+        painter.end()
 
     def _clear(self):
         while self._layout.count():

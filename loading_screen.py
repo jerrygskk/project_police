@@ -53,7 +53,7 @@ class LoadWorker(QThread):
         time.sleep(DEBUG_DELAY)
 
         # 步驟 2：載入 Qt Resource
-        import resources_rc  # noqa
+        from res import resources_rc  # noqa
         self.step_done.emit(*LOAD_STEPS[1])
         time.sleep(DEBUG_DELAY)
 
@@ -65,7 +65,7 @@ class LoadWorker(QThread):
 
         # 步驟 4：載入主選單 UI
         from db_utils import loadUi
-        results['menu_ui_path'] = getResourcePath("main_menu.ui")
+        results['menu_ui_path'] = getResourcePath("layouts/main_menu.ui")
         self.step_done.emit(*LOAD_STEPS[3])
         time.sleep(DEBUG_DELAY)
 
@@ -95,17 +95,17 @@ class LoadWorker(QThread):
         time.sleep(DEBUG_DELAY)
 
         # 步驟 8：載入 Layout1.ui
-        results['layout1_path'] = getResourcePath("Layout1.ui")
+        results['layout1_path'] = getResourcePath("layouts/Layout1.ui")
         self.step_done.emit(*LOAD_STEPS[7])
         time.sleep(DEBUG_DELAY)
 
         # 步驟 9：載入 Layout2.ui
-        results['layout2_path'] = getResourcePath("Layout2.ui")
+        results['layout2_path'] = getResourcePath("layouts/Layout2.ui")
         self.step_done.emit(*LOAD_STEPS[8])
         time.sleep(DEBUG_DELAY)
 
         # 步驟 10：載入 Layout3.ui
-        results['layout3_path'] = getResourcePath("Layout3.ui")
+        results['layout3_path'] = getResourcePath("layouts/Layout3.ui")
         self.step_done.emit(*LOAD_STEPS[9])
         time.sleep(DEBUG_DELAY)
 
@@ -156,7 +156,7 @@ class LoadingScreen(QWidget):
         self.banner_label.setAlignment(Qt.AlignCenter)
         self.banner_label.setStyleSheet("background-color: #dde7f7;")
 
-        banner_path = getResourcePath("banner.png")
+        banner_path = getResourcePath("res/banner.png")
         if os.path.exists(banner_path):
             pix = QPixmap(banner_path).scaled(
                 self.WIN_W, 279,

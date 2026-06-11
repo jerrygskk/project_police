@@ -54,7 +54,7 @@ class TabReport(BaseTab):
         if not tab:
             return
 
-        rpt_widget = loadUi(getResourcePath("Layout3.ui"))
+        rpt_widget = loadUi(getResourcePath("layouts/Layout3.ui"))
         if not rpt_widget:
             return
 
@@ -141,7 +141,7 @@ class TabReport(BaseTab):
         # ── 載入參照表 ────────────────────────────────────
         self._personnel, self._depts = self._loadRef()
         self._case_types = self._loadTable(
-            "SELECT case_type_id, case_type_name FROM Ref_CaseTypes ORDER BY case_type_id"
+            "SELECT case_type_id, case_type_name FROM Ref_CaseTypes WHERE is_active=1 ORDER BY sort_order"
         )
 
         # ── 填入下拉選單 ──────────────────────────────────
@@ -199,7 +199,7 @@ class TabReport(BaseTab):
     def on_activated(self):
         self._personnel, self._depts = self._loadRef()
         self._case_types = self._loadTable(
-            "SELECT case_type_id, case_type_name FROM Ref_CaseTypes ORDER BY case_type_id"
+            "SELECT case_type_id, case_type_name FROM Ref_CaseTypes WHERE is_active=1 ORDER BY sort_order"
         )
         refreshFilterCombo(self.rpt_sender,     self._personnel)
         refreshFilterCombo(self.crim_casetype,  self._case_types)

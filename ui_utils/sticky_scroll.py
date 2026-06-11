@@ -10,7 +10,7 @@ attachStickyScroll(table):
     預設行為：若使用者原本就在底部，新增列會自動跟著捲到底。
     按鈕只在「捲軸有作用（內容超過可視範圍）」時顯示。
 """
-from PySide6.QtCore    import Qt, QTimer
+from PySide6.QtCore    import Qt, QTimer, QObject, QEvent
 from PySide6.QtWidgets import QPushButton
 
 
@@ -104,13 +104,19 @@ def attachStickyScroll(table):
     table.resizeEvent = _resizeEvent
 
     # 攔截滾輪：往上滾就退出黏底
-    _orig_wheel = table.wheelEvent
-    def _wheelEvent(ev):
-        if ev.angleDelta().y() > 0 and state["sticky"]:
-            state["sticky"] = False
-            _updateStyle()
-        _orig_wheel(ev)
-    table.wheelEvent = _wheelEvent
+    # 註：QAbstractScrollArea 的 wheel 事件由 viewport() 接收，
+    # 覆寫 table.wheelEvent 不會被觸發，必須在 viewport 裝 eventFilter。
+    class _WheelFilter(QObject):
+        def eventFilter(self, obj, ev):
+            if (ev.type() == QEvent.Wheel
+                    and ev.angleDelta().y() > 0
+                    and state["sticky"]):
+                state["sticky"] = False
+                _updateStyle()
+            return False  # 不吃掉事件，原本的捲動行為繼續
+
+    table._wheel_filter = _WheelFilter(table)   # 存屬性防 GC
+    table.viewport().installEventFilter(table._wheel_filter)
 
     btn.clicked.connect(_onClicked)
     sb.valueChanged.connect(_onValueChanged)

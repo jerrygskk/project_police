@@ -81,9 +81,9 @@ class TaskEditDialog(QDialog):
 
         # 參照資料
         self._personnel = _load_combo(conn,
-            "SELECT staff_id, staff_name FROM Ref_Personnel WHERE is_active=1 ORDER BY staff_id")
+            "SELECT staff_id, staff_name FROM Ref_Personnel WHERE is_active=1 ORDER BY sort_order")
         self._depts = _load_combo(conn,
-            "SELECT dept_id, dept_name FROM Ref_Departments ORDER BY dept_id")
+            "SELECT dept_id, dept_name FROM Ref_Departments WHERE is_active=1 ORDER BY sort_order")
         conn.close()
 
         form = QFormLayout()
@@ -352,9 +352,9 @@ QRadioButton:checked {
         from PySide6.QtWidgets import QButtonGroup
         conn = _get_conn(self.db_path)
         self._personnel  = _load_combo(conn,
-            "SELECT staff_id, staff_name FROM Ref_Personnel WHERE is_active=1 ORDER BY staff_id")
+            "SELECT staff_id, staff_name FROM Ref_Personnel WHERE is_active=1 ORDER BY sort_order")
         self._case_types = _load_combo(conn,
-            "SELECT case_type_id, case_type_name FROM Ref_CaseTypes ORDER BY case_type_id")
+            "SELECT case_type_id, case_type_name FROM Ref_CaseTypes WHERE is_active=1 ORDER BY sort_order")
         conn.close()
 
         form = QFormLayout()
@@ -593,9 +593,9 @@ class GeneralEditDialog(QDialog):
         from PySide6.QtWidgets import QButtonGroup
         conn = _get_conn(self.db_path)
         self._personnel = _load_combo(conn,
-            "SELECT staff_id, staff_name FROM Ref_Personnel WHERE is_active=1 ORDER BY staff_id")
+            "SELECT staff_id, staff_name FROM Ref_Personnel WHERE is_active=1 ORDER BY sort_order")
         self._depts = _load_combo(conn,
-            "SELECT dept_id, dept_name FROM Ref_Departments ORDER BY dept_id")
+            "SELECT dept_id, dept_name FROM Ref_Departments WHERE is_active=1 ORDER BY sort_order")
         conn.close()
 
         form = QFormLayout()

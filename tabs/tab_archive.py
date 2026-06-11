@@ -12,7 +12,7 @@ class TabArchive(BaseTab):
         if not tab:
             return
 
-        archive_widget = loadUi(getResourcePath("Layout6.ui"))
+        archive_widget = loadUi(getResourcePath("layouts/Layout6.ui"))
         if not archive_widget:
             return
 

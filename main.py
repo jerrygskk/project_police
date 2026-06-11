@@ -66,7 +66,7 @@ from theme    import APPLE_STYLE
 from db_utils import getResourcePath, loadUi, msgInfo, msgWarning, msgCritical
 from auth_manager import AuthManager
 from tabs     import TabDispatch, TabReceive, TabReport, TabPrint, TabDBBrowse, TabArchive, TabSettings
-import resources_rc  # 註冊 Qt resource（arrow.svg）
+from res import resources_rc  # 註冊 Qt resource（arrow.svg）
 
 
 # ──────────────────────────────────────────────
@@ -91,7 +91,7 @@ class DocumentManager:
 
     def __init__(self, tab_index=0):
         self.db_path   = getResourcePath("dbfile.db")
-        self.window    = loadUi(getResourcePath("Layout1.ui"))
+        self.window    = loadUi(getResourcePath("layouts/Layout1.ui"))
         if not self.window:
             return
 
@@ -162,9 +162,15 @@ class DocumentManager:
             self._prev_tab_index = index
             return
 
+        # 從設定 Tab 切出來：先處理未儲存的排序變更（D3c）
+        settings_tab = self.tabs.get(self._IDX_SETTINGS)
+        if (self._prev_tab_index == self._IDX_SETTINGS
+                and settings_tab
+                and hasattr(settings_tab, '_promptUnsaved')):
+            settings_tab._promptUnsaved(context="leave")
+
         # 只有「從設定 Tab 切出來 且 有實際改過資料」才刷新參照表
         # 一次刷新所有 Tab，避免之後切其他 Tab 時 dirty 已被清掉
-        settings_tab = self.tabs.get(self._IDX_SETTINGS)
         if (self._prev_tab_index == self._IDX_SETTINGS
                 and settings_tab
                 and getattr(settings_tab, '_ref_dirty', False)):
@@ -172,6 +178,12 @@ class DocumentManager:
                 if idx != self._IDX_SETTINGS:
                     t.on_activated()
             settings_tab._ref_dirty = False
+
+        # 切「到」設定 Tab：重載當前子頁（放棄未存排序、與 DB 同步）
+        if (index == self._IDX_SETTINGS
+                and settings_tab
+                and hasattr(settings_tab, 'on_activated')):
+            settings_tab.on_activated()
 
         self._prev_tab_index = index
 
@@ -204,7 +216,7 @@ class MainMenu:
     }
 
     def __init__(self):
-        self.ui = loadUi(getResourcePath("main_menu.ui"))
+        self.ui = loadUi(getResourcePath("layouts/main_menu.ui"))
         if not self.ui:
             sys.exit(1)
 
@@ -236,7 +248,7 @@ if __name__ == "__main__":
     app.setStyleSheet(APPLE_STYLE)
 
     from PySide6.QtGui import QIcon
-    icon_path = getResourcePath("police_badge.svg")
+    icon_path = getResourcePath("res/police_badge.svg")
     app.setWindowIcon(QIcon(icon_path))
 
     db_path = getResourcePath("dbfile.db")

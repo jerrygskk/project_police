@@ -1,0 +1,10 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource>
+    <file>arrow.svg</file>
+    <file>sort_top.svg</file>
+    <file>sort_up.svg</file>
+    <file>sort_down.svg</file>
+    <file>sort_bottom.svg</file>
+  </qresource>
+</RCC>

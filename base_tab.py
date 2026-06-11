@@ -52,10 +52,11 @@ class BaseTab:
             conn = self._getConn()
             personnel = conn.execute(
                 "SELECT staff_id, staff_name FROM Ref_Personnel "
-                "WHERE is_active=1 ORDER BY staff_id"
+                "WHERE is_active=1 ORDER BY sort_order"
             ).fetchall()
             depts = conn.execute(
-                "SELECT dept_id, dept_name FROM Ref_Departments ORDER BY dept_id"
+                "SELECT dept_id, dept_name FROM Ref_Departments "
+                "WHERE is_active=1 ORDER BY sort_order"
             ).fetchall()
             conn.close()
             return personnel, depts

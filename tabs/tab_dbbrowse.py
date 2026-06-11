@@ -12,7 +12,7 @@ class TabDBBrowse(BaseTab):
         if not tab:
             return
 
-        browse_widget = loadUi(getResourcePath("Layout5.ui"))
+        browse_widget = loadUi(getResourcePath("layouts/Layout5.ui"))
         if not browse_widget:
             return
 
