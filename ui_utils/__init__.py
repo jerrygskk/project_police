@@ -3,6 +3,7 @@
 # 不論內部如何拆分，這裡都不需要改動外部呼叫端
 
 from .status  import calcOverdue, colorForStatus
+from .sticky_scroll import attachStickyScroll
 from .widgets import setupFilterCombo, setupDateEditToToday, refreshFilterCombo
 from .table   import (
     setupPreviewTable,
@@ -23,6 +24,7 @@ from .settings_dialogs import (
 __all__ = [
     "calcOverdue",
     "colorForStatus",
+    "attachStickyScroll",
     "setupFilterCombo",
     "refreshFilterCombo",
     "setupDateEditToToday",

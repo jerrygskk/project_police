@@ -9,7 +9,7 @@ from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
     TaskEditDialog,
     setupFilterCombo, setupDateEditToToday, refreshFilterCombo,
-    calcOverdue, colorForStatus,
+    calcOverdue, colorForStatus, attachStickyScroll,
 )
 
 
@@ -38,6 +38,7 @@ class TabDispatch(BaseTab):
         if self.table:
             setupPreviewTable(self.table, self.HEADERS, stretch_col=2,
                               fixed_overrides={'狀態': 210})
+            attachStickyScroll(self.table)
 
         if self.dispatch_date:
             self.dispatch_date.setDate(QDate.currentDate())
@@ -50,6 +51,9 @@ class TabDispatch(BaseTab):
         if self.lineEdit:
             self.lineEdit.returnPressed.connect(self.handleQuery)
             self.lineEdit.setFocus()
+        btn_input = getattr(mw, 'btn_input_docnum', None)
+        if btn_input:
+            btn_input.clicked.connect(self.handleQuery)
         if btn_send:  btn_send.clicked.connect(self.handleDispatch)
         if btn_clear: btn_clear.clicked.connect(self.handleClearAll)
 
@@ -193,6 +197,10 @@ class TabDispatch(BaseTab):
         for col, val in [(5, deadline_str), (6, dispatch_str)]:
             item = QTableWidgetItem(val)
             item.setTextAlignment(Qt.AlignCenter)
+            # 發文日期欄已有資料 → 橘色提醒（發文後將被覆蓋）
+            if col == 6 and val:
+                from PySide6.QtGui import QColor
+                item.setForeground(QColor("#e67e22"))
             self.table.setItem(pos, col, item)
 
         status      = calcOverdue(deadline_str, dispatch_str)
@@ -219,6 +227,9 @@ class TabDispatch(BaseTab):
                 for col, val in [(5, deadline), (6, dispatch)]:
                     item = QTableWidgetItem(str(val) if val else "")
                     item.setTextAlignment(Qt.AlignCenter)
+                    if col == 6 and val:
+                        from PySide6.QtGui import QColor
+                        item.setForeground(QColor("#e67e22"))
                     self.table.setItem(row, col, item)
                 status_item = QTableWidgetItem(str(status) if status else "")
                 status_item.setTextAlignment(Qt.AlignCenter)
@@ -279,10 +290,25 @@ class TabDispatch(BaseTab):
         sender_id   = self.dispatch_sender.currentData() if self.dispatch_sender else None
         sender_name = self.dispatch_sender.currentText() if self.dispatch_sender else "未選擇"
 
+        # 計算已有發文日期的筆數
+        try:
+            conn = self._getConn()
+            already = 0
+            for _, doc_id in pending:
+                row = conn.execute(
+                    f'SELECT dispatch_date FROM "{self.DOC_TABLE}" WHERE doc_id=?', (doc_id,)
+                ).fetchone()
+                if row and row[0]:
+                    already += 1
+            conn.close()
+        except Exception:
+            already = 0
+
+        overwrite_note = f"（其中 {already} 筆將覆蓋原發文日期）" if already else ""
         if not confirmBox(
             "確認發文",
             f"發文日期：{dispatch_day}\n發文人員：{sender_name}\n"
-            f"將對 {len(pending)} 筆資料寫入（已有資料者將被覆蓋）\n確認送出？",
+            f"共 {len(pending)} 筆交辦單{overwrite_note}\n確認送出？",
             confirm_text="發文", default_confirm=True
         ):
             return
@@ -300,8 +326,10 @@ class TabDispatch(BaseTab):
                 ts_str = ts.strftime("%Y-%m-%d %H:%M:%S.") + f"{us:06d}"
                 conn.execute(sql, (dispatch_day, sender_id, ts_str, doc_id))
 
+                from PySide6.QtGui import QColor
                 item = QTableWidgetItem(dispatch_day)
                 item.setTextAlignment(Qt.AlignCenter)
+                item.setForeground(QColor("#e67e22"))
                 self.table.setItem(row_idx, 6, item)
 
                 deadline_item = self.table.item(row_idx, 5)

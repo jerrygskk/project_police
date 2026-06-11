@@ -11,7 +11,7 @@ from db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgInfo, ms
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
     setupFilterCombo, setupDateEditToToday, refreshFilterCombo,
-    CriminalEditDialog, GeneralEditDialog,
+    CriminalEditDialog, GeneralEditDialog, attachStickyScroll,
 )
 
 CRIM_HEADERS = ["", "編號", "狀態", "案類", "陳報主旨", "承辦人", "受理人", "日期", "報案人"]
@@ -156,9 +156,11 @@ class TabReport(BaseTab):
         if self.crim_table:
             setupPreviewTable(self.crim_table, CRIM_HEADERS, cap_mode=True,
                               stretch_col=8, fixed_overrides={"陳報主旨": 184})
+            attachStickyScroll(self.crim_table)
         if self.gen_table:
             setupPreviewTable(self.gen_table, GEN_HEADERS, cap_mode=True,
                               stretch_col=5, fixed_overrides={"陳報主旨": 184})
+            attachStickyScroll(self.gen_table)
 
         # ── 預設顯示刑案（page 0） ────────────────────────
         if self.form_stack:

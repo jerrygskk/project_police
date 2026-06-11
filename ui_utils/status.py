@@ -1,5 +1,5 @@
 from datetime import datetime
-from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 
 
 def calcOverdue(deadlineStr, dispatchStr):
@@ -23,9 +23,9 @@ def calcOverdue(deadlineStr, dispatchStr):
 
 
 def colorForStatus(status):
-    """根據狀態字串回傳 Qt 前景色，無需上色時回傳 None"""
-    if "逾期" in status and "已發文" not in status: return Qt.red
-    if "今日" in status:                            return Qt.darkYellow
-    if "已發文" in status and "逾期" not in status: return Qt.darkGreen
-    if "已發文" in status and "逾期" in status:     return Qt.darkYellow
+    """根據狀態字串回傳 QColor，無需上色時回傳 None"""
+    if "逾期" in status and "已發文" not in status: return QColor("#e74c3c")
+    if "今日" in status:                            return QColor("#e67e22")
+    if "已發文" in status and "逾期" not in status: return QColor("#27ae60")
+    if "已發文" in status and "逾期" in status:     return QColor("#e67e22")
     return None

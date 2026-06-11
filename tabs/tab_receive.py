@@ -11,7 +11,7 @@ from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
     TaskEditDialog,
     setupFilterCombo, setupDateEditToToday, refreshFilterCombo,
-    calcOverdue, colorForStatus,
+    calcOverdue, colorForStatus, attachStickyScroll,
 )
 
 
@@ -83,6 +83,7 @@ class TabReceive(BaseTab):
         if self.recv_table:
             setupPreviewTable(self.recv_table, self.PREVIEW_HEADERS, stretch_col=2,
                               fixed_overrides={'狀態': 210})
+            attachStickyScroll(self.recv_table)
 
         # 按鈕綁定
         btn_clear  = inner.findChild(QPushButton, 'btn_recv_clear')

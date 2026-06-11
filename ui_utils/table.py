@@ -204,7 +204,6 @@ def setupPreviewTable(table, headers, row_height=30, stretch_col=None, fixed_ove
         }
         QTableWidget::item {
             padding: 2px 4px;
-            color: #1c1c1e;
             border-bottom: 1px solid #e5e5ea;
         }
         QTableWidget::item:selected {

@@ -66,9 +66,9 @@ class TaskEditDialog(QDialog):
 
         # 參照資料
         self._personnel = _load_combo(conn,
-            "SELECT staff_id, staff_name FROM Ref_Personnel WHERE is_active=1 ORDER BY staff_name")
+            "SELECT staff_id, staff_name FROM Ref_Personnel WHERE is_active=1 ORDER BY staff_id")
         self._depts = _load_combo(conn,
-            "SELECT dept_id, dept_name FROM Ref_Departments ORDER BY dept_name")
+            "SELECT dept_id, dept_name FROM Ref_Departments ORDER BY dept_id")
         conn.close()
 
         form = QFormLayout()
@@ -167,16 +167,19 @@ class TaskEditDialog(QDialog):
         self.w_subject.setFocus()
 
     def _load_data(self):
+        """從 DB 撈原始資料填入欄位"""
+        conn = _get_conn(self.db_path)
         row = conn.execute("""
             SELECT receive_date, receive_id, dept_id, subject,
-                   processor_id, deadline
+                   processor_id, deadline, dispatch_date
             FROM Document_Task WHERE doc_id=?
         """, (self.doc_id,)).fetchone()
         conn.close()
         if not row:
             return
 
-        recv_date, recv_id, dept_id, subject, proc_id, deadline = row
+        recv_date, recv_id, dept_id, subject, proc_id, deadline, dispatch_date = row
+        self._dispatch_date = dispatch_date  # 已發文時不再提示逾期
 
         # 收文日期
         if recv_date:
@@ -233,8 +236,8 @@ class TaskEditDialog(QDialog):
             msgWarning("欄位未填", "交辦事由不可為空")
             return
 
-        # 限辦日期確認（與 tab_receive 一致）
-        if not no_deadline:
+        # 已發文的交辦單不再提示逾期
+        if not no_deadline and not getattr(self, '_dispatch_date', None):
             dl    = self.w_deadline.date()
             today = QDate.currentDate()
             if dl == today:
@@ -343,7 +346,7 @@ QRadioButton:checked {
         from PySide6.QtWidgets import QButtonGroup
         conn = _get_conn(self.db_path)
         self._personnel  = _load_combo(conn,
-            "SELECT staff_id, staff_name FROM Ref_Personnel WHERE is_active=1 ORDER BY staff_name")
+            "SELECT staff_id, staff_name FROM Ref_Personnel WHERE is_active=1 ORDER BY staff_id")
         self._case_types = _load_combo(conn,
             "SELECT case_type_id, case_type_name FROM Ref_CaseTypes ORDER BY case_type_id")
         conn.close()
@@ -591,9 +594,9 @@ class GeneralEditDialog(QDialog):
         from PySide6.QtWidgets import QButtonGroup
         conn = _get_conn(self.db_path)
         self._personnel = _load_combo(conn,
-            "SELECT staff_id, staff_name FROM Ref_Personnel WHERE is_active=1 ORDER BY staff_name")
+            "SELECT staff_id, staff_name FROM Ref_Personnel WHERE is_active=1 ORDER BY staff_id")
         self._depts = _load_combo(conn,
-            "SELECT dept_id, dept_name FROM Ref_Departments ORDER BY dept_name")
+            "SELECT dept_id, dept_name FROM Ref_Departments ORDER BY dept_id")
         conn.close()
 
         form = QFormLayout()
