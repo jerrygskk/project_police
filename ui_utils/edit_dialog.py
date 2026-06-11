@@ -24,6 +24,21 @@ def _load_combo(conn, sql):
     return conn.execute(sql).fetchall()
 
 
+def _set_combo_value(combo, value):
+    """
+    依 data（id）設定 ComboBox 選項；找不到時在最前面插入原始值並標示異常。
+    三個 EditDialog 共用。
+    """
+    if not value:
+        return
+    for i in range(combo.count()):
+        if combo.itemData(i) == value:
+            combo.setCurrentIndex(i)
+            return
+    combo.insertItem(0, f'⚠ {value}（不在清單）', value)
+    combo.setCurrentIndex(0)
+
+
 # ── Task EditDialog ────────────────────────────────────────────
 class TaskEditDialog(QDialog):
     """交辦單修改彈窗（Tab 0 / Tab 1 共用）"""
@@ -210,16 +225,7 @@ class TaskEditDialog(QDialog):
             self._deadline_stack.setCurrentIndex(1)
 
     def _set_combo(self, combo, value):
-        """依 data（id）設定 ComboBox 選項，找不到時插入原始值提示"""
-        if not value:
-            return
-        for i in range(combo.count()):
-            if combo.itemData(i) == value:
-                combo.setCurrentIndex(i)
-                return
-        # 找不到：在最前面插入原始值，標示為異常
-        combo.insertItem(0, f'⚠ {value}（不在人員清單）', value)
-        combo.setCurrentIndex(0)
+        _set_combo_value(combo, value)
 
     def _on_save(self):
         from db_utils import msgWarning, msgCritical
@@ -488,14 +494,7 @@ QRadioButton:checked {
         self.w_reporter.setText(str(reporter) if reporter else "")
 
     def _set_combo(self, combo, value):
-        if not value:
-            return
-        for i in range(combo.count()):
-            if combo.itemData(i) == value:
-                combo.setCurrentIndex(i)
-                return
-        combo.insertItem(0, f'⚠ {value}（不在清單）', value)
-        combo.setCurrentIndex(0)
+        _set_combo_value(combo, value)
 
     def _on_save(self):
         from db_utils import msgWarning, msgCritical
@@ -706,14 +705,7 @@ class GeneralEditDialog(QDialog):
         self.w_subject.setText(str(subject) if subject else "")
 
     def _set_combo(self, combo, value):
-        if not value:
-            return
-        for i in range(combo.count()):
-            if combo.itemData(i) == value:
-                combo.setCurrentIndex(i)
-                return
-        combo.insertItem(0, f'⚠ {value}（不在清單）', value)
-        combo.setCurrentIndex(0)
+        _set_combo_value(combo, value)
 
     def _on_save(self):
         from db_utils import msgWarning, msgCritical

@@ -87,3 +87,36 @@ class BaseTab:
         m = re.search(r'href="([^"]+)"', lbl.text())
         return m.group(1) if m else None
 
+    # ── 共用：刷新交辦單預覽表的業務組 / 承辦人欄 ────────────────
+    def _refreshTaskPreviewNames(self, table, dept_col=3, proc_col=4, docid_col=1):
+        """
+        掃 table 每一列，用 doc_id 反查 Document_Task 最新的
+        業務組名稱與承辦人名稱並更新顯示。
+        發文（tab_dispatch）與收文（tab_receive）共用。
+        """
+        if not table:
+            return
+        try:
+            conn = self._getConn()
+            for r in range(table.rowCount()):
+                doc_item = table.item(r, docid_col)
+                if not doc_item:
+                    continue
+                row = conn.execute("""
+                    SELECT d.dept_name, p.staff_name
+                    FROM Document_Task t
+                    LEFT JOIN Ref_Departments d ON t.dept_id      = d.dept_id
+                    LEFT JOIN Ref_Personnel   p ON t.processor_id = p.staff_id
+                    WHERE t.doc_id = ?
+                """, (doc_item.text(),)).fetchone()
+                if not row:
+                    continue
+                dept_name, processor_name = row
+                if dept_name is not None and table.item(r, dept_col):
+                    table.item(r, dept_col).setText(dept_name)
+                if processor_name is not None and table.item(r, proc_col):
+                    table.item(r, proc_col).setText(self._trimName(processor_name))
+            conn.close()
+        except Exception as e:
+            msgCritical("DB錯誤", f"刷新預覽列失敗: {e}")
+

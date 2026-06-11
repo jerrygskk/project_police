@@ -50,11 +50,14 @@ pip install PySide6 pandas openpyxl pyinstaller matplotlib
 ├── ui_utils/
 │   ├── __init__.py       # 統一 re-export
 │   ├── status.py         # 狀態/日期邏輯（calcOverdue, colorForStatus）
-│   ├── widgets.py        # 元件行為（setupFilterCombo, setupDateEditToToday）
+│   ├── widgets.py        # 元件行為（setupFilterCombo, refreshFilterCombo,
+│   │                     #   setupDateEditToToday）
 │   ├── table.py          # 表格工具（setupPreviewTable, autoResizeTable,
-│   │                     #   makeDeleteBtn, FIXED_COL_WIDTHS）
+│   │                     #   makeDeleteBtn, setDocIdLinkCell, FIXED_COL_WIDTHS）
 │   │                     #   支援 stretch_col / fixed_overrides / cap_mode 參數
-│   └── edit_dialog.py    # 修改彈窗（TaskEditDialog, CriminalEditDialog, GeneralEditDialog）
+│   ├── sticky_scroll.py  # 預覽表黏底捲動（attachStickyScroll）
+│   ├── edit_dialog.py    # 公文修改彈窗（TaskEditDialog, CriminalEditDialog, GeneralEditDialog）
+│   └── settings_dialogs.py # 設定頁彈窗（人員/部門/案件類型 增修, 變更密碼）
 │
 ├── tabs/
 │   ├── __init__.py       # re-export 所有 Tab 類別
@@ -220,8 +223,15 @@ self.setStyleSheet("""
 | 新欄位固定寬度 | 在 `table.py` 的 `FIXED_COL_WIDTHS` 加一行 |
 | 同名欄位不同表格不同寬度 | 用 `fixed_overrides` 參數傳入，不改 `FIXED_COL_WIDTHS` |
 | 欄位寬度隨內容縮，卡在上限 | 用 `cap_mode=True` 參數 |
-| 新的狀態顏色邏輯 | 在 `status.py` 的 `colorForStatus` 加條件 |
+| 新的狀態顏色邏輯 | 在 `status.py` 的 `colorForStatus` 加條件，回傳 `QColor("#xxxxxx")` |
 | 新的元件行為 | 在 `widgets.py` 新增函式，並在 `__init__.py` export |
+| 預覽表要黏底捲動 | 在 `setupPreviewTable` 後呼叫 `attachStickyScroll(table)` |
+
+> ⚠️ **儲存格文字顏色用 `setForeground()`，但 stylesheet 不可寫死 `QTableWidget::item { color }`**
+>
+> Qt stylesheet 的優先級高於 `setForeground()`，若 `table.py` 的 `::item` 寫死了 `color`，
+> 所有程式設定的前景色（狀態紅/綠/橘）都會失效。`::item` 只設 padding / border，
+> 文字色交給 `setForeground()` 控制。`:selected` 的 color 可保留。
 
 ---
 
@@ -440,6 +450,29 @@ pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool d
 ---
 
 ## 版本記錄
+
+### 未發布（開發中）
+
+**新增功能**
+- 預覽表黏底捲動（`attachStickyScroll`）：四個預覽表（發文 / 收文 / 刑案 / 一般）右下角浮動箭頭
+  - 資料多到可捲動時，初次自動啟動黏底（藍）並捲到底
+  - 黏底中新增資料會自動跟到最新一筆
+  - 拖動捲軸或滾輪往上 → 退出黏底（變灰，箭頭仍在）
+  - 灰色時按箭頭 → 捲到底並重新黏底
+- 交辦單發文：文號輸入框右側加「輸入」按鈕（等同按 Enter），寬度對齊發文按鈕
+- 交辦單發文預覽：發文日期欄已有資料時套橘色，提醒發文後將被覆蓋
+
+**改善**
+- 發文確認訊息改為「共 N 筆交辦單（其中 X 筆將覆蓋原發文日期）」
+- 已發文的交辦單修改時，不再跳出限辦日期逾期確認
+- 三個公文修改彈窗的人員 / 部門下拉，統一改用 `ORDER BY id`（與其他畫面一致）
+
+**修正**
+- 狀態欄顏色失效：`table.py` 的 `QTableWidget::item` 寫死了 `color`，蓋掉 `setForeground()`，已移除
+- `colorForStatus` 改回傳 `QColor` hex（逾期紅 `#e74c3c` / 今日橘 `#e67e22` / 已發文綠 `#27ae60`），取代會被 stylesheet 蓋掉的 `Qt.red` 等
+- `TaskEditDialog._load_data` 缺少 `conn` 定義導致的 `NameError`
+
+---
 
 ### v0.9.0-beta.6（2026-06-10）
 

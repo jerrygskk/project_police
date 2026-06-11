@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QDate
+from PySide6.QtGui  import QColor
 from PySide6.QtWidgets import QTableWidgetItem, QPushButton
 
 from base_tab import BaseTab
@@ -11,6 +12,9 @@ from ui_utils import (
     setupFilterCombo, setupDateEditToToday, refreshFilterCombo,
     calcOverdue, colorForStatus, attachStickyScroll,
 )
+
+# 發文日期欄已有資料時的提醒色（發文後將被覆蓋）
+_DISPATCH_DATE_COLOR = "#e67e22"
 
 
 class TabDispatch(BaseTab):
@@ -68,36 +72,8 @@ class TabDispatch(BaseTab):
         personnel, _ = self._loadRef()
         if self.dispatch_sender:
             refreshFilterCombo(self.dispatch_sender, personnel)
-        self._refreshPreviewNames()
+        self._refreshTaskPreviewNames(self.table)
 
-    def _refreshPreviewNames(self):
-        """掃預覽表每一列，用最新 DB 資料重寫業務組/承辦人欄。"""
-        if not self.table:
-            return
-        try:
-            conn = self._getConn()
-            for r in range(self.table.rowCount()):
-                doc_item = self.table.item(r, 1)
-                if not doc_item:
-                    continue
-                doc_id = doc_item.text()
-                row = conn.execute("""
-                    SELECT d.dept_name, p.staff_name
-                    FROM Document_Task t
-                    LEFT JOIN Ref_Departments d ON t.dept_id      = d.dept_id
-                    LEFT JOIN Ref_Personnel   p ON t.processor_id = p.staff_id
-                    WHERE t.doc_id = ?
-                """, (doc_id,)).fetchone()
-                if not row:
-                    continue
-                dept_name, processor_name = row
-                if dept_name is not None:
-                    self.table.item(r, 3).setText(dept_name)
-                if processor_name is not None:
-                    self.table.item(r, 4).setText(self._trimName(processor_name))
-            conn.close()
-        except Exception as e:
-            msgCritical("DB錯誤", f"刷新預覽列失敗: {e}")
 
     # ── 查詢單筆 ──────────────────────────────────────────
     def handleQuery(self):
@@ -199,8 +175,7 @@ class TabDispatch(BaseTab):
             item.setTextAlignment(Qt.AlignCenter)
             # 發文日期欄已有資料 → 橘色提醒（發文後將被覆蓋）
             if col == 6 and val:
-                from PySide6.QtGui import QColor
-                item.setForeground(QColor("#e67e22"))
+                item.setForeground(QColor(_DISPATCH_DATE_COLOR))
             self.table.setItem(pos, col, item)
 
         status      = calcOverdue(deadline_str, dispatch_str)
@@ -228,8 +203,7 @@ class TabDispatch(BaseTab):
                     item = QTableWidgetItem(str(val) if val else "")
                     item.setTextAlignment(Qt.AlignCenter)
                     if col == 6 and val:
-                        from PySide6.QtGui import QColor
-                        item.setForeground(QColor("#e67e22"))
+                        item.setForeground(QColor(_DISPATCH_DATE_COLOR))
                     self.table.setItem(row, col, item)
                 status_item = QTableWidgetItem(str(status) if status else "")
                 status_item.setTextAlignment(Qt.AlignCenter)
@@ -326,10 +300,9 @@ class TabDispatch(BaseTab):
                 ts_str = ts.strftime("%Y-%m-%d %H:%M:%S.") + f"{us:06d}"
                 conn.execute(sql, (dispatch_day, sender_id, ts_str, doc_id))
 
-                from PySide6.QtGui import QColor
                 item = QTableWidgetItem(dispatch_day)
                 item.setTextAlignment(Qt.AlignCenter)
-                item.setForeground(QColor("#e67e22"))
+                item.setForeground(QColor(_DISPATCH_DATE_COLOR))
                 self.table.setItem(row_idx, 6, item)
 
                 deadline_item = self.table.item(row_idx, 5)
