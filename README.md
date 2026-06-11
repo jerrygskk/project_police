@@ -1,6 +1,6 @@
 # 公文管理系統
 
-> 版本：115年度 v0.9.0-beta.5
+> 版本：115年度 v0.9.0-beta.6
 
 ---
 
@@ -12,6 +12,9 @@
 | 1 | 交辦單收文 | 填表 → 立即寫入 DB → 預覽，支援刪除／修改 |
 | 2 | 案件陳報 | 刑案 / 一般陳報，左右並列預覽，支援刪除／修改 |
 | 3 | 簽收單列印 | 輸入日期 → 產生 PDF 預覽 → 下載 / 列印 |
+| 4 | 資料庫瀏覽 | （規劃中，尚未開放） |
+| 5 | 檔案歸檔 | （規劃中，尚未開放） |
+| 6 | 資料庫設定 | 管理者登入後可維護人員 / 部門 / 案件類型，並可變更密碼 |
 
 ---
 
@@ -140,16 +143,19 @@ class TabXxx(BaseTab):
 - `refreshFilterCombo` 會保留目前選取的值，若該值已不存在（例如人員離職）自動清空
 - 觸發條件：從設定 Tab 切出 + `_ref_dirty=True`（有實際改動才觸發，無動作不會浪費效能）
 
-> ⚠️ **預覽表的人員名稱不會自動跟著 rename 更新**
+> ⚠️ **預覽表的人員名稱不會自動跟著 rename 更新（新 Tab 注意事項）**
 >
 > 預覽表的儲存格存的是「當下抓的字串」（例如「匿名」），不是即時從 DB 撈的。
-> 如果在設定 Tab 對人員 / 部門 / 案件類型做 **rename**，預覽表還會顯示舊名字。
-> 解法：在 `on_activated()` 裡掃預覽表每一列，用 `doc_id` 反查 DB 更新顯示。
-> 參考 `tab_receive._refreshPreviewNames()` 和 `tab_report._refreshCrimPreviewNames()` /
-> `_refreshGenPreviewNames()` 的寫法。
+> 若不額外處理，使用者在設定 Tab 對人員 / 部門 / 案件類型做 **rename** 後，預覽表會顯示舊名字。
 >
-> 新 Tab 如果預覽表也有顯示參照表的字串欄位，**必須**自行加上類似的刷新方法，
-> 否則使用者 rename 後不會反映在預覽表上。
+> 現有 Tab（發文 / 收文 / 刑案陳報 / 一般陳報）皆已實作預覽表刷新，
+> 可參考：
+> - `tab_dispatch._refreshPreviewNames()`
+> - `tab_receive._refreshPreviewNames()`
+> - `tab_report._refreshCrimPreviewNames()` / `_refreshGenPreviewNames()`
+>
+> 未來新增 Tab 如果預覽表也有顯示參照表的字串欄位，**必須**仿照寫一個刷新方法
+> 並在 `on_activated()` 末尾呼叫，否則使用者 rename 後不會反映在預覽表上。
 
 ---
 
@@ -430,3 +436,43 @@ pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool d
 | View_Task_Full | 含狀態判斷邏輯（剩餘天數/逾期/已發文） |
 | View_Criminal_Full | 刑案完整資訊（JOIN 所有參照表，案類 COALESCE 舊資料） |
 | View_General_Full | 一般完整資訊（JOIN 所有參照表） |
+
+---
+
+## 版本記錄
+
+### v0.9.0-beta.6（2026-06-10）
+
+**新增功能**
+- 資料庫設定 Tab：管理者登入後可維護「人員 / 部門 / 案件類型」三張參照表
+  - 左側直排導航（Apple 系統設定風格）+ 右側內容區
+  - 雙擊列 / 點修改按鈕皆可開啟修改彈窗
+  - 人員管理：用「離職」checkbox，預設不打勾；軟刪除（停用後保留歷史關聯）
+  - 部門 / 案件類型：真刪除，但有引用時擋住不讓刪
+  - 變更密碼彈窗（舊密碼 → 新密碼 → 確認，需輸入 4 字元以上）
+- AuthManager 權限管理（單例）
+  - SHA-256 密碼 hash，儲存於 `App_Settings` 表
+  - 預設管理者密碼 `0000`
+  - 標題列即時顯示身份：`[一般使用者]` / `[管理者模式]`
+  - 閒置 20 分鐘自動登出（任何滑鼠 / 鍵盤 / 滾輪操作會重設計時）
+- Tab 順序調整：簽收單列印與檔案歸檔之間插入「資料庫瀏覽」Tab（佔位中）
+- 所有彈窗加 Enter 鍵確認（修改 / 變更密碼共 10 個彈窗）
+
+**改善**
+- 設定 Tab 改動參照表後，離開時自動刷新所有其他 Tab 的下拉選單（用 dirty flag，無改動不觸發）
+- 預覽表的人員 / 部門 / 案件類型名稱會在離開設定 Tab 時，從 DB 反查重新填入（rename 即時反映）
+
+**資料庫**
+- 新增 `App_Settings` 表（key/value 結構，目前存 `admin_password_hash`）
+
+**修正**
+- Layout 檔的 margin 寫法：QUiLoader 不認識 `contentsMargins` + `<rect>`，改用 `leftMargin` / `topMargin` 等四個獨立 property
+- `centralWidget` 物件名稱必須是 `centralwidget`（全小寫），否則 `centralWidget()` 回傳 None
+
+### v0.9.0-beta.5（先前版本）
+
+- doc_id 驅動刪除（取代 row index 重綁定）
+- 統一 `setDocIdLinkCell` API
+- 免覆勾選後 QDateEdit 改用 QStackedWidget 切換灰框
+- 修改彈窗存檔後預覽狀態欄重算
+- 修改彈窗加入限辦日期今天/逾期確認
