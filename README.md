@@ -82,9 +82,9 @@ main.py
 | 3 | 簽收單列印 | TabPrint | Layout4 | 完成 |
 | 4 | 資料庫瀏覽 | TabDBBrowse | Layout5 | **未實作（佔位）** |
 | 5 | 檔案歸檔 | TabArchive | Layout6 | **未實作（佔位）** |
-| 6 | 資料庫設定 | TabSettings | （純 code 建） | 完成 |
+| 6 | 資料庫設定 | TabSettings | Layout7（**未接，見下**） | 功能完成，畫面待改用 .ui |
 
-> TabSettings 是唯一純 code 建畫面的 Tab（Layout7.ui 是空殼、沒被引用）。其餘 Tab 都用 `.ui`。
+> ⚠️ **TabSettings 目前違反專案規則**：本專案規則為「每個大 Tab 都必須用 `.ui` 建畫面，無例外」（彈窗 / Dialog 才用 code 動態建）。但 TabSettings 目前是純 code 手刻畫面，`Layout7.ui` 是早期佔位空殼、未被引用。這是待修項目（見第 8 節）：應改為 `loadUi(Layout7.ui)` 建靜態骨架（登入頁、左側 nav、三個子頁的表格容器），code 只保留動態內容（填表格列、每列四顆排序鈕、暫存排序狀態與邏輯）。
 
 ### 資料流
 
@@ -197,7 +197,7 @@ main.py
 1. 新增 `tabs/tab_xxx.py`，`class TabXxx(BaseTab)` 實作 `setup(tab_index)`
 2. `tabs/__init__.py` 加 `from .tab_xxx import TabXxx`
 3. `main.py` 的 `TAB_CLASSES` 登記一行（其餘不動）
-4. 新增對應 `layouts/LayoutN.ui`（**每個 Tab 都必須有 .ui，TabSettings 除外**）
+4. 新增對應 `layouts/LayoutN.ui`（**每個大 Tab 都必須有 .ui，無例外**；彈窗 / Dialog 才用 code 動態建。註：TabSettings 目前違反此規則、待修，見第 8 節）
 5. 若有人員/部門/案類下拉，override `on_activated()` 刷新（範例見下）
 
 ```python
@@ -428,6 +428,7 @@ pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool d
 
 | 項目 | index | 說明 |
 |------|-------|------|
+| **設定 Tab 改用 .ui** | 6 | **規則修正**。TabSettings 目前純 code 建畫面，違反「每個大 Tab 都用 .ui」規則。需寫 `Layout7.ui`（登入頁 + 左側 nav + 三子頁表格容器等靜態骨架），`tab_settings.py` 改 `loadUi` 抓元件，保留動態邏輯（填列、四顆排序鈕、暫存排序）。其他 Tab 的 .ui 很詳細（連按鈕/日期框都具名），Layout7.ui 比照辦理。**重寫量大，建議獨立進行** |
 | 資料庫瀏覽 Tab | 4 | 未實作。讀三張 View + 開 EditDialog；要面對歷史全表（效能 + 軟刪除過濾） |
 | 檔案歸檔 Tab | 5 | 未實作。**功能尚未定義**，動手前要先問維護者要做什麼 |
 | Reset 按鈕 | — | 跨年度用：清三張主表 + 重編參照表 ID（依 sort_order）+ 歸零 Seq_DocId。屬破壞性操作，需備份 + 強確認 |
