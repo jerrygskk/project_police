@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QStackedWidget,
     QLabel, QLineEdit, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView,
-    QWidget, QSizePolicy, QFrame,
+    QWidget,
 )
 
 from lib.base_tab import BaseTab
@@ -22,6 +22,7 @@ from lib.auth_manager import AuthManager
 from lib.db_utils import (
     msgInfo, msgWarning, msgCritical, confirmBox,
     BTN_CONFIRM, BTN_CANCEL,
+    loadUi, getResourcePath,
 )
 from ui_utils import (
     PersonnelAddDialog, PersonnelEditDialog,
@@ -130,14 +131,80 @@ class TabSettings(BaseTab):
         # 排序暫存狀態：每頁一份 {鍵: {'rows': [...], 'dirty': bool, 'save_btn': btn, 'table': tbl}}
         self._sort_state = {}
 
-        # 外層 QStackedWidget：index 0 = 密碼驗證，index 1 = 設定主畫面
-        self._outer_stack = QStackedWidget(tab)
-        root_lay = QVBoxLayout(tab)
-        root_lay.setContentsMargins(0, 0, 0, 0)
-        root_lay.addWidget(self._outer_stack)
+        # ── 載入 .ui 靜態骨架 ──
+        ui = loadUi(getResourcePath("layouts/Layout7.ui"))
+        if not ui:
+            return
+        inner = ui.centralWidget()
+        lay   = QVBoxLayout(tab)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(inner)
 
-        self._outer_stack.addWidget(self._build_login_page())
-        self._outer_stack.addWidget(self._build_main_page())
+        # ── 抓元件 ──
+        self._outer_stack = inner.findChild(QStackedWidget, "outer_stack")
+        self._inner_stack = inner.findChild(QStackedWidget, "inner_stack")
+
+        # 密碼驗證頁
+        self._login_card    = inner.findChild(QWidget,     "login_card")
+        self._lbl_login_ttl = inner.findChild(QLabel,      "lbl_login_title")
+        self.w_password     = inner.findChild(QLineEdit,   "w_password")
+        self.lbl_login_err  = inner.findChild(QLabel,      "lbl_login_err")
+        btn_login           = inner.findChild(QPushButton, "btn_login")
+
+        # 左側導航
+        self._nav_panel  = inner.findChild(QWidget, "nav_panel")
+        self._nav_btns   = [
+            inner.findChild(QPushButton, "btn_nav_personnel"),
+            inner.findChild(QPushButton, "btn_nav_dept"),
+            inner.findChild(QPushButton, "btn_nav_casetype"),
+        ]
+        btn_change_pwd = inner.findChild(QPushButton, "btn_change_pwd")
+        btn_logout     = inner.findChild(QPushButton, "btn_logout")
+
+        # 三子頁的表格、新增/修改/儲存排序按鈕
+        self.tbl_personnel = inner.findChild(QTableWidget, "tbl_personnel")
+        self.tbl_dept      = inner.findChild(QTableWidget, "tbl_dept")
+        self.tbl_casetype  = inner.findChild(QTableWidget, "tbl_casetype")
+
+        self.btn_add_personnel  = inner.findChild(QPushButton, "btn_add_personnel")
+        self.btn_edit_personnel = inner.findChild(QPushButton, "btn_edit_personnel")
+        self.btn_save_personnel = inner.findChild(QPushButton, "btn_save_personnel")
+        self.btn_add_dept       = inner.findChild(QPushButton, "btn_add_dept")
+        self.btn_edit_dept      = inner.findChild(QPushButton, "btn_edit_dept")
+        self.btn_save_dept      = inner.findChild(QPushButton, "btn_save_dept")
+        self.btn_add_casetype   = inner.findChild(QPushButton, "btn_add_casetype")
+        self.btn_edit_casetype  = inner.findChild(QPushButton, "btn_edit_casetype")
+        self.btn_save_casetype  = inner.findChild(QPushButton, "btn_save_casetype")
+
+        # ── 套樣式（動態狀態樣式留在 code，比照其他 Tab 慣例） ──
+        self._applyStaticStyles()
+        btn_login.setStyleSheet(
+            "QPushButton { background-color: #D0ECF5; color: #000000; "
+            "border-radius: 8px; padding: 8px 16px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #B8D8E8; }"
+        )
+        btn_change_pwd.setStyleSheet(_NAV_BOTTOM)
+        btn_logout.setStyleSheet(_NAV_BOTTOM)
+
+        # ── 綁定 signal ──
+        self.w_password.returnPressed.connect(self._doLogin)
+        btn_login.clicked.connect(self._doLogin)
+        for i, btn in enumerate(self._nav_btns):
+            btn.clicked.connect(lambda _=False, idx=i: self._switchPage(idx))
+        btn_change_pwd.clicked.connect(self._changePassword)
+        btn_logout.clicked.connect(self._doLogout)
+
+        # ── 初始化三頁的表格與排序暫存狀態 ──
+        self._initRefPage("personnel", self.tbl_personnel,
+                          self.btn_add_personnel, self.btn_edit_personnel,
+                          self.btn_save_personnel, self._addPersonnel, self._editPersonnel)
+        self._initRefPage("dept", self.tbl_dept,
+                          self.btn_add_dept, self.btn_edit_dept,
+                          self.btn_save_dept, self._addDept, self._editDept)
+        self._initRefPage("casetype", self.tbl_casetype,
+                          self.btn_add_casetype, self.btn_edit_casetype,
+                          self.btn_save_casetype, self._addCaseType, self._editCaseType)
+
         self._outer_stack.setCurrentIndex(0)
 
         # 監聽身份變化：登出時自動回到密碼驗證畫面
@@ -147,200 +214,56 @@ class TabSettings(BaseTab):
             self._outer_stack.setCurrentIndex(1)
             self._switchPage(self._PAGE_PERSONNEL)
 
-    # ════════════════════════════════════════════════════════════
-    # 密碼驗證頁
-    # ════════════════════════════════════════════════════════════
-    def _build_login_page(self):
-        page = QWidget()
-        page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
-        outer = QVBoxLayout(page)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.addStretch()
-
-        # 置中卡片
-        card = QWidget()
-        card.setFixedWidth(320)
-        card.setStyleSheet(
-            "QWidget { background-color: #ffffff; border-radius: 12px; }"
+    # ── 套用靜態樣式到 .ui 元件 ──────────────────────────────────
+    def _applyStaticStyles(self):
+        self._login_card.setStyleSheet(
+            "QWidget#login_card { background-color: #ffffff; border-radius: 12px; }"
         )
-        card_lay = QVBoxLayout(card)
-        card_lay.setSpacing(12)
-        card_lay.setContentsMargins(32, 28, 32, 28)
-
-        lbl_title = QLabel("管理者驗證")
-        lbl_title.setStyleSheet(
+        self._lbl_login_ttl.setStyleSheet(
             "font-size: 16pt; font-weight: 700; color: #1c1c1e; background: transparent;"
         )
-        lbl_title.setAlignment(Qt.AlignCenter)
-        card_lay.addWidget(lbl_title)
-
-        card_lay.addSpacing(4)
-
-        self.w_password = QLineEdit()
-        self.w_password.setEchoMode(QLineEdit.Password)
-        self.w_password.setPlaceholderText("請輸入管理者密碼")
         self.w_password.setStyleSheet(
             "QLineEdit { background:#f2f2f7; border:1px solid #c6c6c8; "
             "border-radius:8px; padding:8px 12px; color:#1c1c1e; }"
             "QLineEdit:focus { border:2px solid #8fa8c8; }"
         )
-        self.w_password.returnPressed.connect(self._doLogin)
-        card_lay.addWidget(self.w_password)
-
-        self.lbl_login_err = QLabel("")
-        self.lbl_login_err.setStyleSheet("color: #e74c3c; background: transparent; font-size: 12pt;")
-        self.lbl_login_err.setAlignment(Qt.AlignCenter)
-        card_lay.addWidget(self.lbl_login_err)
-
-        btn_login = QPushButton("登入")
-        btn_login.setStyleSheet(
-            "QPushButton { background-color: #D0ECF5; color: #000000; "
-            "border-radius: 8px; padding: 8px 16px; font-weight: bold; }"
-            "QPushButton:hover { background-color: #B8D8E8; }"
+        self.lbl_login_err.setStyleSheet(
+            "color: #e74c3c; background: transparent; font-size: 12pt;"
         )
-        btn_login.clicked.connect(self._doLogin)
-        card_lay.addWidget(btn_login)
+        # 登入鈕沿用全域 BTN 樣式
+        self._nav_panel.setStyleSheet("QWidget#nav_panel { background-color: #f2f2f7; }")
+        # 變更密碼 / 登出（底部 nav）
+        # 三個導航鈕的選中/未選中樣式由 _switchPage 動態切換
 
-        center_row = QHBoxLayout()
-        center_row.addStretch()
-        center_row.addWidget(card)
-        center_row.addStretch()
-        outer.addLayout(center_row)
-        outer.addStretch()
+    # ── 初始化單一參照頁（表格樣式 + 動作鈕綁定 + 排序暫存） ──────
+    def _initRefPage(self, key, tbl, btn_add, btn_edit, btn_save, add_cb, edit_cb):
+        # 表格樣式與行為
+        tbl.verticalHeader().setVisible(False)
+        tbl.setEditTriggers(QTableWidget.NoEditTriggers)
+        tbl.setSelectionBehavior(QTableWidget.SelectRows)
+        tbl.setSelectionMode(QTableWidget.SingleSelection)
+        tbl.setAlternatingRowColors(True)
+        tbl.setShowGrid(False)
+        tbl.verticalHeader().setDefaultSectionSize(36)
+        tbl.setStyleSheet(_TABLE_SS)
+        hdr = tbl.horizontalHeader()
+        for col, w in {0: 80, 2: 80, 3: 140}.items():
+            hdr.setSectionResizeMode(col, QHeaderView.Fixed)
+            tbl.setColumnWidth(col, w)
+        hdr.setSectionResizeMode(1, QHeaderView.Stretch)
+        tbl.cellDoubleClicked.connect(lambda row, col, cb=edit_cb: cb(row))
 
-        return page
-
-    # ════════════════════════════════════════════════════════════
-    # 設定主畫面（左導航 + 右內容）
-    # ════════════════════════════════════════════════════════════
-    def _build_main_page(self):
-        page = QWidget()
-        hlay = QHBoxLayout(page)
-        hlay.setContentsMargins(0, 0, 0, 0)
-        hlay.setSpacing(0)
-
-        # ── 左側導航 ──
-        nav = QWidget()
-        nav.setFixedWidth(160)
-        nav.setStyleSheet("QWidget { background-color: #f2f2f7; }")
-        nav_lay = QVBoxLayout(nav)
-        nav_lay.setContentsMargins(12, 16, 12, 16)
-        nav_lay.setSpacing(4)
-
-        self._nav_btns = []
-        nav_labels = ["人員管理", "部門管理", "案件類型"]
-        for i, lbl in enumerate(nav_labels):
-            btn = QPushButton(lbl)
-            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            btn.clicked.connect(lambda checked=False, idx=i: self._switchPage(idx))
-            nav_lay.addWidget(btn)
-            self._nav_btns.append(btn)
-
-        nav_lay.addStretch()
-
-        # 分隔線
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color: #d1d1d6;")
-        nav_lay.addWidget(sep)
-        nav_lay.addSpacing(4)
-
-        btn_pwd = QPushButton("變更密碼")
-        btn_pwd.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        btn_pwd.setStyleSheet(_NAV_BOTTOM)
-        btn_pwd.clicked.connect(self._changePassword)
-        nav_lay.addWidget(btn_pwd)
-
-        btn_logout = QPushButton("登出")
-        btn_logout.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        btn_logout.setStyleSheet(_NAV_BOTTOM)
-        btn_logout.clicked.connect(self._doLogout)
-        nav_lay.addWidget(btn_logout)
-
-        hlay.addWidget(nav)
-
-        # ── 右側內容 ──
-        self._inner_stack = QStackedWidget()
-        self._inner_stack.addWidget(self._build_personnel_page())
-        self._inner_stack.addWidget(self._build_dept_page())
-        self._inner_stack.addWidget(self._build_casetype_page())
-        hlay.addWidget(self._inner_stack, 1)
-
-        # 預設人員管理
-        self._switchPage(self._PAGE_PERSONNEL)
-
-        return page
-
-    # ── 人員管理頁 ──────────────────────────────────────────────
-    def _build_personnel_page(self):
-        return self._build_ref_page(
-            key="personnel", name_header="姓名",
-            edit_cb=self._editPersonnel, add_cb=self._addPersonnel,
-            table_attr="tbl_personnel")
-
-    # ── 部門管理頁 ──────────────────────────────────────────────
-    def _build_dept_page(self):
-        return self._build_ref_page(
-            key="dept", name_header="部門名稱",
-            edit_cb=self._editDept, add_cb=self._addDept,
-            table_attr="tbl_dept")
-
-    # ── 案件類型頁 ──────────────────────────────────────────────
-    def _build_casetype_page(self):
-        return self._build_ref_page(
-            key="casetype", name_header="案件類型名稱",
-            edit_cb=self._editCaseType, add_cb=self._addCaseType,
-            table_attr="tbl_casetype")
-
-    # ── 泛型參照頁建立器 ────────────────────────────────────────
-    def _build_ref_page(self, key, name_header, edit_cb, add_cb, table_attr):
-        w = QWidget()
-        lay = QVBoxLayout(w)
-        lay.setContentsMargins(20, 16, 20, 16)
-        lay.setSpacing(8)
-
-        tbl = self._make_table(
-            ["編號", name_header, "狀態", "排序"],
-            col_widths={0: 80, 2: 80, 3: 140},
-            stretch_col=1,
-        )
-        tbl.cellDoubleClicked.connect(lambda row, col: edit_cb(row))
-        setattr(self, table_attr, tbl)
-
-        action_row, btn_save = self._make_action_row(
-            add_cb, edit_cb, lambda _=False, k=key: self._saveSort(k))
-        lay.addLayout(action_row)
-        lay.addWidget(tbl)
+        # 動作鈕樣式與綁定
+        btn_add.setStyleSheet(BTN_CONFIRM)
+        btn_edit.setStyleSheet(BTN_CANCEL)
+        btn_save.setStyleSheet(_SAVE_BTN_SS)
+        btn_add.clicked.connect(lambda _=False, cb=add_cb: cb())
+        btn_edit.clicked.connect(lambda _=False, cb=edit_cb: cb())
+        btn_save.setEnabled(False)
+        btn_save.clicked.connect(lambda _=False, k=key: self._saveSort(k))
 
         self._sort_state[key] = {
             "rows": [], "dirty": False, "save_btn": btn_save, "table": tbl}
-        return w
-
-    # ════════════════════════════════════════════════════════════
-    # 共用工具
-    # ════════════════════════════════════════════════════════════
-    def _make_table(self, headers, col_widths=None, stretch_col=None):
-        t = QTableWidget()
-        t.setColumnCount(len(headers))
-        t.setHorizontalHeaderLabels(headers)
-        t.verticalHeader().setVisible(False)
-        t.setEditTriggers(QTableWidget.NoEditTriggers)
-        t.setSelectionBehavior(QTableWidget.SelectRows)
-        t.setSelectionMode(QTableWidget.SingleSelection)
-        t.setAlternatingRowColors(True)
-        t.setShowGrid(False)
-        t.verticalHeader().setDefaultSectionSize(36)
-        t.setStyleSheet(_TABLE_SS)
-
-        hdr = t.horizontalHeader()
-        if col_widths:
-            for col, w in col_widths.items():
-                hdr.setSectionResizeMode(col, QHeaderView.Fixed)
-                t.setColumnWidth(col, w)
-        if stretch_col is not None:
-            hdr.setSectionResizeMode(stretch_col, QHeaderView.Stretch)
-        return t
 
     # ── 排序欄四顆小按鈕 ────────────────────────────────────────
     def _make_sort_cell(self, page_key, get_row_fn):
@@ -366,24 +289,6 @@ class TabSettings(BaseTab):
             h.addWidget(b)
         h.addStretch()
         return cell
-
-    def _make_action_row(self, add_cb, edit_cb, save_cb):
-        row = QHBoxLayout()
-        btn_add  = QPushButton("＋ 新增")
-        btn_edit = QPushButton("✎ 修改")
-        btn_add.setStyleSheet(BTN_CONFIRM)
-        btn_edit.setStyleSheet(BTN_CANCEL)
-        btn_add.clicked.connect(lambda: add_cb())
-        btn_edit.clicked.connect(lambda: edit_cb())
-        row.addWidget(btn_add)
-        row.addWidget(btn_edit)
-        row.addStretch()
-        btn_save = QPushButton("💾 儲存排序")
-        btn_save.setStyleSheet(_SAVE_BTN_SS)
-        btn_save.setEnabled(False)
-        btn_save.clicked.connect(save_cb)
-        row.addWidget(btn_save)
-        return row, btn_save
 
     def _item(self, text, color=None):
         it = QTableWidgetItem(str(text) if text is not None else "")
