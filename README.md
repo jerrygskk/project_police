@@ -387,7 +387,7 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 ### 主程式
 
 ```cmd
-pyinstaller --clean --onefile --windowed --icon=res/police_badge.ico ^
+del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyinstaller --clean --onefile --windowed --icon=res/police_badge.ico ^
   --add-data "layouts/*.ui;layouts" ^
   --add-data "res/police_badge.svg;res" ^
   --add-data "res/banner.png;res" ^
@@ -443,6 +443,7 @@ pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool d
 - 列印用 `QtPrintSupport`，加 `--hidden-import PySide6.QtPrintSupport` 保險
 - matplotlib 只用 `backend_agg`（PNG）+ `backend_pdf`（存 PDF），其餘 backend 全排除
 - 結構重組後 `.ui` 進 `layouts/`、圖片進 `res/`，`--add-data` 路徑要對應第二參數（解壓目標目錄）
+- 指令開頭 `del ...spec & rmdir build dist` 是刻意的：開發期不信任殘留 spec（會用到上次的過期設定），每次砍掉 spec / build / dist 用乾淨 CLI 參數全新生成。`2>nul` 讓首次執行（檔案不存在）不報錯
 - **跨年度重置的自動重啟**：onefile 版重啟新程序前必設環境變數 `PYINSTALLER_RESET_ENVIRONMENT=1`（PyInstaller 6.10+ 官方機制），否則新程序沿用舊 `_MEI` 環境、到已刪除的暫存目錄找 `python3xx.dll`/標準庫而崩潰（`Failed to load Python DLL` / `unicodedata` 缺失）。`_restartApp()` 已處理。詳見第 2 節踩雷表與第 5 節 Reset 子節
 - 若打包後報 `No module named res`，加 `--hidden-import res.resources_rc`
 - 核心模組在 `lib/`，主程式打包已列 `--hidden-import lib.*` 六個；若仍報 `No module named lib.xxx`，補對應的 hidden-import
