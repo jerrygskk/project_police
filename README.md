@@ -82,9 +82,9 @@ main.py
 | 3 | 簽收單列印 | TabPrint | Layout4 | 完成 |
 | 4 | 資料庫瀏覽 | TabDBBrowse | Layout5 | **未實作（佔位）** |
 | 5 | 檔案歸檔 | TabArchive | Layout6 | **未實作（佔位）** |
-| 6 | 資料庫設定 | TabSettings | Layout7（**未接，見下**） | 功能完成，畫面待改用 .ui |
+| 6 | 資料庫設定 | TabSettings | Layout7 | 功能完成 |
 
-> ⚠️ **TabSettings 目前違反專案規則**：本專案規則為「每個大 Tab 都必須用 `.ui` 建畫面，無例外」（彈窗 / Dialog 才用 code 動態建）。但 TabSettings 目前是純 code 手刻畫面，`Layout7.ui` 是早期佔位空殼、未被引用。這是待修項目（見第 8 節）：應改為 `loadUi(Layout7.ui)` 建靜態骨架（登入頁、左側 nav、三個子頁的表格容器），code 只保留動態內容（填表格列、每列四顆排序鈕、暫存排序狀態與邏輯）。
+> **TabSettings 架構**：已比照其他 Tab 改用 `loadUi(Layout7.ui)` 建靜態骨架（密碼驗證頁、左側 nav、三個子頁的表格容器與動作鈕，全部具名），`tab_settings.py` 只保留動態內容（填表格列、每列四顆排序鈕、暫存排序狀態與邏輯、登入登出、跨年度重置）。動態狀態樣式（nav 選中切換、save_btn disabled 灰色）留在 code，比照其他 Layout（Layout1/2/3/5/6 皆不在 `.ui` 帶 stylesheet）。
 
 ### 資料流
 
@@ -119,6 +119,7 @@ main.py
 | `QTableWidget` / `QAbstractScrollArea` 滾輪事件攔不到 | 滾輪事件由 `viewport()` 接收，覆寫 `table.wheelEvent` 不會被觸發 | 在 `table.viewport()` 上 `installEventFilter` 攔 `QEvent.Wheel`；filter 要存成屬性防 GC |
 | `ORDER BY sort_order` 時新項目跑到最前面 | 新列 `sort_order` 是 NULL，SQLite 把 NULL 排最前 | 新增時務必給 `sort_order` 值（本專案規則：新項目放最前 = `MIN(sort_order)-1`，空表 fallback 1） |
 | 從設定 Tab 切走想攔截「未存」攔不住 | `currentChanged` 切換後才觸發（見第 1 節 Qt 限制） | 大 Tab 只能切過去後補跳提示；子頁切換（按鈕）才能攔住回原狀 |
+| 重置後自動重啟，打包(onefile)版跳 `Failed to load Python DLL ..._MEIxxxxx\python3xx.dll` 或 `ModuleNotFoundError: unicodedata` | PyInstaller 6.x bootloader 把經 `sys.executable` 啟動的新程序當成同一 app 的 worker 子程序，沿用繼承的 `_MEI` 環境（指向舊程序正在清掉的 `_MEIxxxxx`），新程序到已刪除的舊目錄找 DLL/標準庫 | 啟動新程序前設環境變數 **`PYINSTALLER_RESET_ENVIRONMENT=1`**（PyInstaller 6.10+ 官方機制），令新程序解壓全新 `_MEI`。見 `tab_settings.py` 的 `_restartApp()`。**別用 cmd ping 延遲那種歪招**（延遲無效，根因是環境變數沒重設）。開發(非 frozen)無此問題，沿用 `QProcess` 帶 argv 即可 |
 
 ---
 
@@ -162,10 +163,11 @@ main.py
 ├── sql.py               DB 結構查看工具（analyze_database，獨立 __main__ 跑，不被 import）
 ├── init_ref_tables.sql  建表 + 參照表初始資料（含 sort_order 初始值）
 ├── lib/                 核心模組（被各處 import；含 __init__.py，是 package）
-│   ├── db_utils.py      路徑解析 / 通用彈窗 / nextDocId（DEBUG_MODE 在第一行）
+│   ├── db_utils.py      路徑解析 / 通用彈窗 / nextDocId / 跨年度重置（performYearEndReset、listInactiveRefItems）（DEBUG_MODE 在第一行）
 │   ├── base_tab.py      BaseTab 基底
 │   ├── auth_manager.py  權限單例
 │   ├── theme.py         全域 QSS（Apple HIG 風格）
+│   ├── version.py       版本號單一來源（__version__；進版只改這裡，主選單顯示自動同步）
 │   └── loading_screen.py
 ├── layouts/             所有 .ui 檔（Layout1~7、main_menu）
 ├── res/                 圖片 / SVG / qrc（含 __init__.py，是 package）
@@ -287,6 +289,28 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 - 「儲存 PDF」按鈕仍走 matplotlib `backend_pdf`（向量），與列印獨立
 - 跨版本相容：`setPageSize` 用 `QPageSize` 物件、頁面範圍用 `painter.viewport()`（避開 6.x enum 命名空間差異）
 
+### 跨年度重置（Reset，tab_settings.py）
+
+位置：設定 Tab 左側 nav 底部「跨年度重置」鈕（紅字，管理者登入後才可操作）。屬**破壞性操作**。
+
+執行流程（`_doReset()`）：
+1. 開 `ResetDialog`（`ui_utils/settings_dialogs.py`）：列出本次將被清除的停用項目、要求手動輸入 `RESET`、防誤按（確認鈕非 default、輸入框不綁 Enter，沿用變更密碼那套）
+2. **自動備份**：複製 `dbfile.db` → 同目錄 `dbfile_backup_YYYYMMDD_HHMMSS.db`；備份失敗則中止
+3. 詢問是否**另存**一份至使用者指定位置（可略過）
+4. 執行 `performYearEndReset()`（`lib/db_utils.py`）：單一 transaction，失敗 rollback
+5. 完成提示 → `_restartApp()` 重啟程式
+
+`performYearEndReset()` 重置內容：
+- 清空三張主表（Document_Task / Criminal / General）
+- **刪除**停用（is_active=0）項目（決策：跨年度時順便清掉，dialog 會事前列出讓使用者有機會先啟用保留）
+- 依 sort_order **重編參照表 id**（連續，維持原前綴與位數，如 P01/D01/CT01）
+- sort_order 重設為連續整數
+- 歸零 Seq_DocId
+
+重編 id 採**兩段式**避主鍵衝突：先把所有列改成暫時前綴（`__TMP__P0001`...），再編回正式 id。**別改成單段直接 UPDATE**，舊新 id 集合有交集會撞 PRIMARY KEY。
+
+重啟（`_restartApp()`）：見第 2 節踩雷表 `_MEI` 條。**打包版啟動新程序前必設 `PYINSTALLER_RESET_ENVIRONMENT=1`**（PyInstaller 6.10+ 官方重啟機制），否則新程序沿用舊 `_MEI` 環境、載入已刪除的 DLL 而崩潰。重置後資料全變（id、主表清空），故用整個程序重啟取代逐一刷新 Tab，最乾淨。
+
 ---
 
 ## 6. 資料庫結構
@@ -373,6 +397,7 @@ pyinstaller --clean --onefile --windowed --icon=res/police_badge.ico ^
   --hidden-import lib.auth_manager ^
   --hidden-import lib.theme ^
   --hidden-import lib.loading_screen ^
+  --hidden-import lib.version ^
   --hidden-import res.resources_rc ^
   --exclude-module matplotlib.backends.backend_cairo ^
   --exclude-module matplotlib.backends.backend_gtk3 ^
@@ -418,8 +443,9 @@ pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool d
 - 列印用 `QtPrintSupport`，加 `--hidden-import PySide6.QtPrintSupport` 保險
 - matplotlib 只用 `backend_agg`（PNG）+ `backend_pdf`（存 PDF），其餘 backend 全排除
 - 結構重組後 `.ui` 進 `layouts/`、圖片進 `res/`，`--add-data` 路徑要對應第二參數（解壓目標目錄）
+- **跨年度重置的自動重啟**：onefile 版重啟新程序前必設環境變數 `PYINSTALLER_RESET_ENVIRONMENT=1`（PyInstaller 6.10+ 官方機制），否則新程序沿用舊 `_MEI` 環境、到已刪除的暫存目錄找 `python3xx.dll`/標準庫而崩潰（`Failed to load Python DLL` / `unicodedata` 缺失）。`_restartApp()` 已處理。詳見第 2 節踩雷表與第 5 節 Reset 子節
 - 若打包後報 `No module named res`，加 `--hidden-import res.resources_rc`
-- 核心模組在 `lib/`，主程式打包已列 `--hidden-import lib.*` 五個；若仍報 `No module named lib.xxx`，補對應的 hidden-import
+- 核心模組在 `lib/`，主程式打包已列 `--hidden-import lib.*` 六個；若仍報 `No module named lib.xxx`，補對應的 hidden-import
 - GitHub release 上傳用英文檔名
 
 ---
@@ -428,16 +454,17 @@ pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool d
 
 | 項目 | index | 說明 |
 |------|-------|------|
-| **設定 Tab 改用 .ui** | 6 | **規則修正**。TabSettings 目前純 code 建畫面，違反「每個大 Tab 都用 .ui」規則。需寫 `Layout7.ui`（登入頁 + 左側 nav + 三子頁表格容器等靜態骨架），`tab_settings.py` 改 `loadUi` 抓元件，保留動態邏輯（填列、四顆排序鈕、暫存排序）。其他 Tab 的 .ui 很詳細（連按鈕/日期框都具名），Layout7.ui 比照辦理。**重寫量大，建議獨立進行** |
 | 資料庫瀏覽 Tab | 4 | 未實作。讀三張 View + 開 EditDialog；要面對歷史全表（效能 + 軟刪除過濾） |
 | 檔案歸檔 Tab | 5 | 未實作。**功能尚未定義**，動手前要先問維護者要做什麼 |
-| Reset 按鈕 | — | 跨年度用：清三張主表 + 重編參照表 ID（依 sort_order）+ 歸零 Seq_DocId。屬破壞性操作，需備份 + 強確認 |
 
 ---
 
 ## 9. 版本記錄
 
+> 版本號單一來源為 `lib/version.py` 的 `__version__`。進版時改該處一行，主選單顯示自動同步；本表與 git tag（`v{__version__}`）需手動對齊。
+
 | 版本 | 摘要 |
 |------|------|
+| v0.9.0-beta.8 | 設定 Tab 改用 Layout7.ui 建靜態骨架（密碼頁 + 左側 nav + 三子頁，比照其他 Layout）；新增跨年度重置（清主表 + 兩段式重編參照表 ID + 刪停用項目 + 歸零流水號，確認彈窗 + 自動備份 + 可另存 + 重置後自動重啟）；重啟改用 `PYINSTALLER_RESET_ENVIRONMENT` 官方機制（解 onefile `_MEI` 重啟 DLL 載入失敗）；版本號集中至 `lib/version.py` 單一來源，主選單動態顯示 |
 | v0.9.0-beta.7 | is_active 軟刪除擴及部門/案類、sort_order 排序功能（設定 Tab 四向排序鈕 + 暫存模式）、列印改 QPrintPreviewDialog（解 WinError 1155）、檔案結構重組（layouts/ + res/ + lib/）、排序鈕 SVG 圖示、黏底捲動修正、變更密碼防誤按 |
 | v0.9.0-beta.6 | 設定 Tab（人員/部門/案類維護 + 變更密碼）、AuthManager、參照表連動、黏底捲動、狀態色 |

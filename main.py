@@ -63,6 +63,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
 
 from lib.theme import APPLE_STYLE
+from lib.version import __version__
 from lib.db_utils import getResourcePath, loadUi, msgInfo, msgWarning, msgCritical
 from lib.auth_manager import AuthManager
 from tabs     import TabDispatch, TabReceive, TabReport, TabPrint, TabDBBrowse, TabArchive, TabSettings
@@ -221,6 +222,11 @@ class MainMenu:
             sys.exit(1)
 
         self.selected_tab = -1
+
+        # 版本號顯示（單一來源 lib/version.py）
+        version_label = getattr(self.ui, 'versionLabel', None)
+        if version_label:
+            version_label.setText(f"Ver: {__version__}")
 
         for btn_name, idx in self.BTN_MAP.items():
             btn = getattr(self.ui, btn_name, None)

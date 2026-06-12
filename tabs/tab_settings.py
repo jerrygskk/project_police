@@ -6,15 +6,20 @@ tab_settings.py — 資料庫設定 Tab
   2. 輸入正確密碼 → 切換到設定主畫面（index 1）
   3. 離開 Tab → 自動 logout，切回密碼驗證畫面
 """
+import os
+import sys
 import sqlite3
+import shutil
+import subprocess
+from datetime import datetime
 
-from PySide6.QtCore    import Qt, QSize
+from PySide6.QtCore    import Qt, QSize, QProcess
 from PySide6.QtGui     import QColor, QIcon
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QStackedWidget,
     QLabel, QLineEdit, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView,
-    QWidget,
+    QWidget, QApplication, QFileDialog,
 )
 
 from lib.base_tab import BaseTab
@@ -23,12 +28,13 @@ from lib.db_utils import (
     msgInfo, msgWarning, msgCritical, confirmBox,
     BTN_CONFIRM, BTN_CANCEL,
     loadUi, getResourcePath,
+    performYearEndReset,
 )
 from ui_utils import (
     PersonnelAddDialog, PersonnelEditDialog,
     DeptAddDialog, DeptEditDialog,
     CaseTypeAddDialog, CaseTypeEditDialog,
-    ChangePasswordDialog,
+    ChangePasswordDialog, ResetDialog,
 )
 
 # ── 左側導航按鈕樣式 ────────────────────────────────────────────
@@ -48,6 +54,12 @@ _NAV_BOTTOM = (
     "border: none; border-radius: 8px; padding: 10px 14px; "
     "font-weight: 500; font-size: 14pt; text-align: left; }"
     "QPushButton:hover { background-color: #e5e5ea; }"
+)
+_NAV_DANGER = (
+    "QPushButton { background-color: transparent; color: #c0392b; "
+    "border: none; border-radius: 8px; padding: 10px 14px; "
+    "font-weight: 500; font-size: 14pt; text-align: left; }"
+    "QPushButton:hover { background-color: #f8e4e1; }"
 )
 
 # ── 表格樣式 ────────────────────────────────────────────────────
@@ -159,6 +171,7 @@ class TabSettings(BaseTab):
             inner.findChild(QPushButton, "btn_nav_casetype"),
         ]
         btn_change_pwd = inner.findChild(QPushButton, "btn_change_pwd")
+        btn_year_reset = inner.findChild(QPushButton, "btn_year_reset")
         btn_logout     = inner.findChild(QPushButton, "btn_logout")
 
         # 三子頁的表格、新增/修改/儲存排序按鈕
@@ -184,6 +197,7 @@ class TabSettings(BaseTab):
             "QPushButton:hover { background-color: #B8D8E8; }"
         )
         btn_change_pwd.setStyleSheet(_NAV_BOTTOM)
+        btn_year_reset.setStyleSheet(_NAV_DANGER)
         btn_logout.setStyleSheet(_NAV_BOTTOM)
 
         # ── 綁定 signal ──
@@ -192,6 +206,7 @@ class TabSettings(BaseTab):
         for i, btn in enumerate(self._nav_btns):
             btn.clicked.connect(lambda _=False, idx=i: self._switchPage(idx))
         btn_change_pwd.clicked.connect(self._changePassword)
+        btn_year_reset.clicked.connect(self._doReset)
         btn_logout.clicked.connect(self._doLogout)
 
         # ── 初始化三頁的表格與排序暫存狀態 ──
@@ -356,6 +371,89 @@ class TabSettings(BaseTab):
         dlg = ChangePasswordDialog(self.db_path, self.tab_widget)
         if dlg.exec():
             msgInfo("完成", "密碼已成功變更", self.tab_widget)
+
+    # ── 跨年度重置 ──────────────────────────────────────────────
+    def _doReset(self):
+        # 1. 確認彈窗（輸入 RESET、列出待清停用項目、防誤按）
+        dlg = ResetDialog(self.db_path, self.tab_widget)
+        if not dlg.exec():
+            return
+
+        # 2. 自動備份至 dbfile 同目錄
+        try:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            db_dir = os.path.dirname(os.path.abspath(self.db_path))
+            auto_backup = os.path.join(db_dir, f"dbfile_backup_{ts}.db")
+            shutil.copy2(self.db_path, auto_backup)
+        except Exception as e:
+            msgCritical("備份失敗", f"自動備份失敗，已中止重置：\n{e}", self.tab_widget)
+            return
+
+        # 3. 詢問是否另存一份至使用者指定位置
+        if confirmBox(
+            "另存備份",
+            "已於資料庫目錄建立自動備份。\n是否另存一份備份至其他位置？",
+            confirm_text="另存", cancel_text="略過",
+            confirm_danger=False, default_confirm=True,
+            parent=self.tab_widget
+        ):
+            dest, _ = QFileDialog.getSaveFileName(
+                self.tab_widget, "另存備份",
+                f"dbfile_backup_{ts}.db", "SQLite 資料庫 (*.db)")
+            if dest:
+                try:
+                    shutil.copy2(self.db_path, dest)
+                except Exception as e:
+                    msgWarning("另存失敗",
+                               f"另存備份失敗（自動備份仍存在）：\n{e}", self.tab_widget)
+
+        # 4. 執行重置（破壞性，transaction 保護）
+        try:
+            performYearEndReset(self.db_path)
+        except Exception as e:
+            msgCritical("重置失敗",
+                        f"重置過程發生錯誤，資料已還原至重置前狀態：\n{e}",
+                        self.tab_widget)
+            return
+
+        # 5. 完成提示 → 按確定後重啟程式
+        msgInfo("重置完成",
+                "跨年度重置已完成。\n\n"
+                "按下確定後，程式將自動關閉並重新啟動，重啟前畫面會短暫消失，"
+                "屬正常現象。", self.tab_widget)
+        self._restartApp()
+
+    def _restartApp(self):
+        """
+        重啟程式。
+
+        打包(onefile)情境的關鍵問題：
+          PyInstaller 6.x bootloader 預設把經由 sys.executable 啟動的新程序
+          視為「同一 app 的 worker 子程序」，會沿用繼承來的 _MEI 環境（指向
+          舊程序正在清理的 _MEIxxxxx 暫存目錄）。新程序因而到舊的、已被刪除的
+          目錄找 python3xx.dll / 標準庫，導致：
+            - Failed to load Python DLL（_MEIxxxxx 下的 python3xx.dll）
+            - ModuleNotFoundError: unicodedata
+          （延遲啟動無法解決，反而讓舊 _MEI 清得更乾淨、DLL 更確定不存在。）
+        解法（官方機制，PyInstaller 6.10+）：
+          啟動新程序前設環境變數 PYINSTALLER_RESET_ENVIRONMENT=1，令新程序的
+          bootloader 忽略繼承的 _MEI、解壓全新的暫存目錄，DLL 從新 _MEI 載入。
+        開發情境（非 frozen）：
+          沿用 QProcess 帶 sys.argv 重啟直譯器即可，無 _MEI 問題。
+        """
+        if getattr(sys, "frozen", False):
+            try:
+                env = os.environ.copy()
+                env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+                subprocess.Popen([sys.executable], env=env)
+            except Exception:
+                msgWarning("請手動重啟",
+                           "自動重啟失敗，請手動重新開啟程式。", self.tab_widget)
+                # 即使啟動失敗仍關閉本程序，避免停留在已重置但未重載的狀態
+        else:
+            QProcess.startDetached(sys.executable, sys.argv)
+
+        QApplication.quit()
 
     # ── 登出 ────────────────────────────────────────────────────
     def _doLogout(self):

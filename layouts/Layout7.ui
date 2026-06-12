@@ -156,6 +156,11 @@
             </widget>
            </item>
            <item>
+            <widget class="QPushButton" name="btn_year_reset">
+             <property name="text"><string>跨年度重置</string></property>
+            </widget>
+           </item>
+           <item>
             <widget class="QPushButton" name="btn_logout">
              <property name="text"><string>登出</string></property>
             </widget>

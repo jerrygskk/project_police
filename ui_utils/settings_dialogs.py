@@ -564,3 +564,98 @@ class ChangePasswordDialog(QDialog):
             self.lbl_err.setText("目前密碼錯誤")
             self.w_old.clear()
             self.w_old.setFocus()
+
+
+# ══════════════════════════════════════════════════════════════════
+# 跨年度重置確認
+# ══════════════════════════════════════════════════════════════════
+class ResetDialog(QDialog):
+    """
+    跨年度重置確認彈窗（高風險操作）。
+
+    - 顯示重置範圍警語
+    - 動態列出本次將清除的停用項目（人員 / 部門 / 案類）
+    - 須手動輸入「RESET」才能執行（防誤按：確認鈕非 default、輸入框不綁 Enter）
+
+    本 Dialog 只負責「取得使用者明確同意」，回傳 accept/reject；
+    實際重置由呼叫端（tab_settings）執行。
+    """
+
+    _CONFIRM_WORD = "RESET"
+
+    def __init__(self, db_path, parent=None):
+        super().__init__(parent)
+        self.db_path = db_path
+        self.setWindowTitle("跨年度重置")
+        self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
+        self.setStyleSheet(_DIALOG_SS)
+        self._build()
+
+    def _build(self):
+        from lib.db_utils import listInactiveRefItems
+
+        vlay = QVBoxLayout(self)
+        vlay.setSpacing(14)
+        vlay.setContentsMargins(24, 20, 24, 16)
+
+        lbl_title = QLabel("跨年度重置將執行下列不可復原的操作：")
+        lbl_title.setStyleSheet("font-weight: 700; font-size: 14pt;")
+        vlay.addWidget(lbl_title)
+
+        lbl_scope = QLabel(
+            "1. 清空全部交辦單、刑案陳報、一般陳報資料\n"
+            "2. 移除已停用的人員、部門、案件類型\n"
+            "3. 重新編排參照表編號與排序\n"
+            "4. 流水號歸零"
+        )
+        lbl_scope.setStyleSheet("color: #3a3a3c;")
+        vlay.addWidget(lbl_scope)
+
+        # 動態列出待清停用項目
+        inactive = listInactiveRefItems(self.db_path)
+        if inactive:
+            lines = "\n".join(f"　• {kind}　{name}" for kind, _id, name in inactive)
+            lbl_inactive = QLabel(
+                "本次將一併移除以下停用項目：\n" + lines +
+                "\n\n如需保留，請先返回啟用該項目。")
+            lbl_inactive.setStyleSheet(
+                "background-color: #FDF2F2; color: #c0392b; "
+                "border: 1px solid #f5c6c6; border-radius: 6px; padding: 8px 12px;"
+            )
+            vlay.addWidget(lbl_inactive)
+        else:
+            lbl_none = QLabel("（目前無停用項目需移除）")
+            lbl_none.setStyleSheet("color: #8e8e93;")
+            vlay.addWidget(lbl_none)
+
+        lbl_warn = QLabel("執行前請確認已備份資料。此操作無法復原。")
+        lbl_warn.setStyleSheet("color: #c0392b; font-weight: 600;")
+        vlay.addWidget(lbl_warn)
+
+        # 確認字串輸入
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight)
+        self.w_confirm = QLineEdit()
+        self.w_confirm.setFixedWidth(_FIELD_W)
+        self.w_confirm.setPlaceholderText(f"請輸入 {self._CONFIRM_WORD} 以確認")
+        form.addRow(f"輸入「{self._CONFIRM_WORD}」：", self.w_confirm)
+        vlay.addLayout(form)
+
+        self.lbl_err = QLabel("")
+        self.lbl_err.setStyleSheet("color: #e74c3c;")
+        self.lbl_err.setAlignment(Qt.AlignRight)
+        vlay.addWidget(self.lbl_err)
+
+        # 按鈕：確認鈕為危險樣式、非 default；不綁 Enter（防誤按）
+        _, btn_ok = _add_buttons(
+            self, vlay, confirm_text="執行重置", danger=True, default_confirm=False)
+        btn_ok.clicked.connect(self._submit)
+        self.w_confirm.setFocus()
+
+    def _submit(self):
+        if self.w_confirm.text().strip() != self._CONFIRM_WORD:
+            self.lbl_err.setText(f"請正確輸入 {self._CONFIRM_WORD}")
+            self.w_confirm.clear()
+            self.w_confirm.setFocus()
+            return
+        self.accept()
