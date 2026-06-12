@@ -6,8 +6,8 @@ from PySide6.QtWidgets import (
     QTableWidget, QPushButton
 )
 
-from base_tab import BaseTab
-from db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgInfo, msgWarning, msgCritical, confirmBox
+from lib.base_tab import BaseTab
+from lib.db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgInfo, msgWarning, msgCritical, confirmBox
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
     setupFilterCombo, setupDateEditToToday, refreshFilterCombo,

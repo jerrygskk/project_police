@@ -2,7 +2,7 @@ import re
 import sqlite3
 from datetime import datetime
 from PySide6.QtWidgets import QMessageBox
-from db_utils import msgCritical
+from lib.db_utils import msgCritical
 
 
 class BaseTab:

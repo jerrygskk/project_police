@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QWidget, QLabel, QProgressBar, QVBoxLayout
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QPixmap
 
-from db_utils import getResourcePath
+from lib.db_utils import getResourcePath
 
 
 # ── 載入步驟定義（說明, 完成後的 %）──────────────────────────
@@ -58,13 +58,13 @@ class LoadWorker(QThread):
         time.sleep(DEBUG_DELAY)
 
         # 步驟 3：套用樣式（回主執行緒才能真正套，這裡先 import）
-        from theme import APPLE_STYLE
+        from lib.theme import APPLE_STYLE
         results['style'] = APPLE_STYLE
         self.step_done.emit(*LOAD_STEPS[2])
         time.sleep(DEBUG_DELAY)
 
         # 步驟 4：載入主選單 UI
-        from db_utils import loadUi
+        from lib.db_utils import loadUi
         results['menu_ui_path'] = getResourcePath("layouts/main_menu.ui")
         self.step_done.emit(*LOAD_STEPS[3])
         time.sleep(DEBUG_DELAY)

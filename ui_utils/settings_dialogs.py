@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QCheckBox,
 )
 
-from db_utils import BTN_CONFIRM, BTN_CANCEL, BTN_DANGER
+from lib.db_utils import BTN_CONFIRM, BTN_CANCEL, BTN_DANGER
 
 # ── 共用樣式 ───────────────────────────────────────────────────────
 _DIALOG_SS = """
@@ -143,7 +143,7 @@ class PersonnelAddDialog(QDialog):
             self._result = (self._new_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from db_utils import msgCritical
+            from lib.db_utils import msgCritical
             msgCritical("寫入失敗", str(e), self)
 
     def get_result(self):
@@ -206,7 +206,7 @@ class PersonnelEditDialog(QDialog):
             self._result = (self.staff_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from db_utils import msgCritical
+            from lib.db_utils import msgCritical
             msgCritical("更新失敗", str(e), self)
 
     def get_result(self):
@@ -280,7 +280,7 @@ class DeptAddDialog(QDialog):
             self._result = (self._new_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from db_utils import msgCritical
+            from lib.db_utils import msgCritical
             msgCritical("寫入失敗", str(e), self)
 
     def get_result(self):
@@ -343,7 +343,7 @@ class DeptEditDialog(QDialog):
             self._result = (self.dept_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from db_utils import msgCritical
+            from lib.db_utils import msgCritical
             msgCritical("更新失敗", str(e), self)
 
     def get_result(self):
@@ -417,7 +417,7 @@ class CaseTypeAddDialog(QDialog):
             self._result = (self._new_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from db_utils import msgCritical
+            from lib.db_utils import msgCritical
             msgCritical("寫入失敗", str(e), self)
 
     def get_result(self):
@@ -480,7 +480,7 @@ class CaseTypeEditDialog(QDialog):
             self._result = (self.type_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from db_utils import msgCritical
+            from lib.db_utils import msgCritical
             msgCritical("更新失敗", str(e), self)
 
     def get_result(self):
@@ -556,7 +556,7 @@ class ChangePasswordDialog(QDialog):
             self.lbl_err.setText("新密碼至少需要 4 個字元")
             return
 
-        from auth_manager import AuthManager
+        from lib.auth_manager import AuthManager
         ok = AuthManager.instance().change_password(old, new, self.db_path)
         if ok:
             self.accept()

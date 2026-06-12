@@ -17,9 +17,9 @@ from PySide6.QtWidgets import (
     QWidget, QSizePolicy, QFrame,
 )
 
-from base_tab     import BaseTab
-from auth_manager import AuthManager
-from db_utils     import (
+from lib.base_tab import BaseTab
+from lib.auth_manager import AuthManager
+from lib.db_utils import (
     msgInfo, msgWarning, msgCritical, confirmBox,
     BTN_CONFIRM, BTN_CANCEL,
 )

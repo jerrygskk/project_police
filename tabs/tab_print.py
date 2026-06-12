@@ -17,8 +17,8 @@ from PySide6.QtCore import Qt, QDate, QThread, Signal
 from PySide6.QtGui  import QPixmap, QImage, QPainter, QPageSize
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
-from base_tab import BaseTab
-from db_utils import getResourcePath, loadUi, msgInfo, msgWarning, msgCritical
+from lib.base_tab import BaseTab
+from lib.db_utils import getResourcePath, loadUi, msgInfo, msgWarning, msgCritical
 
 # ── 字型（跨平台）────────────────────────────────────────
 def _find_cjk_fonts():

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QDate
 
-from db_utils import getResourcePath, BTN_CONFIRM, BTN_CANCEL, confirmBox
+from lib.db_utils import getResourcePath, BTN_CONFIRM, BTN_CANCEL, confirmBox
 
 
 def _get_conn(db_path):
@@ -228,7 +228,7 @@ class TaskEditDialog(QDialog):
         _set_combo_value(combo, value)
 
     def _on_save(self):
-        from db_utils import msgWarning, msgCritical
+        from lib.db_utils import msgWarning, msgCritical
         recv_date = self.w_recv_date.date().toString("yyyy-MM-dd")
         recv_id   = self.w_recv_id.currentData()
         dept_id   = self.w_dept.currentData()
@@ -497,7 +497,7 @@ QRadioButton:checked {
         _set_combo_value(combo, value)
 
     def _on_save(self):
-        from db_utils import msgWarning, msgCritical
+        from lib.db_utils import msgWarning, msgCritical
         report_date = self.w_report_date.date().toString("yyyy-MM-dd")
         sender_id   = self.w_sender.currentData()
         case_type   = self.w_casetype.currentData()
@@ -708,7 +708,7 @@ class GeneralEditDialog(QDialog):
         _set_combo_value(combo, value)
 
     def _on_save(self):
-        from db_utils import msgWarning, msgCritical
+        from lib.db_utils import msgWarning, msgCritical
         report_date = self.w_report_date.date().toString("yyyy-MM-dd")
         sender_id   = self.w_sender.currentData()
         dept_id     = self.w_dept.currentData()

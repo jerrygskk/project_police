@@ -9,7 +9,7 @@ auth_manager.py — 權限控管
   - 各 Tab 需要判斷權限時，查 AuthManager.instance().can(action)
 
 使用範例：
-    from auth_manager import AuthManager
+    from lib.auth_manager import AuthManager
 
     def _deleteSomething(self, doc_id):
         if not AuthManager.instance().can("delete"):

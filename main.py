@@ -46,7 +46,7 @@ def _setup_error_handler():
         # 3. 彈出錯誤視窗（QApplication 存在時）
         try:
             from PySide6.QtWidgets import QApplication
-            from db_utils import msgCritical as _msgCritical
+            from lib.db_utils import msgCritical as _msgCritical
             if QApplication.instance():
                 _msgCritical("系統錯誤",
                     f"程式發生錯誤，已記錄至 error.log：\n\n{exc_value}"
@@ -62,9 +62,9 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
 
-from theme    import APPLE_STYLE
-from db_utils import getResourcePath, loadUi, msgInfo, msgWarning, msgCritical
-from auth_manager import AuthManager
+from lib.theme import APPLE_STYLE
+from lib.db_utils import getResourcePath, loadUi, msgInfo, msgWarning, msgCritical
+from lib.auth_manager import AuthManager
 from tabs     import TabDispatch, TabReceive, TabReport, TabPrint, TabDBBrowse, TabArchive, TabSettings
 from res import resources_rc  # 註冊 Qt resource（arrow.svg）
 
@@ -253,7 +253,7 @@ if __name__ == "__main__":
 
     db_path = getResourcePath("dbfile.db")
 
-    from loading_screen import LoadingScreen
+    from lib.loading_screen import LoadingScreen
 
     # _menu_ref 用來持有 menu 和 mgr 的引用，防止被 GC 回收導致閃退
     _menu_ref = []

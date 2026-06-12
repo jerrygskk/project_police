@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QVBoxLayout
 
-from base_tab import BaseTab
-from db_utils import getResourcePath, loadUi
+from lib.base_tab import BaseTab
+from lib.db_utils import getResourcePath, loadUi
 
 
 class TabArchive(BaseTab):

@@ -4,8 +4,8 @@ from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui  import QColor
 from PySide6.QtWidgets import QTableWidgetItem, QPushButton
 
-from base_tab import BaseTab
-from db_utils import msgInfo, msgWarning, msgCritical, confirmBox, DEBUG_MODE
+from lib.base_tab import BaseTab
+from lib.db_utils import msgInfo, msgWarning, msgCritical, confirmBox, DEBUG_MODE
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
     TaskEditDialog,
