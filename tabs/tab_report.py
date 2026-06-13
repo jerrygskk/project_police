@@ -45,9 +45,7 @@ QRadioButton:checked {
 class TabReport(BaseTab):
     """公文陳報：刑案 / 一般陳報，左右並列預覽"""
 
-    # ── 第4點：DB 原始值 → 預覽顯示名 的對照表提成類別常數 ──
-    _STATUS_MAP = {'A_現行犯': '現行', 'B_到案': '到案', 'B_未到案': '未到'}
-    _CAT_MAP    = {'D_業務陳報': '業務', 'J_其他': '其他', 'F_司法相驗': '相驗'}
+    # _STATUS_MAP / _CAT_MAP 已上移至 BaseTab，供陳報頁與瀏覽頁共用。
 
     def setup(self, tab_index):
         tab = self.tab_widget.widget(tab_index)

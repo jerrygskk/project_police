@@ -337,7 +337,8 @@ def generate_pages(db_path, date_str):
     conn = sqlite3.connect(db_path)
     task = conn.execute(
         "SELECT 編號, 發文日期, 業務組, 所承辦人, 交辦事由 "
-        "FROM View_Task_Full WHERE 發文日期=? ORDER BY CAST(編號 AS INT)",
+        "FROM View_Task_Full WHERE 發文日期=? "
+        "ORDER BY 紀錄時間 IS NULL, 紀錄時間, CAST(編號 AS INT)",
         (date_str,)).fetchall()
     crim = conn.execute(
         "SELECT 送文編號, 陳報日期, 案類, 主承辦人, 嫌疑人_案由, 發文分類 "

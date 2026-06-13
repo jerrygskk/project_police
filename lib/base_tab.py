@@ -18,6 +18,12 @@ class BaseTab:
         get_focus_widget() -> QWidget | None       供 _onTabChanged 自動 setFocus 用
     """
 
+    # ── 共用：DB 原始值 → 預覽顯示名 的對照表 ──────────────────
+    # 刑案發文分類、一般陳報分類，於陳報頁與資料庫瀏覽頁共用同一份，
+    # 避免兩處各寫一份、改了一邊忘了另一邊。
+    _STATUS_MAP = {'A_現行犯': '現行', 'B_到案': '到案', 'B_未到案': '未到'}
+    _CAT_MAP    = {'D_業務陳報': '業務', 'J_其他': '其他', 'F_司法相驗': '相驗'}
+
     def __init__(self, tab_widget, db_path):
         self.tab_widget = tab_widget   # QTabWidget
         self.db_path    = db_path

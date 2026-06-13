@@ -155,6 +155,7 @@ class DocumentManager:
             msgInfo("自動登出", "閒置已超過 20 分鐘，已自動登出管理者身份。", self.window)
 
     _IDX_SETTINGS = 6          # 資料庫設定 Tab index
+    _IDX_DBBROWSE = 4          # 資料庫瀏覽 Tab index
 
     def _onTabChanged(self, index):
         from ui_utils import autoResizeTable
@@ -185,6 +186,13 @@ class DocumentManager:
                 and settings_tab
                 and hasattr(settings_tab, 'on_activated')):
             settings_tab.on_activated()
+
+        # 切「到」資料庫瀏覽 Tab：比對資料指紋，只在其他頁改過資料時重載。
+        # （on_activated 內部會逐表比對 last_modified，未變則不重建、不頓。）
+        if (index == self._IDX_DBBROWSE
+                and tab_obj
+                and hasattr(tab_obj, 'on_activated')):
+            tab_obj.on_activated()
 
         self._prev_tab_index = index
 
