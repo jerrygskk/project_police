@@ -6,9 +6,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QColor
 
 from lib.base_tab import BaseTab
-from lib.db_utils import getResourcePath, loadUi, msgCritical
+from lib.db_utils import getResourcePath, loadUi, msgCritical, confirmBox
 from ui_utils import (
-    setupPreviewTable, autoResizeTable, setDocIdLinkCell,
+    setupPreviewTable, autoResizeTable, setDocIdLinkCell, makeDeleteBtn,
     TaskEditDialog, CriminalEditDialog, GeneralEditDialog,
 )
 
@@ -25,23 +25,25 @@ from ui_utils import (
 # 順序即為顯示由左至右的順序（重要欄在左）。
 # ─────────────────────────────────────────────────────────────
 TASK_COLS = [
+    {"header": "", "delete": True, "slim": True, "w": 32},
     {"header": "編號",     "view_col": "編號",     "slim": True,  "link": True,  "search": True, "w": 64},
     {"header": "所承辦人", "view_col": "所承辦人", "slim": True,  "search": True, "w": 120},
     {"header": "交辦事由", "view_col": "交辦事由", "slim": True,  "search": True, "stretch": True, "w": 240},
     {"header": "業務組",   "view_col": "業務組",   "slim": True,  "search": True, "w": 80},
-    {"header": "狀態",     "view_col": "狀態",     "slim": True,  "color": True, "search": True, "w": 212},
+    {"header": "狀態",     "view_col": "狀態",     "slim": True,  "color": True, "search": True, "w": 200},
     {"header": "限辦日期", "view_col": "限辦日期", "slim": True,  "search": True, "w": 140},
     {"header": "發文日期", "view_col": "發文日期", "slim": True,  "search": True, "w": 140},
     {"header": "收文日期", "view_col": "收文日期", "slim": False, "search": True, "w": 140},
     {"header": "收文人員", "view_col": "收文人員", "slim": False, "search": True, "w": 120},
     {"header": "送文人員", "view_col": "送文人員", "slim": False, "search": True, "w": 120},
-    {"header": "紀錄時間", "view_col": "紀錄時間", "slim": False, "search": False, "w": 240},
+    {"header": "紀錄時間", "view_col": "紀錄時間", "slim": False, "search": False, "w": 240, "trunc_sec": True},
 ]
 
 CRIM_COLS = [
+    {"header": "", "delete": True, "slim": True, "w": 32},
     {"header": "送文編號",    "view_col": "送文編號",    "slim": True,  "link": True,  "search": True, "w": 80},
     {"header": "主承辦人",    "view_col": "主承辦人",    "slim": True,  "search": True, "w": 120},
-    {"header": "案類",        "view_col": "案類",        "slim": True,  "search": True, "w": 200},
+    {"header": "案類",        "view_col": "案類",        "slim": True,  "search": True, "w": 180},
     {"header": "嫌疑人/案由", "view_col": "嫌疑人_案由", "slim": True,  "search": True, "stretch": True, "w": 240},
     {"header": "發文分類",    "view_col": "發文分類",    "slim": True,  "search": True, "w": 96, "map": "status"},
     {"header": "陳報日期",    "view_col": "陳報日期",    "slim": True,  "search": True, "w": 140},
@@ -49,11 +51,12 @@ CRIM_COLS = [
     {"header": "送文人員",    "view_col": "送文人員",    "slim": False, "search": True, "w": 120},
     {"header": "報案人",      "view_col": "報案人",      "slim": False, "search": True, "w": 130},
     {"header": "受理人",      "view_col": "受理人",      "slim": False, "search": True, "w": 120},
-    {"header": "紙本",        "view_col": "紙本",        "slim": False, "search": False, "w": 56},
-    {"header": "電子檔",      "view_col": "電子檔",      "slim": False, "search": False, "w": 64},
+    {"header": "紙本",        "view_col": "紙本",        "slim": False, "search": False, "w": 56, "bool_col": True},
+    {"header": "電子檔",      "view_col": "電子檔",      "slim": False, "search": False, "w": 64, "bool_col": True},
 ]
 
 GEN_COLS = [
+    {"header": "", "delete": True, "slim": True, "w": 32},
     {"header": "送文編號", "view_col": "送文編號", "slim": True,  "link": True,  "search": True, "w": 80},
     {"header": "陳報人",   "view_col": "陳報人",   "slim": True,  "search": True, "w": 120},
     {"header": "陳報主旨", "view_col": "陳報主旨", "slim": True,  "search": True, "stretch": True, "w": 240},
@@ -61,8 +64,8 @@ GEN_COLS = [
     {"header": "分類",     "view_col": "分類",     "slim": True,  "search": True, "w": 96, "map": "cat"},
     {"header": "陳報日期", "view_col": "陳報日期", "slim": True,  "search": True, "w": 140},
     {"header": "送文人員", "view_col": "送文人員", "slim": False, "search": True, "w": 120},
-    {"header": "紙本",     "view_col": "紙本",     "slim": False, "search": False, "w": 56},
-    {"header": "電子檔",   "view_col": "電子檔",   "slim": False, "search": False, "w": 64},
+    {"header": "紙本",     "view_col": "紙本",     "slim": False, "search": False, "w": 56, "bool_col": True},
+    {"header": "電子檔",   "view_col": "電子檔",   "slim": False, "search": False, "w": 64, "bool_col": True},
 ]
 
 
@@ -204,10 +207,10 @@ class TabDBBrowse(BaseTab):
             u["search"].clicked.connect(lambda _, k=key: self._reload(k))
         if u["kw"]:
             u["kw"].returnPressed.connect(lambda k=key: self._reload(k))
-            # 即時搜尋（防抖 200ms，避免每按一鍵就重載 700+ 列造成卡頓）
+            # 即時搜尋（防抖 1000ms，打字期間不重載，停手 1 秒才查）
             timer = QTimer(u["kw"])
             timer.setSingleShot(True)
-            timer.setInterval(200)
+            timer.setInterval(1000)
             timer.timeout.connect(lambda k=key: self._reload(k))
             self._ui[key]["_debounce"] = timer
             u["kw"].textChanged.connect(lambda _, t=timer: t.start())
@@ -245,14 +248,15 @@ class TabDBBrowse(BaseTab):
             full.setStyleSheet(self._SEG_STYLE)
 
     def _onToggleFull(self, key):
-        self._reload(key)
+        # 切換精簡/完整：資料不變，只改欄位可見性 + 重算欄寬，不重查/不重建
+        self._applyMode(key)
 
     # ── 目前模式要顯示的欄位清單 ────────────────────────────
-    def _visibleCols(self, key):
-        full = self._ui[key]["full"].isChecked() if self._ui[key]["full"] else False
-        return [c for c in TABLE_META[key]["cols"] if full or c.get("slim")]
+    def _isFull(self, key):
+        btn = self._ui[key]["full"]
+        return btn.isChecked() if btn else False
 
-    # ── 主載入 / 搜尋 ───────────────────────────────────────
+    # ── 主載入 / 搜尋（資料變動時才呼叫，建全欄、塞全部 cell）──
     def _reload(self, key):
         meta = TABLE_META[key]
         u = self._ui[key]
@@ -260,17 +264,13 @@ class TabDBBrowse(BaseTab):
         if not table:
             return
 
-        cols = self._visibleCols(key)
+        # 一律建「完整模式的全部欄位」，精簡模式之後用 setColumnHidden 藏欄，
+        # 切換模式就不必重查 DB、重建 700+ 列（避免頓挫）。
+        cols = meta["cols"]
         headers = [c["header"] for c in cols]
         stretch_idx = next((i for i, c in enumerate(cols) if c.get("stretch")), None)
-
-        # 固定欄寬。長文字欄（stretch）也給一個 w 當「最小寬」，
-        # 避免 autoResizeTable 量到超長內容（如 36 字事由）而撐爆整欄、
-        # 退化成橫向捲動。給最小寬後會走「stretch = 剩餘空間」分支，
-        # 超出部分由 QTableWidget 自動截斷成「…」，全文以 tooltip 呈現。
         fixed_overrides = {c["header"]: c["w"] for c in cols if c.get("w")}
 
-        # 建立表頭
         setupPreviewTable(
             table, headers,
             stretch_col=stretch_idx if stretch_idx is not None else 1,
@@ -278,7 +278,7 @@ class TabDBBrowse(BaseTab):
             cap_mode=False,
         )
 
-        # 查詢資料（含底層承辦人 is_active）
+        # 查詢資料
         try:
             rows = self._query(key)
         except Exception as e:
@@ -287,41 +287,87 @@ class TabDBBrowse(BaseTab):
 
         kw = (u["kw"].text() or "").strip() if u["kw"] else ""
         scope_col = u["scope"].currentData() if u["scope"] else None
-
-        # 搜尋欄位集合
         if scope_col:
             search_cols = [scope_col]
         else:
             search_cols = [c["view_col"] for c in meta["cols"] if c.get("search")]
 
         id_col = meta["id_col"]
-        visible_view_cols = {c["view_col"] for c in cols}
-
-        hit_hidden = False
         table.setRowCount(0)
+        order = []
+        matched_cols_by_id = {}
         shown = 0
         for r in rows:
-
-            # 關鍵字過濾
-            matched_col = None
+            # 跳過已清空（軟刪除）的列，全量載入與差異更新一致
+            if self._isEmptied(key, r):
+                continue
+            # 關鍵字過濾：記下這筆實際命中的欄位
             if kw:
-                ok = False
-                for vc in search_cols:
-                    val = r.get(vc)
-                    if val is not None and kw in str(val):
-                        ok = True
-                        matched_col = vc
-                        break
-                if not ok:
+                matched = [vc for vc in search_cols
+                           if r.get(vc) is not None and kw in str(r.get(vc))]
+                if not matched:
                     continue
-
-            if kw and matched_col and matched_col not in visible_view_cols:
-                hit_hidden = True
-
+            else:
+                matched = []
+            did = str(r.get(id_col) or "")
             self._appendRow(key, table, cols, r, id_col)
+            order.append(did)
+            matched_cols_by_id[did] = matched
             shown += 1
 
+        # 記住目前顯示的 doc_id 順序（供差異更新定位列）、搜尋狀態、載入時刻
+        if not hasattr(self, "_docorder"):
+            self._docorder = {}
+        self._docorder[key] = order
+        self._matchedCols = getattr(self, "_matchedCols", {})
+        self._matchedCols[key] = matched_cols_by_id
+        self._lastSearch = getattr(self, "_lastSearch", {})
+        self._lastSearch[key] = (kw, search_cols, shown)
+        self._lastLoad = getattr(self, "_lastLoad", {})
+        self._lastLoad[key] = self._dbNow()
+
+        # 套用目前模式（藏/顯示欄）+ 欄寬重算
+        self._applyMode(key)
+
+    def _dbNow(self):
+        """取資料庫端的當前時間字串，與 trigger 寫入的 last_modified 同基準。"""
+        conn = self._getConn()
+        try:
+            return conn.execute("SELECT datetime('now','localtime')").fetchone()[0]
+        finally:
+            conn.close()
+
+    def _applyMode(self, key):
+        """只改欄位可見性與欄寬，不動資料。精簡↔完整切換走這裡，瞬間完成。"""
+        meta = TABLE_META[key]
+        table = self._ui[key]["table"]
+        if not table:
+            return
+        full = self._isFull(key)
+
+        # 藏/顯示欄
+        for idx, c in enumerate(meta["cols"]):
+            hidden = not (full or c.get("slim"))
+            table.setColumnHidden(idx, hidden)
+
+        # 欄寬重算（藏欄後 stretch 欄要重新吃掉剩餘空間，避免留白/擠壓）
         QTimer.singleShot(0, lambda t=table: autoResizeTable(t))
+
+        # footer：是否有「某筆只命中於目前隱藏欄」→ 才需提示切完整
+        kw, search_cols, shown = getattr(self, "_lastSearch", {}).get(
+            key, ("", [], table.rowCount()))
+        hit_hidden = False
+        if kw:
+            visible_view_cols = {
+                c["view_col"] for c in meta["cols"]
+                if full or c.get("slim")
+            }
+            matched_by_id = getattr(self, "_matchedCols", {}).get(key, {})
+            for did, matched in matched_by_id.items():
+                if matched and not (set(matched) & visible_view_cols):
+                    # 這筆命中的欄全是隱藏欄 → 在可見欄看不出為何命中
+                    hit_hidden = True
+                    break
         self._updateFooter(key, shown, kw, hit_hidden)
 
     def _query(self, key):
@@ -342,12 +388,135 @@ class TabDBBrowse(BaseTab):
             conn.close()
         return out
 
+    def _isEmptied(self, key, r):
+        """該筆是否已被清空（軟刪除）。只看真實內容欄是否全空，
+        排除：編號(link)、狀態(color，View 補『免覆』)、刪除欄、
+        紙本/電子檔(bool_col，清空後 View 補『否』)。"""
+        cols = TABLE_META[key]["cols"]
+        content_cols = [c for c in cols
+                        if not c.get("link") and not c.get("color")
+                        and not c.get("delete") and not c.get("bool_col")]
+        return not any(r.get(c["view_col"]) for c in content_cols)
+
+    def _rowMatchesSearch(self, key, r):
+        """該筆是否符合目前搜尋條件。"""
+        u = self._ui[key]
+        meta = TABLE_META[key]
+        kw = (u["kw"].text() or "").strip() if u["kw"] else ""
+        if not kw:
+            return True
+        scope_col = u["scope"].currentData() if u["scope"] else None
+        if scope_col:
+            search_cols = [scope_col]
+        else:
+            search_cols = [c["view_col"] for c in meta["cols"] if c.get("search")]
+        for vc in search_cols:
+            val = r.get(vc)
+            if val is not None and kw in str(val):
+                return True
+        return False
+
+    def _diffUpdate(self, key):
+        """差異更新：只處理上次載入後變動（last_modified 更新）的列，
+        其餘列不動。新增→加列、修改→更新列、清空刪除/不符搜尋→移除列。"""
+        meta = TABLE_META[key]
+        table = self._ui[key]["table"]
+        if not table:
+            return
+        since = getattr(self, "_lastLoad", {}).get(key)
+        if since is None:
+            self._reload(key)
+            return
+
+        cols = meta["cols"]
+        id_col = meta["id_col"]
+        # 查變動筆的 PK
+        conn = self._getConn()
+        try:
+            changed_ids = [str(row[0]) for row in conn.execute(
+                f"SELECT doc_id FROM {meta['base']} WHERE last_modified > ?",
+                (since,)).fetchall()]
+        finally:
+            conn.close()
+
+        if not changed_ids:
+            self._lastLoad[key] = self._dbNow()
+            return
+
+        # 取這些 PK 的完整 View 列
+        rows_by_id = {}
+        for r in self._query(key):
+            did = str(r.get(id_col) or "")
+            if did in changed_ids:
+                rows_by_id[did] = r
+
+        order = self._docorder.setdefault(key, [])
+        u = self._ui[key]
+        kw = (u["kw"].text() or "").strip() if u["kw"] else ""
+        scope_col = u["scope"].currentData() if u["scope"] else None
+        if scope_col:
+            search_cols = [scope_col]
+        else:
+            search_cols = [c["view_col"] for c in meta["cols"] if c.get("search")]
+        matched_map = self._matchedCols.setdefault(key, {}) if hasattr(
+            self, "_matchedCols") else {}
+        if not hasattr(self, "_matchedCols"):
+            self._matchedCols = {key: matched_map}
+
+        for did in changed_ids:
+            r = rows_by_id.get(did)
+            in_table = did in order
+            emptied = r is not None and self._isEmptied(key, r)
+            should_show = (r is not None) and (not emptied) and self._rowMatchesSearch(key, r)
+
+            if should_show and not in_table:
+                # 新增：附加到表尾
+                pos = table.rowCount()
+                table.insertRow(pos)
+                order.append(did)
+                self._fillRow(key, table, cols, r, id_col, pos)
+            elif should_show and in_table:
+                # 修改：就地更新該列
+                pos = order.index(did)
+                self._fillRow(key, table, cols, r, id_col, pos)
+            elif (not should_show) and in_table:
+                # 移除：刪該列
+                pos = order.index(did)
+                table.removeRow(pos)
+                order.pop(pos)
+                matched_map.pop(did, None)
+                continue
+
+            # 維護命中欄記錄（供切完整提示判斷）
+            if should_show:
+                matched_map[did] = [vc for vc in search_cols
+                                    if r.get(vc) is not None and kw in str(r.get(vc))] if kw else []
+
+        self._lastLoad[key] = self._dbNow()
+        # 更新筆數與欄寬
+        shown = table.rowCount()
+        kw, search_cols, _ = getattr(self, "_lastSearch", {}).get(key, ("", [], shown))
+        self._lastSearch[key] = (kw, search_cols, shown)
+        self._applyMode(key)
+
     def _appendRow(self, key, table, cols, r, id_col):
         pos = table.rowCount()
         table.insertRow(pos)
+        self._fillRow(key, table, cols, r, id_col, pos)
+
+    def _fillRow(self, key, table, cols, r, id_col, pos):
+        """在指定列 pos 寫入所有 cell（差異更新與全量載入共用）。"""
         inactive = not r["_proc_active"]
 
         for c_idx, c in enumerate(cols):
+            # 刪除欄（最左）：放 X 鈕，點擊以 doc_id 觸發刪除
+            if c.get("delete"):
+                doc_id = str(r.get(id_col) or "")
+                container, _ = makeDeleteBtn(
+                    lambda _=None, k=key, d=doc_id: self._onDelete(k, d))
+                table.setCellWidget(pos, c_idx, container)
+                continue
+
             val = r.get(c["view_col"])
             text = "" if val is None else str(val)
 
@@ -358,11 +527,16 @@ class TabDBBrowse(BaseTab):
                 table_map = self._STATUS_MAP if mkey == "status" else self._CAT_MAP
                 text = table_map.get(text, text)
 
+            # 紀錄時間：去掉秒以下小數（排序用的微秒不顯示），只留到秒
+            if c.get("trunc_sec") and "." in text:
+                text = text.split(".", 1)[0]
+
             if c.get("link"):
                 doc_id = str(r.get(id_col) or "")
+                # 點擊時以 doc_id 動態解析目前列號，避免差異更新後列號位移失效
                 setDocIdLinkCell(
                     table, pos, c_idx, doc_id,
-                    lambda row, did, k=key: self._onEdit(k, row, did),
+                    lambda _row, did, k=key: self._onEdit(k, self._rowOf(k, did), did),
                     clickable=True,
                 )
                 continue
@@ -385,6 +559,14 @@ class TabDBBrowse(BaseTab):
                 item.setForeground(QColor("#aeaeb2"))
 
             table.setItem(pos, c_idx, item)
+
+    def _rowOf(self, key, doc_id):
+        """以 doc_id 找出目前在表格中的列號（差異更新後仍正確）。"""
+        order = getattr(self, "_docorder", {}).get(key, [])
+        try:
+            return order.index(doc_id)
+        except ValueError:
+            return -1
 
     def _updateFooter(self, key, shown, kw, hit_hidden):
         u = self._ui[key]
@@ -413,13 +595,66 @@ class TabDBBrowse(BaseTab):
             else:
                 u["hint"].setText("")
 
+    # ── 刪除（清空式 UPDATE，比照陳報/收文頁）────────────────
+    _CLEAR_SQL = {
+        "task": (
+            "UPDATE Document_Task SET receive_date=NULL, receive_id=NULL, "
+            "dept_id=NULL, subject=NULL, processor_id=NULL, deadline=NULL, "
+            "dispatch_date=NULL, sender_id=NULL, timestamp=NULL WHERE doc_id=?"),
+        "crim": (
+            "UPDATE Document_Criminal SET report_date=NULL, sender_id=NULL, "
+            "case_type=NULL, case_status=NULL, processor_id=NULL, "
+            "subject_summary=NULL, occurrence_date=NULL, reporter_name=NULL, "
+            "receiver_id=NULL, is_reported=0, is_electronic=0 WHERE doc_id=?"),
+        "gen": (
+            "UPDATE Document_General SET report_date=NULL, sender_id=NULL, "
+            "dept_id=NULL, gen_cat_id=NULL, subject=NULL, processor_id=NULL, "
+            "is_reported=0, is_electronic=0 WHERE doc_id=?"),
+    }
+
+    def _onDelete(self, key, doc_id):
+        if not doc_id:
+            return
+        if not confirmBox(
+                "確認刪除",
+                f"本筆資料將被刪除，本文號（{doc_id}）無法再被使用，確認刪除？",
+                confirm_text="刪除", confirm_danger=True, default_confirm=False):
+            return
+        try:
+            conn = self._getConn()
+            conn.execute(self._CLEAR_SQL[key], (doc_id,))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            msgCritical("刪除失敗", str(e))
+            return
+        # 差異更新：清空後該列會被判定為 emptied → 自動移除。
+        # 刪除前後保留捲動位置，避免畫面跳回頂端。
+        table = self._ui[key]["table"]
+        sb = table.verticalScrollBar() if table else None
+        scroll_pos = sb.value() if sb else 0
+        self._diffUpdate(key)
+        if sb:
+            # autoResize 在下一個事件迴圈才跑，捲動還原也排在其後
+            QTimer.singleShot(0, lambda b=sb, v=scroll_pos: b.setValue(min(v, b.maximum())))
+        self._sigs = getattr(self, "_sigs", {})
+        try:
+            self._sigs[key] = self._tableSignature(key)
+        except Exception:
+            pass
+
     # ── 點編號開 EditDialog ─────────────────────────────────
     def _onEdit(self, key, row, doc_id):
         dialog_cls = TABLE_META[key]["dialog"]
         dlg = dialog_cls(self.db_path, doc_id, self._ui[key]["table"])
         if dlg.exec():
-            # 編輯後簡單重載整張表（瀏覽頁資料量可接受）
-            self._reload(key)
+            # 編輯後差異更新，只動到改過的那列
+            self._diffUpdate(key)
+            self._sigs = getattr(self, "_sigs", {})
+            try:
+                self._sigs[key] = self._tableSignature(key)
+            except Exception:
+                pass
 
     # ── 框架掛鉤 ────────────────────────────────────────────
     def get_tables(self):
@@ -455,5 +690,5 @@ class TabDBBrowse(BaseTab):
                 self._reload(key)
                 continue
             if self._sigs.get(key) != sig:
-                self._reload(key)
+                self._diffUpdate(key)
                 self._sigs[key] = sig
