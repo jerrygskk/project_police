@@ -90,8 +90,8 @@ main.py
 | 1 | 交辦單收文 | TabReceive | Layout2 | 完成 |
 | 2 | 公文陳報 | TabReport | Layout3 | 完成 |
 | 3 | 簽收單列印 | TabPrint | Layout4 | 完成 |
-| 4 | 資料庫瀏覽 | TabDBBrowse | Layout5 | **未實作（佔位）** |
-| 5 | 檔案歸檔 | TabArchive | Layout6 | **未實作（佔位）** |
+| 4 | 資料庫瀏覽 | TabDBBrowse | Layout5 | 完成 |
+| 5 | 檔案歸檔 | TabArchive | Layout6 | 完成 |
 | 6 | 資料庫設定 | TabSettings | Layout7 | 功能完成 |
 
 > **TabSettings 架構**：已比照其他 Tab 改用 `loadUi(Layout7.ui)` 建靜態骨架（密碼驗證頁、左側 nav、三個子頁的表格容器與動作鈕，全部具名），`tab_settings.py` 只保留動態內容（填表格列、每列四顆排序鈕、暫存排序狀態與邏輯、登入登出、跨年度重置）。動態狀態樣式（nav 選中切換、save_btn disabled 灰色）留在 code，比照其他 Layout（Layout1/2/3/5/6 皆不在 `.ui` 帶 stylesheet）。
@@ -130,6 +130,10 @@ main.py
 | `ORDER BY sort_order` 時新項目跑到最前面 | 新列 `sort_order` 是 NULL，SQLite 把 NULL 排最前 | 新增時務必給 `sort_order` 值（本專案規則：新項目放最前 = `MIN(sort_order)-1`，空表 fallback 1） |
 | 從設定 Tab 切走想攔截「未存」攔不住 | `currentChanged` 切換後才觸發（見第 1 節 Qt 限制） | 大 Tab 只能切過去後補跳提示；子頁切換（按鈕）才能攔住回原狀 |
 | 重置後自動重啟，打包(onefile)版跳 `Failed to load Python DLL ..._MEIxxxxx\python3xx.dll` 或 `ModuleNotFoundError: unicodedata` | PyInstaller 6.x bootloader 把經 `sys.executable` 啟動的新程序當成同一 app 的 worker 子程序，沿用繼承的 `_MEI` 環境（指向舊程序正在清掉的 `_MEIxxxxx`），新程序到已刪除的舊目錄找 DLL/標準庫 | 啟動新程序前設環境變數 **`PYINSTALLER_RESET_ENVIRONMENT=1`**（PyInstaller 6.10+ 官方機制），令新程序解壓全新 `_MEI`。見 `tab_settings.py` 的 `_restartApp()`。**別用 cmd ping 延遲那種歪招**（延遲無效，根因是環境變數沒重設）。開發(非 frozen)無此問題，沿用 `QProcess` 帶 argv 即可 |
+| `setupPreviewTable` 的 200ms 延遲 autoResize 覆蓋欄寬 | `setupPreviewTable` 內建 200ms `QTimer` 重算欄寬，導致手動設完欄寬後又被拉回 | 需自行控制欄寬的表格**不要用 `setupPreviewTable`**，自行初始化 + 彈性欄用 `QHeaderView.Stretch`（Qt 自動吃剩餘空間、elide 切字），固定欄用 `Fixed` + `setColumnWidth`。歸檔待歸檔表即此做法 |
+| 浮貼按鈕(絕對定位)在非當前分頁出現重複/錯位 | QTabWidget 中非可見頁面的 widget layout 未撐開（寬=0），且不同頁的浮貼鈕可能被 Qt 渲染到當前頁 | 不用絕對定位浮貼，**改在 GroupBox 內部 layout 的 HBox 標題列放鈕**（label + spacer + toggle 鈕），走正規 layout 管理、不依賴 resizeEvent 定位 |
+| confirmBox 確認/取消鈕被 Qt 平台慣例重排左右 | `QMessageBox` 的 `AcceptRole`/`RejectRole` 會被 Qt 依作業系統慣例調換位置 | 兩顆鈕都用 **`ActionRole`**（同 role 不會被重排），按 `addButton` 順序就是視覺左右順序。手動設 `setDefaultButton`(Enter) + `setEscapeButton`(Esc) 保留快捷鍵 |
+| Material Icons SVG 在小鈕上白邊太多 | viewBox `0 -960 960 960` 是 960px 座標系，圖案只佔中央約 70% | 裁切 viewBox 到圖案實際 bounding box（如 pdf `100 -870 760 760`、archive `80 -890 800 800`），width/height 統一 512px |
 
 ---
 
@@ -171,7 +175,7 @@ main.py
 ├── main.py              進入點（從專案根目錄啟動）
 ├── data_sync_tool.py    Excel→SQLite 匯入工具（單次使用，獨立打包，不被 import）
 ├── sql.py               DB 結構查看工具（analyze_database，獨立 __main__ 跑，不被 import）
-├── init_ref_tables.sql  建表 + 參照表初始資料（含 sort_order 初始值）
+├── backfill_archive_names.py  存量補檔腳本（一次性，掃資料夾回填 is_electronic）
 ├── lib/                 核心模組（被各處 import；含 __init__.py，是 package）
 │   ├── db_utils.py      路徑解析 / 通用彈窗 / nextDocId / 跨年度重置（performYearEndReset、listInactiveRefItems）（DEBUG_MODE 在第一行）
 │   ├── base_tab.py      BaseTab 基底
@@ -183,6 +187,7 @@ main.py
 ├── res/                 圖片 / SVG / qrc（含 __init__.py，是 package）
 │   ├── resources.qrc / resources_rc.py
 │   ├── arrow.svg / sort_*.svg / banner.png / police_badge.*
+│   ├── icon_pdf.svg / icon_archive.svg    ← 歸檔頁操作鈕 Material Icons（灰 #636366）
 ├── tabs/                各 Tab
 └── ui_utils/            共用 UI 工具（table/widgets/status/sticky_scroll/edit_dialog/settings_dialogs）
 ```
@@ -442,14 +447,14 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 ### 資料同步工具
 
 ```cmd
-pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool data_sync_tool.py
+pyinstaller --onefile --name Data-Sync-Tool data_sync_tool.py
 ```
 
 ### 注意事項
 
 - `dbfile.db` 不打包，與 exe 同資料夾（真實資料）
 - `ori.xlsm`（資料同步工具用）不打包，與 Data-Sync-Tool.exe 同資料夾
-- `arrow.svg` / `sort_*.svg` 已透過 `resources_rc.py` 內嵌，不需 `--add-data`；改了要重編 qrc
+- `arrow.svg` / `sort_*.svg` / `icon_pdf.svg` / `icon_archive.svg` 已透過 `resources_rc.py` 內嵌，不需 `--add-data`；改了要重編 qrc
 - 列印用 `QtPrintSupport`，加 `--hidden-import PySide6.QtPrintSupport` 保險
 - matplotlib 只用 `backend_agg`（PNG）+ `backend_pdf`（存 PDF），其餘 backend 全排除
 - 結構重組後 `.ui` 進 `layouts/`、圖片進 `res/`，`--add-data` 路徑要對應第二參數（解壓目標目錄）
@@ -463,10 +468,13 @@ pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool d
 
 ## 8. 待辦
 
-| 項目 | index | 說明 |
-|------|-------|------|
-| 資料庫瀏覽 Tab | 4 | 未實作。讀三張 View + 開 EditDialog；要面對歷史全表（效能 + 軟刪除過濾） |
-| 檔案歸檔 Tab | 5 | 未實作。**功能尚未定義**，動手前要先問維護者要做什麼 |
+| 項目 | 說明 |
+|------|------|
+| 歸檔 icon 白邊 | Material Icons viewBox 大，裁切後 20px 仍略有切圖，可考慮手刻或換 Lucide 圖源 |
+| 別名表 `_ALIAS` | tab_archive 的人名別名對照目前為空 dict，等維護者提供綽號清單 |
+| Quick Start Guide | 5 頁 A4 快速上手指南（HTML），待補一般陳報截圖後重製 |
+| 重跑轉檔重建 DB | schema 有 is_electronic TEXT、last_modified、trigger，差異更新需重跑轉檔才完整生效 |
+| 存量補檔腳本 | backfill_archive_names.py 需重跑轉檔後再執行 |
 
 ---
 
@@ -476,6 +484,7 @@ pyinstaller --onefile --add-data "init_ref_tables.sql;." --name Data-Sync-Tool d
 
 | 版本 | 摘要 |
 |------|------|
+| v0.9.0-beta.9 | **資料庫瀏覽（Tab4）＋ 檔案歸檔（Tab5）完成**。歸檔頁：精簡/完整模式（Stretch 欄寬 + setColumnHidden + toggle 膠囊鈕）、候選過濾（顯示已歸檔 toggle）、演算法優化 14x（斷詞快取）、預覽案由填 PDF 檔名主旨、候選欄位改操作\|符合\|檔名、Material Icons SVG 操作鈕（icon_pdf/icon_archive，裁切 viewBox 降白邊）、歸檔提示字改「歸檔刑案編號xxx：」、Enter 預設歸檔、編號超連結開編輯視窗 + dirty flag 差異更新（_diffDocs/_tableSignature/_lastLoad/_docorder）。全系統 popup 統一左確認右取消（confirmBox 改 ActionRole）。code review：清 9 個未用 import、_dbNow 上移 BaseTab、移除冗餘 _rowDoc、集中 inline import。init_ref_tables.sql 內嵌進 data_sync_tool.py、新增 backfill_archive_names.py |
 | v0.9.0-beta.8 | 設定 Tab 改用 Layout7.ui 建靜態骨架（密碼頁 + 左側 nav + 三子頁，比照其他 Layout）；新增跨年度重置（清主表 + 兩段式重編參照表 ID + 刪停用項目 + 歸零流水號，確認彈窗 + 自動備份 + 可另存 + 重置後自動重啟）；重啟改用 `PYINSTALLER_RESET_ENVIRONMENT` 官方機制（解 onefile `_MEI` 重啟 DLL 載入失敗）；版本號集中至 `lib/version.py` 單一來源，主選單動態顯示 |
 | v0.9.0-beta.7 | is_active 軟刪除擴及部門/案類、sort_order 排序功能（設定 Tab 四向排序鈕 + 暫存模式）、列印改 QPrintPreviewDialog（解 WinError 1155）、檔案結構重組（layouts/ + res/ + lib/）、排序鈕 SVG 圖示、黏底捲動修正、變更密碼防誤按 |
 | v0.9.0-beta.6 | 設定 Tab（人員/部門/案類維護 + 變更密碼）、AuthManager、參照表連動、黏底捲動、狀態色 |
