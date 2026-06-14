@@ -1,7 +1,6 @@
 import re
 import sqlite3
 from datetime import datetime
-from PySide6.QtWidgets import QMessageBox
 from lib.db_utils import msgCritical
 
 
@@ -48,6 +47,14 @@ class BaseTab:
     def _getConn(self):
         """回傳新的 sqlite3 連線，呼叫端負責 close()"""
         return sqlite3.connect(self.db_path)
+
+    def _dbNow(self):
+        """資料庫端當前時間字串，與 trigger 寫入的 last_modified 同基準。"""
+        conn = self._getConn()
+        try:
+            return conn.execute("SELECT datetime('now','localtime')").fetchone()[0]
+        finally:
+            conn.close()
 
     def _loadRef(self):
         """

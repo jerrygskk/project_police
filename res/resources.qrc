@@ -6,5 +6,7 @@
     <file>sort_up.svg</file>
     <file>sort_down.svg</file>
     <file>sort_bottom.svg</file>
+    <file>icon_pdf.svg</file>
+    <file>icon_archive.svg</file>
   </qresource>
 </RCC>

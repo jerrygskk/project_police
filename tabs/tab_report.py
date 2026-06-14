@@ -365,7 +365,7 @@ class TabReport(BaseTab):
                     (doc_id, report_date, sender_id, case_type, case_status,
                      processor_id, subject_summary, occurrence_date,
                      reporter_name, receiver_id, is_reported, is_electronic)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '')
             """, (new_doc_id, report_date, sender_id, casetype_id, status_id,
                   processor_id, subject, occ_date or None,
                   reporter or None, receiver_id))
@@ -414,7 +414,7 @@ class TabReport(BaseTab):
                 INSERT INTO Document_General
                     (doc_id, report_date, sender_id, dept_id, gen_cat_id,
                      subject, processor_id, is_reported, is_electronic)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, '')
             """, (new_doc_id, report_date, sender_id, dept_id, cat_id,
                   subject, processor_id))
             conn.commit()
@@ -528,7 +528,7 @@ class TabReport(BaseTab):
                 UPDATE Document_Criminal SET
                     report_date=NULL, sender_id=NULL, case_type=NULL, case_status=NULL,
                     processor_id=NULL, subject_summary=NULL, occurrence_date=NULL,
-                    reporter_name=NULL, receiver_id=NULL, is_reported=0, is_electronic=0
+                    reporter_name=NULL, receiver_id=NULL, is_reported=0, is_electronic=''
                 WHERE doc_id=?
             """, (doc_id,))
             conn.commit()
@@ -554,7 +554,7 @@ class TabReport(BaseTab):
             conn.execute("""
                 UPDATE Document_General SET
                     report_date=NULL, sender_id=NULL, dept_id=NULL, gen_cat_id=NULL,
-                    subject=NULL, processor_id=NULL, is_reported=0, is_electronic=0
+                    subject=NULL, processor_id=NULL, is_reported=0, is_electronic=''
                 WHERE doc_id=?
             """, (doc_id,))
             conn.commit()

@@ -37,7 +37,7 @@ def msgCritical(title, text, parent=None):
 def confirmBox(title, text, confirm_text="確認", cancel_text="取消",
                confirm_danger=False, default_confirm=True, parent=None):
     """
-    Apple HIG 風格確認對話框。
+    Apple HIG 風格確認對話框。版面統一為「左確認、右取消」。
     confirm_danger=True：確認按鈕顯示紅色（破壞性操作）
     default_confirm=False：預設選取「取消」
     回傳 True 表示使用者點確認
@@ -47,13 +47,17 @@ def confirmBox(title, text, confirm_text="確認", cancel_text="取消",
     msg.setText(text)
     msg.setIcon(QMessageBox.Question)
 
-    btn_ok     = msg.addButton(confirm_text, QMessageBox.AcceptRole)
-    btn_cancel = msg.addButton(cancel_text,  QMessageBox.RejectRole)
+    # 兩顆都用 ActionRole，避免 Qt 依平台慣例重排左右；
+    # 如此按加入順序排列 → 左：確認、右：取消。
+    btn_ok     = msg.addButton(confirm_text, QMessageBox.ActionRole)
+    btn_cancel = msg.addButton(cancel_text,  QMessageBox.ActionRole)
 
     btn_ok.setStyleSheet(BTN_DANGER if confirm_danger else BTN_CONFIRM)
     btn_cancel.setStyleSheet(BTN_CANCEL)
 
+    # Enter 預設鈕、Esc 對應取消
     msg.setDefaultButton(btn_ok if default_confirm else btn_cancel)
+    msg.setEscapeButton(btn_cancel)
     msg.exec()
     return msg.clickedButton() == btn_ok
 

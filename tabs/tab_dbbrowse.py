@@ -360,7 +360,7 @@ class TabDBBrowse(BaseTab):
         if kw:
             visible_view_cols = {
                 c["view_col"] for c in meta["cols"]
-                if full or c.get("slim")
+                if (full or c.get("slim")) and c.get("view_col")
             }
             matched_by_id = getattr(self, "_matchedCols", {}).get(key, {})
             for did, matched in matched_by_id.items():
@@ -605,11 +605,11 @@ class TabDBBrowse(BaseTab):
             "UPDATE Document_Criminal SET report_date=NULL, sender_id=NULL, "
             "case_type=NULL, case_status=NULL, processor_id=NULL, "
             "subject_summary=NULL, occurrence_date=NULL, reporter_name=NULL, "
-            "receiver_id=NULL, is_reported=0, is_electronic=0 WHERE doc_id=?"),
+            "receiver_id=NULL, is_reported=0, is_electronic='' WHERE doc_id=?"),
         "gen": (
             "UPDATE Document_General SET report_date=NULL, sender_id=NULL, "
             "dept_id=NULL, gen_cat_id=NULL, subject=NULL, processor_id=NULL, "
-            "is_reported=0, is_electronic=0 WHERE doc_id=?"),
+            "is_reported=0, is_electronic='' WHERE doc_id=?"),
     }
 
     def _onDelete(self, key, doc_id):
