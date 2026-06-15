@@ -19,7 +19,7 @@
         <item>
          <layout class="QHBoxLayout" name="crim_folder">
           <item><widget class="QLineEdit" name="crim_path"><property name="readOnly"><bool>true</bool></property><property name="placeholderText"><string>尚未選擇資料夾</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
-          <item><widget class="QPushButton" name="crim_pick"><property name="text"><string>選擇 PDF 資料夾…</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+          <item><widget class="QPushButton" name="crim_pick"><property name="text"><string>選擇 PDF 資料夾</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
          </layout>
         </item>
         <item>
@@ -36,6 +36,12 @@
               </layout>
              </item>
              <item><widget class="QTableWidget" name="crim_doc_table"/></item>
+             <item>
+              <layout class="QHBoxLayout" name="crim_doc_foot">
+               <item><spacer name="crim_doc_foot_sp"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+               <item><widget class="QPushButton" name="crim_paper_only"><property name="text"><string>只歸紙本</string></property><property name="maximumWidth"><number>188</number></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item>
+              </layout>
+             </item>
             </layout>
            </widget>
           </item>
@@ -50,6 +56,7 @@
                <item><widget class="QPushButton" name="crim_toggle_archived"><property name="text"><string>顯示已歸檔</string></property><property name="checkable"><bool>true</bool></property><property name="maximumWidth"><number>231</number></property></widget></item>
               </layout>
              </item>
+             <item><widget class="QTableWidget" name="crim_pdf_table"/></item>
              <item>
               <layout class="QHBoxLayout" name="crim_kw_row">
                <item><widget class="QLabel" name="crim_kw_lbl"><property name="text"><string>自訂關鍵字</string></property><property name="minimumWidth"><number>72</number></property></widget></item>
@@ -57,15 +64,15 @@
                <item><widget class="QPushButton" name="crim_match"><property name="text"><string>比對</string></property><property name="minimumHeight"><number>32</number></property><property name="minimumWidth"><number>56</number></property></widget></item>
               </layout>
              </item>
-             <item><widget class="QTableWidget" name="crim_pdf_table"/></item>
             </layout>
            </widget>
           </item>
           <item>
            <widget class="QGroupBox" name="crim_people_box">
-            <property name="title"><string>承辦人、協辦</string></property>
+            <property name="title"><string/></property>
             <property name="maximumWidth"><number>150</number></property>
             <layout class="QVBoxLayout" name="crim_people_v">
+             <item><widget class="QLabel" name="crim_people_lbl"><property name="text"><string>承辦人、協辦</string></property><property name="minimumHeight"><number>24</number></property><property name="styleSheet"><string>font-weight:600;color:#3a3a3c;</string></property></widget></item>
              <item><widget class="QListWidget" name="crim_people_list"/></item>
             </layout>
            </widget>
@@ -106,7 +113,7 @@
         <item>
          <layout class="QHBoxLayout" name="gen_folder">
           <item><widget class="QLineEdit" name="gen_path"><property name="readOnly"><bool>true</bool></property><property name="placeholderText"><string>尚未選擇資料夾</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
-          <item><widget class="QPushButton" name="gen_pick"><property name="text"><string>選擇 PDF 資料夾…</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+          <item><widget class="QPushButton" name="gen_pick"><property name="text"><string>選擇 PDF 資料夾</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
          </layout>
         </item>
         <item>
@@ -123,6 +130,12 @@
               </layout>
              </item>
              <item><widget class="QTableWidget" name="gen_doc_table"/></item>
+             <item>
+              <layout class="QHBoxLayout" name="gen_doc_foot">
+               <item><spacer name="gen_doc_foot_sp"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+               <item><widget class="QPushButton" name="gen_paper_only"><property name="text"><string>只歸紙本</string></property><property name="maximumWidth"><number>188</number></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item>
+              </layout>
+             </item>
             </layout>
            </widget>
           </item>
@@ -137,6 +150,7 @@
                <item><widget class="QPushButton" name="gen_toggle_archived"><property name="text"><string>顯示已歸檔</string></property><property name="checkable"><bool>true</bool></property><property name="maximumWidth"><number>231</number></property></widget></item>
               </layout>
              </item>
+             <item><widget class="QTableWidget" name="gen_pdf_table"/></item>
              <item>
               <layout class="QHBoxLayout" name="gen_kw_row">
                <item><widget class="QLabel" name="gen_kw_lbl"><property name="text"><string>自訂關鍵字</string></property><property name="minimumWidth"><number>72</number></property></widget></item>
@@ -144,15 +158,15 @@
                <item><widget class="QPushButton" name="gen_match"><property name="text"><string>比對</string></property><property name="minimumHeight"><number>32</number></property><property name="minimumWidth"><number>56</number></property></widget></item>
               </layout>
              </item>
-             <item><widget class="QTableWidget" name="gen_pdf_table"/></item>
             </layout>
            </widget>
           </item>
           <item>
            <widget class="QGroupBox" name="gen_people_box">
-            <property name="title"><string>承辦人、協辦</string></property>
+            <property name="title"><string/></property>
             <property name="maximumWidth"><number>150</number></property>
             <layout class="QVBoxLayout" name="gen_people_v">
+             <item><widget class="QLabel" name="gen_people_lbl"><property name="text"><string>承辦人、協辦</string></property><property name="minimumHeight"><number>24</number></property><property name="styleSheet"><string>font-weight:600;color:#3a3a3c;</string></property></widget></item>
              <item><widget class="QListWidget" name="gen_people_list"/></item>
             </layout>
            </widget>

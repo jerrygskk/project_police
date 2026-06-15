@@ -158,6 +158,7 @@ class TabDBBrowse(BaseTab):
                 "table":  inner.findChild(QTableWidget, f"{key}_table"),
                 "count":  inner.findChild(QLabel, f"{key}_count"),
                 "hint":   inner.findChild(QLabel, f"{key}_hint"),
+                "overdue": inner.findChild(QPushButton, f"{key}_overdue"),
             }
 
         # 浮水印 QLabel（疊在每張表上）
@@ -219,6 +220,9 @@ class TabDBBrowse(BaseTab):
         if u["full"]:
             u["full"].toggled.connect(lambda _, k=key: self._onToggleFull(k))
             self._styleSegmented(key)
+        if u.get("overdue"):
+            u["overdue"].toggled.connect(lambda _, k=key: self._applyOverdue(k))
+            self._styleOverdue(key)
 
     # 精簡 / 完整：兩顆獨立膠囊（藥丸形，圓角=高度一半），選中顆藍底白字。
     _SEG_STYLE = """
@@ -247,6 +251,66 @@ class TabDBBrowse(BaseTab):
         if full:
             full.setStyleSheet(self._SEG_STYLE)
 
+    # 逾期未回篩選膠囊：選中紅底白字（警示語意）。
+    _OVERDUE_STYLE = """
+        QPushButton {
+            background-color: #ffffff;
+            border: 1px solid #c6c6c8;
+            border-radius: 13px;
+            padding: 3px 12px;
+            color: #636366;
+            font-weight: 500;
+            font-size: 12px;
+        }
+        QPushButton:checked {
+            background-color: #e07a72;
+            border: 1px solid #e07a72;
+            color: #ffffff;
+            font-weight: 600;
+        }
+        QPushButton:!checked:hover { background-color: #f2f2f7; }
+    """
+
+    def _styleOverdue(self, key):
+        btn = self._ui[key].get("overdue")
+        if btn:
+            btn.setStyleSheet(self._OVERDUE_STYLE)
+
+    def _today(self):
+        """今天日期字串，一次 reload 內快取，避免迴圈重複呼叫。"""
+        from datetime import date
+        return date.today().isoformat()
+
+    def _applyOverdue(self, key):
+        """逾期未回篩選：純 setRowHidden，不重建表格。
+        逾期旗標已於建列時存在 vertical header item(UserRole)。
+        與搜尋天然交集（搜尋決定哪些列在表裡，此處只藏其中非逾期者）。
+        切換後重算可見筆數。"""
+        if key != "task":
+            return
+        u = self._ui[key]
+        table = u["table"]
+        btn = u.get("overdue")
+        if not table:
+            return
+        on = bool(btn and btn.isChecked())
+        visible = 0
+        table.setUpdatesEnabled(False)
+        for row in range(table.rowCount()):
+            if on:
+                hi = table.verticalHeaderItem(row)
+                is_overdue = bool(hi and hi.data(Qt.UserRole))
+                table.setRowHidden(row, not is_overdue)
+                if is_overdue:
+                    visible += 1
+            else:
+                table.setRowHidden(row, False)
+                visible += 1
+        table.setUpdatesEnabled(True)
+        # 更新筆數（沿用 footer 邏輯，hit_hidden 維持現狀）
+        kw = (u["kw"].text() or "").strip() if u["kw"] else ""
+        self._updateFooter(key, visible, kw, False)
+
     def _onToggleFull(self, key):
         # 切換精簡/完整：資料不變，只改欄位可見性 + 重算欄寬，不重查/不重建
         self._applyMode(key)
@@ -263,6 +327,7 @@ class TabDBBrowse(BaseTab):
         table = u["table"]
         if not table:
             return
+        self._today_cache = self._today()
 
         # 一律建「完整模式的全部欄位」，精簡模式之後用 setColumnHidden 藏欄，
         # 切換模式就不必重查 DB、重建 700+ 列（避免頓挫）。
@@ -328,6 +393,8 @@ class TabDBBrowse(BaseTab):
 
         # 套用目前模式（藏/顯示欄）+ 欄寬重算
         self._applyMode(key)
+        # 套用逾期篩選（若開啟，藏非逾期列並重算筆數）
+        self._applyOverdue(key)
 
     def _dbNow(self):
         """取資料庫端的當前時間字串，與 trigger 寫入的 last_modified 同基準。"""
@@ -423,6 +490,7 @@ class TabDBBrowse(BaseTab):
         table = self._ui[key]["table"]
         if not table:
             return
+        self._today_cache = self._today()
         since = getattr(self, "_lastLoad", {}).get(key)
         if since is None:
             self._reload(key)
@@ -498,6 +566,8 @@ class TabDBBrowse(BaseTab):
         kw, search_cols, _ = getattr(self, "_lastSearch", {}).get(key, ("", [], shown))
         self._lastSearch[key] = (kw, search_cols, shown)
         self._applyMode(key)
+        # 差異更新後同步套用逾期篩選（新列若不符逾期則藏）
+        self._applyOverdue(key)
 
     def _appendRow(self, key, table, cols, r, id_col):
         pos = table.rowCount()
@@ -560,7 +630,17 @@ class TabDBBrowse(BaseTab):
 
             table.setItem(pos, c_idx, item)
 
-    def _rowOf(self, key, doc_id):
+        # 存逾期旗標到該列 vertical header item（toggle 時直接讀，不重算/不重查）
+        if key == "task":
+            due  = (r.get("限辦日期") or "").strip()
+            sent = (r.get("發文日期") or "").strip()
+            today = getattr(self, "_today_cache", None) or self._today()
+            overdue = bool(due and due < today and not sent)
+            hi = table.verticalHeaderItem(pos)
+            if hi is None:
+                hi = QTableWidgetItem()
+                table.setVerticalHeaderItem(pos, hi)
+            hi.setData(Qt.UserRole, overdue)
         """以 doc_id 找出目前在表格中的列號（差異更新後仍正確）。"""
         order = getattr(self, "_docorder", {}).get(key, [])
         try:

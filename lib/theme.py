@@ -185,6 +185,45 @@ QPushButton#deleteBtn {
 QPushButton#deleteBtn:hover   { background-color: #c0392b; }
 QPushButton#deleteBtn:pressed { background-color: #a93226; }
 
+/* ── 送出按鈕（發文 / 收文 / 陳報）墨藍 ── */
+QPushButton#btn_send,
+QPushButton#btn_recv_submit,
+QPushButton#btn_rpt_submit,
+QPushButton#crim_paper_only,
+QPushButton#gen_paper_only,
+QPushButton#crim_do_archive,
+QPushButton#gen_do_archive {
+    background-color: #a1b4cb;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+}
+QPushButton#btn_send:hover,
+QPushButton#btn_recv_submit:hover,
+QPushButton#btn_rpt_submit:hover,
+QPushButton#crim_paper_only:hover,
+QPushButton#gen_paper_only:hover,
+QPushButton#crim_do_archive:hover,
+QPushButton#gen_do_archive:hover {
+    background-color: #4977b1;
+}
+QPushButton#btn_send:pressed,
+QPushButton#btn_recv_submit:pressed,
+QPushButton#btn_rpt_submit:pressed,
+QPushButton#crim_paper_only:pressed,
+QPushButton#gen_paper_only:pressed,
+QPushButton#crim_do_archive:pressed,
+QPushButton#gen_do_archive:pressed {
+    background-color: #39649a;
+}
+/* 只歸紙本禁用態（未選公文）*/
+QPushButton#crim_paper_only:disabled,
+QPushButton#gen_paper_only:disabled {
+    background-color: #d1d9e3;
+    color: #ffffff;
+}
+
 /* ── Tab 標籤 ── */
 QTabWidget::pane {
     border: none;

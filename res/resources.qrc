@@ -8,5 +8,6 @@
     <file>sort_bottom.svg</file>
     <file>icon_pdf.svg</file>
     <file>icon_archive.svg</file>
+    <file>icon_paper.svg</file>
   </qresource>
 </RCC>

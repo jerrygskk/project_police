@@ -1,12 +1,13 @@
 import os
 import re
 
-from PySide6.QtCore import Qt, QUrl, QSize
+from PySide6.QtCore import Qt, QUrl, QSize, QObject, QEvent
 from PySide6.QtGui import QDesktopServices, QPalette, QColor, QIcon
 from PySide6.QtWidgets import (
     QVBoxLayout, QTabWidget, QLineEdit, QPushButton, QLabel,
     QTableWidget, QTableWidgetItem, QFileDialog, QWidget,
     QHBoxLayout, QListWidget, QHeaderView,
+    QStyledItemDelegate, QStyle, QStyleOptionViewItem,
 )
 
 from lib.base_tab import BaseTab
@@ -15,6 +16,51 @@ from ui_utils import (
     setupPreviewTable, autoResizeTable, setDocIdLinkCell,
     CriminalEditDialog, GeneralEditDialog,
 )
+
+
+
+# ─────────────────────────────────────────────────────────────
+# pdf_table 整排 hover 實作
+# ─────────────────────────────────────────────────────────────
+class _RowHoverFilter(QObject):
+    """追蹤滑鼠在 viewport 上的列號，供 delegate 使用。"""
+    def __init__(self, table):
+        super().__init__(table)
+        self._table = table
+        self.row = -1
+
+    def eventFilter(self, obj, event):
+        t = self._table
+        if obj is t.viewport():
+            if event.type() == QEvent.MouseMove:
+                idx = t.indexAt(event.pos())
+                new = idx.row() if idx.isValid() else -1
+                if new != self.row:
+                    self.row = new
+                    t.viewport().update()
+            elif event.type() == QEvent.Leave:
+                if self.row != -1:
+                    self.row = -1
+                    t.viewport().update()
+        return False
+
+
+class _RowHoverDelegate(QStyledItemDelegate):
+    """非選中列：整排 hover 時填 #eaf1f8。"""
+    _HOVER_COLOR = QColor("#eaf1f8")
+
+    def __init__(self, hover_filter, parent=None):
+        super().__init__(parent)
+        self._hf = hover_filter
+
+    def paint(self, painter, option, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        is_selected = bool(opt.state & QStyle.State_Selected)
+        if not is_selected and index.row() == self._hf.row:
+            painter.fillRect(opt.rect, self._HOVER_COLOR)
+            opt.state &= ~QStyle.State_MouseOver
+        super().paint(painter, opt, index)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -27,12 +73,12 @@ META = {
         # 精簡模式只顯示前三欄(slim=True)：編號 案由 承辦人；其餘僅完整模式。
         # 比照資料庫瀏覽：建全欄，切模式用 setColumnHidden 藏/顯示，不重建。
         "cols": [
-            {"view": "送文編號",   "header": "編號",   "slim": True,  "w": 64},
+            {"view": "送文編號",   "header": "編號",   "slim": True,  "w": 56},
             {"view": "嫌疑人_案由", "header": "案由",   "slim": True,  "w": 220, "left": True},
-            {"view": "主承辦人",   "header": "承辦人", "slim": True,  "w": 180, "trim": True},
-            {"view": "案類",       "header": "案類",   "slim": False, "w": 120},
-            {"view": "陳報日期",   "header": "日期",   "slim": False, "w": 110},
-            {"view": "報案人",     "header": "報案人", "slim": False, "w": 100},
+            {"view": "主承辦人",   "header": "承辦",   "slim": True,  "w": 70, "trim": True},
+            {"view": "報案人",     "header": "報案人", "slim": False, "w": 70},
+            {"view": "案類",       "header": "案類",   "slim": False, "w": 90},
+            {"view": "陳報日期",   "header": "日期",   "slim": False, "w": 100},
         ],
         "match_cols": ["主承辦人", "案類", "嫌疑人_案由", "報案人"],
         "subject_col": "嫌疑人_案由", "processor_col": "主承辦人",
@@ -44,9 +90,9 @@ META = {
         "cols": [
             {"view": "送文編號", "header": "編號",   "slim": True,  "w": 64},
             {"view": "陳報主旨", "header": "主旨",   "slim": True,  "w": 220, "left": True},
-            {"view": "陳報人",   "header": "承辦人", "slim": True,  "w": 180, "trim": True},
-            {"view": "陳報日期", "header": "日期",   "slim": False, "w": 110},
-            {"view": "業務單位", "header": "單位",   "slim": False, "w": 110},
+            {"view": "陳報人",   "header": "承辦人", "slim": True,  "w": 80, "trim": True},
+            {"view": "陳報日期", "header": "日期",   "slim": False, "w": 140},
+            {"view": "業務單位", "header": "單位",   "slim": False, "w": 90},
         ],
         "match_cols": ["陳報人", "業務單位", "陳報主旨"],
         "subject_col": "陳報主旨", "processor_col": "陳報人",
@@ -63,15 +109,20 @@ def _trimName(name):
 
 
 def _tokenize(text):
-    """斷詞：依分隔符切，並對中文長詞補 2 字滑動片段（利於人名/案由部分比對）。"""
+    """斷詞：依分隔符切；再從每個片段抽出其中的中文連續段做 2 字滑動片段。
+    （檔名常見日期與主旨黏連，如 1150101匿名竊盜案，需抽出中文段才比得到。）"""
     toks = set()
     for x in re.split(r"[\s_\-－.,，、（）()]+", str(text)):
         x = x.strip()
         if len(x) >= 2:
             toks.add(x)
-        if re.fullmatch(r"[\u4e00-\u9fff]+", x) and len(x) >= 3:
-            for i in range(len(x) - 1):
-                toks.add(x[i:i + 2])
+        # 抽出片段內所有中文連續段（即使與數字/英文黏連）
+        for seg in re.findall(r"[\u4e00-\u9fff]+", x):
+            if len(seg) >= 2:
+                toks.add(seg)
+            if len(seg) >= 3:
+                for i in range(len(seg) - 1):
+                    toks.add(seg[i:i + 2])
     return toks
 
 
@@ -182,6 +233,7 @@ class TabArchive(BaseTab):
                 "pick":         inner.findChild(QPushButton, f"{key}_pick"),
                 "doc":          inner.findChild(QTableWidget, f"{key}_doc_table"),
                 "kw":           inner.findChild(QLineEdit, f"{key}_kw"),
+                "paper_only":   inner.findChild(QPushButton, f"{key}_paper_only"),
                 "match":        inner.findChild(QPushButton, f"{key}_match"),
                 "pdf":          inner.findChild(QTableWidget, f"{key}_pdf_table"),
                 "h_pk":         inner.findChild(QLineEdit, f"{key}_h_pk"),
@@ -204,6 +256,7 @@ class TabArchive(BaseTab):
             self._curPdf = getattr(self, "_curPdf", {})
             self._curPdf[key] = None
             self._bind(key)
+            self._initPdfTable(key)
             self._loadPeople(key)
             self._loadDocs(key)
         # 記錄初始指紋，供切換進來時判斷是否需重載
@@ -242,6 +295,9 @@ class TabArchive(BaseTab):
         # 候選檔案 未歸檔/全部顯示 切換 → 重新比對（過濾已歸檔 PDF）
         if u.get("pdf_all"):
             u["pdf_all"].toggled.connect(lambda _, k=key: self._rematch(k))
+        # 只歸紙本：標記 is_reported=1，不需 PDF
+        if u.get("paper_only"):
+            u["paper_only"].clicked.connect(lambda _, k=key: self._archivePaperOnly(k))
 
     # ── 承辦人清單（DB 全體，點擊加入預覽承辦人格）──────────
     def _loadPeople(self, key):
@@ -343,6 +399,7 @@ class TabArchive(BaseTab):
                 border-bottom: 1px solid #c6c6c8;
             }
             QTableWidget::item { padding: 2px 4px; }
+            QTableWidget::item:hover { background-color: transparent; }
             QTableWidget::item:selected {
                 background-color: #eaf1f8; color: #1c1c1e;
                 border-left: 3px solid #8fa8c8;
@@ -391,6 +448,9 @@ class TabArchive(BaseTab):
                 item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                 if text:
                     item.setToolTip(text)
+                # 紙本已歸（is_reported=1，View『紙本』欄='是'）→ 案由前加紙圖示
+                if str(r.get("紙本") or "") == "是":
+                    item.setIcon(QIcon(":/icon_paper.svg"))
             else:
                 item.setTextAlignment(Qt.AlignCenter)
             table.setItem(pos, ci, item)
@@ -478,14 +538,19 @@ class TabArchive(BaseTab):
         self._applyDocMode(key)
 
     def _queryUnarchived(self, key):
-        """查未歸檔公文（is_electronic 為空）的完整 View 列。"""
+        """查未歸檔公文（is_electronic 為空）的完整 View 列。
+        排除已軟刪除的空殼：刪除是清空式 UPDATE（案由/主旨設 NULL），
+        這類列雖 is_electronic 空但已無內容，不應出現在待歸檔。"""
         meta = META[key]
+        # 底層內容欄（案由/主旨）為空即視為已刪除空殼
+        subj_base = "subject_summary" if key == "crim" else "subject"
         conn = self._getConn()
         try:
             cur = conn.execute(
                 f"SELECT * FROM {meta['view']} v "
                 f"JOIN {meta['base']} b ON v.\"{meta['id_col']}\" = b.doc_id "
-                f"WHERE b.is_electronic IS NULL OR b.is_electronic = ''")
+                f"WHERE (b.is_electronic IS NULL OR b.is_electronic = '') "
+                f"AND b.{subj_base} IS NOT NULL AND b.{subj_base} != ''")
             names = [d[0] for d in cur.description]
             return [dict(zip(names, row)) for row in cur.fetchall()]
         finally:
@@ -496,14 +561,29 @@ class TabArchive(BaseTab):
         return btn.isChecked() if btn else False
 
     def _applyDocMode(self, key):
-        """精簡/完整切換：只改欄位可見性（setColumnHidden）。
-        主旨欄為 Stretch，會自動吸收隱藏欄釋出的空間，不需手動算寬。"""
+        """精簡/完整切換：改欄位可見性 + resize 模式。
+        精簡：案由/主旨 Stretch 吃滿，其餘 Fixed。
+        完整：全欄 Interactive 可拖拉（比照資料庫瀏覽），各欄給初始寬。"""
         table = self._ui[key]["doc"]
         if not table:
             return
         full = self._isFull(key)
-        for ci, c in enumerate(META[key]["cols"]):
+        cols = META[key]["cols"]
+        for ci, c in enumerate(cols):
             table.setColumnHidden(ci, not (full or c.get("slim")))
+        hdr = table.horizontalHeader()
+        if full:
+            for ci, c in enumerate(cols):
+                hdr.setSectionResizeMode(ci, QHeaderView.Interactive)
+                table.setColumnWidth(ci, c["w"])
+        else:
+            stretch_ci = next((i for i, c in enumerate(cols) if c.get("left")), 1)
+            for ci, c in enumerate(cols):
+                if ci == stretch_ci:
+                    hdr.setSectionResizeMode(ci, QHeaderView.Stretch)
+                else:
+                    hdr.setSectionResizeMode(ci, QHeaderView.Fixed)
+                    table.setColumnWidth(ci, c["w"])
 
     def _onRowSelected(self, key):
         table = self._ui[key]["doc"]
@@ -574,19 +654,83 @@ class TabArchive(BaseTab):
         finally:
             conn.close()
 
+    def _initPdfTable(self, key):
+        """pdf_table 一次性初始化：樣式 + 欄寬（不走 setupPreviewTable，避開其 200ms autoResize）。"""
+        table = self._ui[key]["pdf"]
+        if not table:
+            return
+        table.setColumnCount(3)
+        for i, h in enumerate(["操作", "符合", "PDF 檔名"]):
+            table.setHorizontalHeaderItem(i, QTableWidgetItem(h))
+        hdr = table.horizontalHeader()
+        hdr.setSectionsMovable(False)
+        hdr.setSectionsClickable(True)
+        hdr.setStretchLastSection(False)
+        hdr.setSectionResizeMode(0, QHeaderView.Fixed)
+        table.setColumnWidth(0, 68)
+        hdr.setSectionResizeMode(1, QHeaderView.Fixed)
+        table.setColumnWidth(1, 48)
+        hdr.setSectionResizeMode(2, QHeaderView.Stretch)
+        table.verticalHeader().setDefaultSectionSize(30)
+        table.verticalHeader().setVisible(False)
+        table.setShowGrid(False)
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        table.setStyleSheet("""
+            QTableWidget {
+                background-color: #ffffff;
+                alternate-background-color: #f2f2f7;
+                border: none;
+                border-top: 1px solid #c6c6c8;
+                font-size: 13pt;
+            }
+            QHeaderView::section {
+                background-color: #f2f2f7;
+                color: #3a3a3c;
+                font-weight: 600;
+                font-size: 13pt;
+                padding: 4px 4px;
+                border: none;
+                border-bottom: 2px solid #c6c6c8;
+                border-right: 1px solid #e5e5ea;
+            }
+            QTableWidget::item {
+                padding: 2px 4px;
+                border-bottom: 1px solid #e5e5ea;
+            }
+            QTableWidget::item:selected {
+                background-color: #ccdaeb;
+                color: #1c1c1e;
+            }
+            QTableWidget::item:selected:!active {
+                background-color: #d1d1d6;
+                color: #1c1c1e;
+            }
+            QTableWidget::item:hover { background-color: transparent; }
+        """)
+        # 整排 hover
+        table.viewport().setMouseTracking(True)
+        hf = _RowHoverFilter(table)
+        table.viewport().installEventFilter(hf)
+        table._hover_filter = hf          # 防 GC
+        table.setItemDelegate(_RowHoverDelegate(hf, table))
+
     def _rematch(self, key):
         meta = META[key]
         table = self._ui[key]["pdf"]
         if not table:
             return
-        setupPreviewTable(table, ["操作", "符合", "PDF 檔名"], stretch_col=2)
         table.setRowCount(0)
         doc_id = self._selected.get(key)
-        if not doc_id:
-            return
-        doc = self._docrows.get(key, {}).get(doc_id, {})
-        doc_fields = {c: doc.get(c) for c in meta["match_cols"]}
         keyword = (self._ui[key]["kw"].text() or "").strip() if self._ui[key]["kw"] else ""
+        # 沒選公文時：若也沒打關鍵字，無從比對 → 清空即可；
+        # 有關鍵字 → 仍以關鍵字列出候選，但歸檔預覽鈕禁用（不知歸到哪筆）。
+        if not doc_id and not keyword:
+            return
+        doc = self._docrows.get(key, {}).get(doc_id, {}) if doc_id else {}
+        doc_fields = {c: doc.get(c) for c in meta["match_cols"]} if doc_id else {}
 
         # doc 斷詞只算一次（原本每個 PDF 重算，是頓的主因之一）
         doc_toks = self._docTokens(doc_fields, keyword)
@@ -626,10 +770,15 @@ class TabArchive(BaseTab):
             b_pick.setIcon(QIcon(":/icon_archive.svg"))
             b_pick.setIconSize(QSize(20, 20))
             b_pick.setFixedSize(28, 28)
-            b_pick.setToolTip("選定此 PDF 填入下方預覽（尚未歸檔）")
+            if doc_id:
+                b_pick.setToolTip("歸檔預覽")
+                b_pick.clicked.connect(lambda _, k=key, d=doc_id, p=fp: self._selectPdf(k, d, p))
+            else:
+                b_pick.setToolTip("請先於左側選擇待歸檔公文")
+                b_pick.setEnabled(False)
             b_pick.setStyleSheet("QPushButton{border:1px solid #c6c6c8;border-radius:6px;background:#fff;}"
-                                 "QPushButton:hover{background:#eaf1f8;}")
-            b_pick.clicked.connect(lambda _, k=key, d=doc_id, p=fp: self._selectPdf(k, d, p))
+                                 "QPushButton:hover{background:#eaf1f8;}"
+                                 "QPushButton:disabled{background:#f2f2f7;}")
             hl.addWidget(b_open)
             hl.addWidget(b_pick)
             table.setCellWidget(pos, 0, cont)
@@ -641,14 +790,6 @@ class TabArchive(BaseTab):
             ni = QTableWidgetItem(os.path.basename(fp))
             ni.setToolTip(fp)
             table.setItem(pos, 2, ni)
-        # 欄寬：操作固定、符合窄(剛好放 N字)、檔名吃剩餘空間
-        from PySide6.QtWidgets import QHeaderView
-        hdr = table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.Fixed)
-        table.setColumnWidth(0, 100)
-        hdr.setSectionResizeMode(1, QHeaderView.Fixed)
-        table.setColumnWidth(1, 48)
-        hdr.setSectionResizeMode(2, QHeaderView.Stretch)   # 檔名吃剩餘空間
         table.setUpdatesEnabled(True)
 
     def _parseSubject(self, old_path):
@@ -771,6 +912,47 @@ class TabArchive(BaseTab):
                 out.append(name)
         return out
 
+    def _archivePaperOnly(self, key):
+        """只歸紙本：將選定公文標記 is_reported=1，不需 PDF、不寫 is_electronic。
+        公文續留未歸檔清單（is_electronic 仍空，等日後補 PDF）。"""
+        meta = META[key]
+        doc_id = self._selected.get(key)
+        if not doc_id:
+            msgCritical("尚未選擇", "請先在左側「待歸檔」清單選一筆公文。")
+            return
+        doc = self._docrows.get(key, {}).get(doc_id, {})
+        # 已是紙本歸檔 → 提示無需重複
+        if str(doc.get("紙本") or "") == "是":
+            msgInfo("已歸紙本", f"公文 {doc_id} 的紙本已標記歸檔。")
+            return
+        subj = doc.get(meta["match_cols"][0]) if meta.get("match_cols") else ""
+        kind = "刑案" if key == "crim" else "一般"
+        if not confirmBox(
+                "只歸紙本",
+                f"將{kind}編號 {doc_id} 標記為「紙本已歸檔」：\n\n"
+                f"{subj or ''}\n\n"
+                f"此操作不需 PDF，公文仍留在清單等待補電子檔。",
+                confirm_text="標記紙本", default_confirm=True):
+            return
+        try:
+            conn = self._getConn()
+            conn.execute(
+                f"UPDATE {meta['base']} SET is_reported=1 WHERE doc_id=?",
+                (doc_id,))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            msgCritical("寫入資料庫失敗", str(e))
+            return
+        msgInfo("完成", f"公文 {doc_id} 已標記紙本歸檔。")
+        # 差異更新該頁（案由前出現紙圖示），同步指紋
+        self._diffDocs(key)
+        self._sigs = getattr(self, "_sigs", {})
+        try:
+            self._sigs[key] = self._tableSignature(key)
+        except Exception:
+            pass
+
     def _doArchive(self, key):
         """確認歸檔：用『可編輯預覽四格』目前的值組檔名，重新命名 PDF + 寫回 is_electronic。"""
         meta = META[key]
@@ -854,21 +1036,23 @@ class TabArchive(BaseTab):
     def get_tables(self):
         out = []
         for k in ("crim", "gen"):
-            for w in ("doc", "pdf"):
-                t = self._ui.get(k, {}).get(w)
-                if t:
-                    out.append(t)
+            t = self._ui.get(k, {}).get("doc")
+            if t:
+                out.append(t)
         return out
 
     def _tableSignature(self, key):
         """未歸檔資料指紋：(未歸檔筆數, MAX(last_modified))。
-        別頁增/修/刪 或本頁歸檔都會改變，據此判斷是否需重載清單。"""
+        別頁增/修/刪 或本頁歸檔都會改變，據此判斷是否需重載清單。
+        排除已軟刪除空殼，與 _queryUnarchived 條件一致。"""
         meta = META[key]
+        subj_base = "subject_summary" if key == "crim" else "subject"
         conn = self._getConn()
         try:
             row = conn.execute(
                 f"SELECT COUNT(*), MAX(last_modified) FROM {meta['base']} "
-                f"WHERE is_electronic IS NULL OR is_electronic = ''"
+                f"WHERE (is_electronic IS NULL OR is_electronic = '') "
+                f"AND {subj_base} IS NOT NULL AND {subj_base} != ''"
             ).fetchone()
         finally:
             conn.close()

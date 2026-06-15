@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate
 
 from lib.db_utils import getResourcePath, BTN_CONFIRM, BTN_CANCEL, confirmBox
+from ui_utils.widgets import setupFilterCombo
 
 
 def _get_conn(db_path):
@@ -378,10 +379,10 @@ QRadioButton:checked {
             self.w_sender.addItem(sname, sid)
         form.addRow("發文人員：", self.w_sender)
 
-        # 案件分類
+        # 案件分類（可輸入關鍵字篩選，預設帶入資料庫值）
         self.w_casetype = QComboBox()
-        for cid, cname in self._case_types:
-            self.w_casetype.addItem(cname, cid)
+        self.w_casetype.setEditable(True)
+        setupFilterCombo(self.w_casetype, self._case_types)
         form.addRow("案件分類：", self.w_casetype)
 
         # 發文分類（Radio）

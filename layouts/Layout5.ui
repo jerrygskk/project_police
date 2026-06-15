@@ -78,6 +78,15 @@
            <widget class="QLabel" name="task_count"><property name="text"><string/></property></widget>
           </item>
           <item>
+           <widget class="QPushButton" name="task_overdue">
+            <property name="text"><string>逾期未回</string></property>
+            <property name="checkable"><bool>true</bool></property>
+            <property name="minimumSize"><size><width>0</width><height>26</height></size></property>
+            <property name="maximumSize"><size><width>88</width><height>26</height></size></property>
+            <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+           </widget>
+          </item>
+          <item>
            <spacer name="task_spacer">
             <property name="orientation"><enum>Qt::Horizontal</enum></property>
             <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
