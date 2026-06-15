@@ -72,7 +72,17 @@ class TaskEditDialog(QDialog):
                 border-radius: 4px;
                 padding: 4px 8px;
             }
+            QLineEdit:disabled, QComboBox:disabled, QDateEdit:disabled {
+                background-color: #e5e5ea;
+                color: #aeaeb2;
+                border-color: #d1d1d6;
+            }
             QCheckBox { color: #000000; }
+            QCheckBox:disabled { color: #aeaeb2; }
+            QCheckBox::indicator:disabled {
+                background-color: #e5e5ea;
+                border-color: #d1d1d6;
+            }
             QLabel { color: #000000; }
         """)
         self._build_ui()
