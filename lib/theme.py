@@ -184,6 +184,7 @@ QPushButton#deleteBtn {
 }
 QPushButton#deleteBtn:hover   { background-color: #c0392b; }
 QPushButton#deleteBtn:pressed { background-color: #a93226; }
+QPushButton#deleteBtn:disabled { background-color: #d1d1d6; color: #f2f2f7; }
 
 /* ── 送出按鈕（發文 / 收文 / 陳報）墨藍 ── */
 QPushButton#btn_send,

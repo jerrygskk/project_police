@@ -44,10 +44,11 @@ def _set_combo_value(combo, value):
 class TaskEditDialog(QDialog):
     """交辦單修改彈窗（Tab 0 / Tab 1 共用）"""
 
-    def __init__(self, db_path, doc_id, parent=None):
+    def __init__(self, db_path, doc_id, parent=None, restricted=False):
         super().__init__(parent)
         self.db_path = db_path
         self.doc_id  = doc_id
+        self.restricted = restricted   # True：一般使用者，只可改承辦人
         self.setWindowTitle('交辦單修改')
 
         # ── 版面常數 ──────────────────────────────────────────
@@ -76,6 +77,15 @@ class TaskEditDialog(QDialog):
         """)
         self._build_ui()
         self._load_data()
+        if self.restricted:
+            self._apply_restricted()
+
+    def _apply_restricted(self):
+        """一般使用者：保留 DB 原值顯示，鎖定除承辦人外所有欄位。"""
+        for w in (self.w_recv_date, self.w_recv_id, self.w_dept,
+                  self.w_subject, self.w_deadline, self.w_no_deadline):
+            w.setEnabled(False)
+        self.w_proc.setFocus()
 
     def _build_ui(self):
         conn = _get_conn(self.db_path)

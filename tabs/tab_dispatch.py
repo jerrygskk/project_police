@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QTableWidgetItem, QPushButton
 
 from lib.base_tab import BaseTab
 from lib.db_utils import msgInfo, msgWarning, msgCritical, confirmBox, DEBUG_MODE
+from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
     TaskEditDialog,
@@ -60,6 +61,21 @@ class TabDispatch(BaseTab):
             btn_input.clicked.connect(self.handleQuery)
         if btn_send:  btn_send.clicked.connect(self.handleDispatch)
         if btn_clear: btn_clear.clicked.connect(self.handleClearAll)
+
+        # 身分切換時即時更新刪除鈕可用狀態
+        AuthManager.instance().role_changed.connect(self._onRolePerm)
+
+    def _onRolePerm(self, _role=None):
+        """身分變更：逐列切換刪除鈕停用/啟用（編輯連結維持可點，限制於開啟時套用）。"""
+        if not self.table:
+            return
+        is_admin = AuthManager.instance().current_role == 'admin'
+        for r in range(self.table.rowCount()):
+            cont = self.table.cellWidget(r, 0)
+            if cont:
+                btn = cont.findChild(QPushButton, "deleteBtn")
+                if btn:
+                    btn.setEnabled(is_admin)
 
     # ── BaseTab 介面 ──────────────────────────────────────
     def get_tables(self):
@@ -157,7 +173,10 @@ class TabDispatch(BaseTab):
         dispatch_str = str(data[5]) if data[5] else ""
 
         # 刪除按鈕（col 0）：以 doc_id 為準，不用 row index
-        container, _ = makeDeleteBtn(lambda _, d=doc_id: self._deleteByDocId(d))
+        container, del_btn = makeDeleteBtn(lambda _, d=doc_id: self._deleteByDocId(d))
+        # 一般使用者不可刪 → 停用變灰（admin 全開）
+        if AuthManager.instance().current_role != 'admin':
+            del_btn.setEnabled(False)
         self.table.setCellWidget(pos, 0, container)
 
         # 編號欄（col 1）：已發文 + 非 DEBUG_MODE → 純文字，否則超連結
@@ -188,8 +207,9 @@ class TabDispatch(BaseTab):
         autoResizeTable(self.table)
 
     def _onEditRow(self, row, doc_id):
-        """點擊超連結 → 開啟 EditDialog"""
-        dlg = TaskEditDialog(self.db_path, doc_id, self.table)
+        """點擊超連結 → 開啟 EditDialog（一般使用者只可改承辦人）"""
+        restricted = AuthManager.instance().current_role != 'admin'
+        dlg = TaskEditDialog(self.db_path, doc_id, self.table, restricted=restricted)
         if dlg.exec():
             updated = dlg.get_updated()
             if updated:

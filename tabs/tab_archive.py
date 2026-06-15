@@ -8,10 +8,12 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QFileDialog, QWidget,
     QHBoxLayout, QListWidget, QHeaderView,
     QStyledItemDelegate, QStyle, QStyleOptionViewItem,
+    QStackedWidget,
 )
 
 from lib.base_tab import BaseTab
 from lib.db_utils import getResourcePath, loadUi, msgCritical, msgInfo, confirmBox
+from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, setDocIdLinkCell,
     CriminalEditDialog, GeneralEditDialog,
@@ -199,6 +201,11 @@ class TabArchive(BaseTab):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(inner)
         self._inner = inner
+
+        # 權限牆：非管理者顯示提示頁（page_gate），管理者顯示內容（page_content）
+        self._outer_stack = inner.findChild(QStackedWidget, "outer_stack")
+        self._applyGate()
+        AuthManager.instance().role_changed.connect(self._applyGate)
 
         # 子頁籤樣式：比照資料庫瀏覽頁（選中加底部藍線指示），只套此 QTabWidget
         subtabs = inner.findChild(QTabWidget, "arch_subtabs")
@@ -1058,7 +1065,15 @@ class TabArchive(BaseTab):
             conn.close()
         return (row[0], row[1])
 
+    def _applyGate(self, _role=None):
+        """依身分切換權限牆：admin → 內容頁，其餘 → 提示頁。"""
+        stack = getattr(self, "_outer_stack", None)
+        if stack:
+            is_admin = AuthManager.instance().current_role == 'admin'
+            stack.setCurrentIndex(1 if is_admin else 0)
+
     def on_activated(self):
+        self._applyGate()
         # 切換進來時，比對未歸檔資料指紋；變了才做「差異更新」（只動變動列，不重建整表）。
         if not hasattr(self, "_sigs"):
             self._sigs = {}

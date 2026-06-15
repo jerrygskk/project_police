@@ -7,6 +7,7 @@ from PySide6.QtGui import QColor
 
 from lib.base_tab import BaseTab
 from lib.db_utils import getResourcePath, loadUi, msgCritical, confirmBox
+from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, setDocIdLinkCell, makeDeleteBtn,
     TaskEditDialog, CriminalEditDialog, GeneralEditDialog,
@@ -190,6 +191,35 @@ class TabDBBrowse(BaseTab):
                 self._sigs[key] = self._tableSignature(key)
             except Exception:
                 pass
+
+        # 身分切換時即時更新各表的刪除鈕與編號連結可用狀態
+        AuthManager.instance().role_changed.connect(self._onRolePerm)
+
+    def _onRolePerm(self, _role=None):
+        """身分變更：逐列切換刪除鈕停用/啟用、編號連結可點/純文字。"""
+        is_admin = AuthManager.instance().current_role == 'admin'
+        for key in ("task", "crim", "gen"):
+            table = self._ui.get(key, {}).get("table")
+            if not table:
+                continue
+            cols = TABLE_META[key]["cols"]
+            del_col  = next((i for i, c in enumerate(cols) if c.get("delete")), None)
+            link_col = next((i for i, c in enumerate(cols) if c.get("link")), None)
+            order = getattr(self, "_docorder", {}).get(key, [])
+            for r in range(table.rowCount()):
+                if del_col is not None:
+                    cont = table.cellWidget(r, del_col)
+                    if cont:
+                        btn = cont.findChild(QPushButton, "deleteBtn")
+                        if btn:
+                            btn.setEnabled(is_admin)
+                if link_col is not None and r < len(order):
+                    did = order[r]
+                    setDocIdLinkCell(
+                        table, r, link_col, did,
+                        lambda _row, d, k=key: self._onEdit(k, self._rowOf(k, d), d),
+                        clickable=is_admin,
+                    )
 
     # ── 範圍下拉：全部欄位 + 可搜尋欄位 ──────────────────────
     def _initScope(self, key):
@@ -582,8 +612,11 @@ class TabDBBrowse(BaseTab):
             # 刪除欄（最左）：放 X 鈕，點擊以 doc_id 觸發刪除
             if c.get("delete"):
                 doc_id = str(r.get(id_col) or "")
-                container, _ = makeDeleteBtn(
+                container, del_btn = makeDeleteBtn(
                     lambda _=None, k=key, d=doc_id: self._onDelete(k, d))
+                # 一般使用者無修改權限 → 刪除鈕停用變灰（admin 全開）
+                if AuthManager.instance().current_role != 'admin':
+                    del_btn.setEnabled(False)
                 table.setCellWidget(pos, c_idx, container)
                 continue
 
@@ -603,11 +636,12 @@ class TabDBBrowse(BaseTab):
 
             if c.get("link"):
                 doc_id = str(r.get(id_col) or "")
-                # 點擊時以 doc_id 動態解析目前列號，避免差異更新後列號位移失效
+                # 一般使用者無修改權限 → 編號改純文字不可點（admin 才可開編輯）
+                is_admin = AuthManager.instance().current_role == 'admin'
                 setDocIdLinkCell(
                     table, pos, c_idx, doc_id,
                     lambda _row, did, k=key: self._onEdit(k, self._rowOf(k, did), did),
-                    clickable=True,
+                    clickable=is_admin,
                 )
                 continue
 
@@ -641,6 +675,8 @@ class TabDBBrowse(BaseTab):
                 hi = QTableWidgetItem()
                 table.setVerticalHeaderItem(pos, hi)
             hi.setData(Qt.UserRole, overdue)
+
+    def _rowOf(self, key, doc_id):
         """以 doc_id 找出目前在表格中的列號（差異更新後仍正確）。"""
         order = getattr(self, "_docorder", {}).get(key, [])
         try:

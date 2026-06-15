@@ -11,7 +11,25 @@
     <property name="rightMargin"><number>16</number></property>
     <property name="bottomMargin"><number>12</number></property>
     <item>
-     <widget class="QTabWidget" name="arch_subtabs">
+     <widget class="QStackedWidget" name="outer_stack">
+      <property name="currentIndex"><number>0</number></property>
+      <widget class="QWidget" name="page_gate">
+       <layout class="QVBoxLayout" name="gateV">
+        <item><spacer name="gateTop"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>200</height></size></property></spacer></item>
+        <item><widget class="QLabel" name="lbl_gate"><property name="text"><string>此功能需管理者身分
+
+請至「資料庫設定」登入管理者帳號後再使用</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="styleSheet"><string>font-size:15pt;color:#6e6e73;</string></property></widget></item>
+        <item><spacer name="gateBot"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>200</height></size></property></spacer></item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="page_content">
+       <layout class="QVBoxLayout" name="contentV">
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        <item>
+         <widget class="QTabWidget" name="arch_subtabs">
       <property name="currentIndex"><number>0</number></property>
       <widget class="QWidget" name="page_crim">
        <attribute name="title"><string>❐ 刑案歸檔</string></attribute>
@@ -198,6 +216,10 @@
            </item>
           </layout>
          </widget>
+        </item>
+       </layout>
+      </widget>
+     </widget>
         </item>
        </layout>
       </widget>
