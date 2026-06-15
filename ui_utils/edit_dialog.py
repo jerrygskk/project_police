@@ -8,12 +8,116 @@ import sqlite3
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QComboBox, QDateEdit, QCheckBox,
-    QPushButton, QRadioButton,
+    QPushButton, QRadioButton, QGroupBox,
 )
 from PySide6.QtCore import Qt, QDate
+from PySide6.QtGui import QFontMetrics
 
 from lib.db_utils import getResourcePath, BTN_CONFIRM, BTN_CANCEL, confirmBox
+from lib.auth_manager import AuthManager
 from ui_utils.widgets import setupFilterCombo
+
+
+class _ElidingLabel(QLabel):
+    """顯示時隨寬度自動中段省略（ElideMiddle），不撐破版面。"""
+    def __init__(self, text="", parent=None):
+        super().__init__(parent)
+        self._full = text
+        self.setMinimumWidth(40)
+        self.setText(text)
+
+    def setFullText(self, text):
+        self._full = text or ""
+        self._relayout()
+
+    def fullText(self):
+        return self._full
+
+    def _relayout(self):
+        fm = QFontMetrics(self.font())
+        self.setText(fm.elidedText(self._full, Qt.ElideMiddle, max(self.width(), 40)))
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._relayout()
+
+
+# 歸檔狀態區塊樣式（沿用系統 Apple 基準色）
+_ARCH_GROUP_QSS = (
+    "QGroupBox { font-weight:600; color:#1c1c1e; border:1px solid #d1d1d6;"
+    " border-radius:8px; margin-top:10px; padding:10px 12px 12px 12px; background:#fafafa; }"
+    " QGroupBox::title { subcontrol-origin:margin; left:12px; padding:0 4px; }"
+)
+_ARCH_CLEAR_QSS = (
+    "QPushButton { background:#f2f2f7; color:#c0392b; border:1px solid #e0c0bc;"
+    " border-radius:6px; padding:3px 12px; }"
+    " QPushButton:hover { background:#fbe9e7; }"
+    " QPushButton:disabled { background:#f2f2f7; color:#c7c7cc; border-color:#e5e5ea; }"
+)
+
+
+def _build_archive_group(dlg):
+    """建立『歸檔狀態』區塊並掛到 dlg。僅 admin 呼叫。
+    產生：dlg.w_arch_reported（QCheckBox）、dlg._arch_clear_pending（bool）、
+          dlg._arch_fname（原電子檔名）、內部 label/btn 引用。
+    """
+    g = QGroupBox("歸檔狀態")
+    g.setStyleSheet(_ARCH_GROUP_QSS)
+    v = QVBoxLayout(g)
+    v.setSpacing(10)
+
+    dlg.w_arch_reported = QCheckBox("已陳報紙本")
+    v.addWidget(dlg.w_arch_reported)
+
+    row = QHBoxLayout()
+    row.setSpacing(8)
+    row.addWidget(QLabel("電子檔："))
+    dlg._arch_name_lbl = _ElidingLabel("")
+    row.addWidget(dlg._arch_name_lbl, 1)
+    dlg._arch_clear_btn = QPushButton("清除")
+    dlg._arch_clear_btn.setStyleSheet(_ARCH_CLEAR_QSS)
+    dlg._arch_clear_btn.clicked.connect(lambda: _on_arch_clear(dlg))
+    row.addWidget(dlg._arch_clear_btn)
+    v.addLayout(row)
+
+    dlg._arch_clear_pending = False
+    dlg._arch_fname = ""
+    return g
+
+
+def _refresh_arch_name(dlg):
+    """依目前 fname / pending 狀態更新電子檔顯示與清除鈕。"""
+    if dlg._arch_clear_pending:
+        dlg._arch_name_lbl.setFullText("（已標記清除，儲存後生效）")
+        dlg._arch_name_lbl.setStyleSheet("color:#aeaeb2;")
+        dlg._arch_clear_btn.setEnabled(False)
+    elif dlg._arch_fname:
+        dlg._arch_name_lbl.setFullText(dlg._arch_fname)
+        dlg._arch_name_lbl.setStyleSheet("color:#1c1c1e;")
+        dlg._arch_clear_btn.setEnabled(True)
+    else:
+        dlg._arch_name_lbl.setFullText("（未歸檔）")
+        dlg._arch_name_lbl.setStyleSheet("color:#aeaeb2;")
+        dlg._arch_clear_btn.setEnabled(False)
+
+
+def _on_arch_clear(dlg):
+    if not confirmBox("清除電子檔歸檔",
+                      f"將解除本筆電子檔歸檔（{dlg._arch_fname}），\n"
+                      "退回未歸檔清單。實體 PDF 不會被刪除。確認？"):
+        return
+    dlg._arch_clear_pending = True
+    _refresh_arch_name(dlg)
+
+
+def _load_arch_status(dlg, reported, electronic):
+    """_load_data 末端呼叫：把 DB 值填入歸檔狀態區塊（僅 admin 有建立）。"""
+    if getattr(dlg, "w_arch_reported", None) is None:
+        return
+    dlg.w_arch_reported.setChecked(bool(reported))
+    dlg._arch_fname = str(electronic) if electronic else ""
+    dlg._arch_clear_pending = False
+    _refresh_arch_name(dlg)
 
 
 def _get_conn(db_path):
@@ -463,6 +567,13 @@ QRadioButton:checked {
         root = QVBoxLayout(self)
         root.addLayout(form)
         root.addSpacing(8)
+
+        # 歸檔狀態區塊（僅 admin）
+        self.w_arch_reported = None
+        if AuthManager.instance().current_role == 'admin':
+            root.addWidget(_build_archive_group(self))
+            root.addSpacing(4)
+
         root.addLayout(btn_row)
 
         self.w_subject.returnPressed.connect(self._on_save)
@@ -474,7 +585,7 @@ QRadioButton:checked {
         row = conn.execute("""
             SELECT report_date, sender_id, case_type, case_status,
                    processor_id, receiver_id, subject_summary,
-                   occurrence_date, reporter_name
+                   occurrence_date, reporter_name, is_reported, is_electronic
             FROM Document_Criminal WHERE doc_id=?
         """, (self.doc_id,)).fetchone()
         conn.close()
@@ -482,7 +593,8 @@ QRadioButton:checked {
             return
 
         report_date, sender_id, case_type, case_status, \
-            proc_id, recv_id, subject, occ_date, reporter = row
+            proc_id, recv_id, subject, occ_date, reporter, \
+            is_reported, is_electronic = row
 
         if report_date:
             self.w_report_date.setDate(QDate.fromString(str(report_date), "yyyy-MM-dd"))
@@ -513,6 +625,8 @@ QRadioButton:checked {
             self.w_occ_date.setDate(QDate.currentDate())
 
         self.w_reporter.setText(str(reporter) if reporter else "")
+
+        _load_arch_status(self, is_reported, is_electronic)
 
     def _set_combo(self, combo, value):
         _set_combo_value(combo, value)
@@ -549,6 +663,14 @@ QRadioButton:checked {
             """, (report_date, sender_id, case_type, status_id,
                   proc_id, recv_id, subject, occ_date, reporter or None,
                   self.doc_id))
+            if self.w_arch_reported is not None:
+                conn.execute(
+                    "UPDATE Document_Criminal SET is_reported=? WHERE doc_id=?",
+                    (1 if self.w_arch_reported.isChecked() else 0, self.doc_id))
+                if self._arch_clear_pending:
+                    conn.execute(
+                        "UPDATE Document_Criminal SET is_electronic='' WHERE doc_id=?",
+                        (self.doc_id,))
             conn.commit()
             conn.close()
         except Exception as e:
@@ -687,6 +809,13 @@ class GeneralEditDialog(QDialog):
         root = QVBoxLayout(self)
         root.addLayout(form)
         root.addSpacing(8)
+
+        # 歸檔狀態區塊（僅 admin）
+        self.w_arch_reported = None
+        if AuthManager.instance().current_role == 'admin':
+            root.addWidget(_build_archive_group(self))
+            root.addSpacing(4)
+
         root.addLayout(btn_row)
 
         self.w_subject.returnPressed.connect(self._on_save)
@@ -696,14 +825,15 @@ class GeneralEditDialog(QDialog):
         conn = _get_conn(self.db_path)
         row = conn.execute("""
             SELECT report_date, sender_id, dept_id, gen_cat_id,
-                   subject, processor_id
+                   subject, processor_id, is_reported, is_electronic
             FROM Document_General WHERE doc_id=?
         """, (self.doc_id,)).fetchone()
         conn.close()
         if not row:
             return
 
-        report_date, sender_id, dept_id, gen_cat_id, subject, proc_id = row
+        report_date, sender_id, dept_id, gen_cat_id, subject, proc_id, \
+            is_reported, is_electronic = row
 
         if report_date:
             self.w_report_date.setDate(QDate.fromString(str(report_date), "yyyy-MM-dd"))
@@ -724,6 +854,8 @@ class GeneralEditDialog(QDialog):
             self._cat_radios[0][1].setChecked(True)
 
         self.w_subject.setText(str(subject) if subject else "")
+
+        _load_arch_status(self, is_reported, is_electronic)
 
     def _set_combo(self, combo, value):
         _set_combo_value(combo, value)
@@ -755,6 +887,14 @@ class GeneralEditDialog(QDialog):
                 WHERE doc_id=?
             """, (report_date, sender_id, dept_id, cat_id,
                   subject, proc_id, self.doc_id))
+            if self.w_arch_reported is not None:
+                conn.execute(
+                    "UPDATE Document_General SET is_reported=? WHERE doc_id=?",
+                    (1 if self.w_arch_reported.isChecked() else 0, self.doc_id))
+                if self._arch_clear_pending:
+                    conn.execute(
+                        "UPDATE Document_General SET is_electronic='' WHERE doc_id=?",
+                        (self.doc_id,))
             conn.commit()
             conn.close()
         except Exception as e:

@@ -105,13 +105,19 @@ def setDocIdLinkCell(table, row, col, doc_id, on_click, clickable=True):
     權限控管時，呼叫端自行計算 clickable 值再傳入，此函式不需知道權限邏輯。
     """
     from PySide6.QtWidgets import QLabel, QTableWidgetItem
+    # 同格的 item 與 cellWidget 各自獨立、可並存：切換前先清掉另一種表示，
+    # 否則 user↔admin 來回切會留下純文字與連結兩個數字疊在一起
     if clickable and doc_id:
+        if table.item(row, col) is not None:
+            table.takeItem(row, col)
         lbl = QLabel(f'<a href="{doc_id}" style="color:#4A7FA5;">{doc_id}</a>')
         lbl.setAlignment(Qt.AlignCenter)
         lbl.setOpenExternalLinks(False)
         lbl.linkActivated.connect(lambda link, r=row: on_click(r, link))
         table.setCellWidget(row, col, lbl)
     else:
+        if table.cellWidget(row, col) is not None:
+            table.removeCellWidget(row, col)
         item = QTableWidgetItem(doc_id or "")
         item.setTextAlignment(Qt.AlignCenter)
         table.setItem(row, col, item)
