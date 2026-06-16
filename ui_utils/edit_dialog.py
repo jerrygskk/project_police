@@ -3,7 +3,6 @@ EditDialog — 通用修改彈窗
 動態產生表單，目前支援：
   - task：Document_Task（交辦單）
 """
-import sqlite3
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
@@ -13,7 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFontMetrics
 
-from lib.db_utils import getResourcePath, BTN_CONFIRM, BTN_CANCEL, confirmBox
+from lib.db_utils import getResourcePath, BTN_CONFIRM, BTN_CANCEL, confirmBox, getConn
 from lib.auth_manager import AuthManager
 from ui_utils.widgets import setupFilterCombo
 
@@ -121,7 +120,7 @@ def _load_arch_status(dlg, reported, electronic):
 
 
 def _get_conn(db_path):
-    return sqlite3.connect(db_path)
+    return getConn(db_path)
 
 
 def _load_combo(conn, sql):
@@ -145,7 +144,31 @@ def _set_combo_value(combo, value):
 
 
 # ── Task EditDialog ────────────────────────────────────────────
-class TaskEditDialog(QDialog):
+_CRIMGEN_QSS = """
+            QDialog, QWidget {
+                background-color: #FFFFFF;
+                color: #000000;
+            }
+            QLineEdit, QComboBox, QDateEdit {
+                background-color: #FFFFFF;
+                color: #000000;
+                border: 1px solid #CCCCCC;
+                border-radius: 4px;
+                padding: 4px 8px;
+            }
+            QCheckBox, QRadioButton { color: #000000; }
+            QLabel { color: #000000; }
+        """
+
+
+class _BaseEditDialog(QDialog):
+    """三個編輯彈窗共用基底：版面常數（子類以 self._LABEL_W 等引用，零改）。"""
+    _LABEL_W = 120   # label 區寬度
+    _FIELD_W = 340   # 輸入元件總寬度
+    _MARGIN  = 40    # 左右 margin
+
+
+class TaskEditDialog(_BaseEditDialog):
     """交辦單修改彈窗（Tab 0 / Tab 1 共用）"""
 
     def __init__(self, db_path, doc_id, parent=None, restricted=False):
@@ -156,9 +179,6 @@ class TaskEditDialog(QDialog):
         self.setWindowTitle('交辦單修改')
 
         # ── 版面常數 ──────────────────────────────────────────
-        self._LABEL_W    = 120   # label 區寬度
-        self._FIELD_W    = 340   # 輸入元件總寬度
-        self._MARGIN     = 40    # 左右 margin
         self._CHECKBOX_W = 130   # 免覆 checkbox 寬度
         self._SPACING_W  = 30    # DateEdit 與 checkbox 間距
         self._DATE_W     = self._FIELD_W - self._SPACING_W - self._CHECKBOX_W  # = 260
@@ -411,7 +431,7 @@ class TaskEditDialog(QDialog):
         return row
 
 # ── Criminal EditDialog ────────────────────────────────────────
-class CriminalEditDialog(QDialog):
+class CriminalEditDialog(_BaseEditDialog):
     """刑案陳報修改彈窗（Tab 2）"""
 
     RADIO_STYLE = """
@@ -450,26 +470,9 @@ QRadioButton:checked {
         self.doc_id  = doc_id
         self.setWindowTitle('刑案陳報修改')
 
-        self._LABEL_W = 120
-        self._FIELD_W = 340
-        self._MARGIN  = 40
 
         self.setMinimumWidth(self._LABEL_W + self._FIELD_W + self._MARGIN)
-        self.setStyleSheet("""
-            QDialog, QWidget {
-                background-color: #FFFFFF;
-                color: #000000;
-            }
-            QLineEdit, QComboBox, QDateEdit {
-                background-color: #FFFFFF;
-                color: #000000;
-                border: 1px solid #CCCCCC;
-                border-radius: 4px;
-                padding: 4px 8px;
-            }
-            QCheckBox, QRadioButton { color: #000000; }
-            QLabel { color: #000000; }
-        """)
+        self.setStyleSheet(_CRIMGEN_QSS)
         self._build_ui()
         self._load_data()
 
@@ -570,7 +573,7 @@ QRadioButton:checked {
 
         # 歸檔狀態區塊（僅 admin）
         self.w_arch_reported = None
-        if AuthManager.instance().current_role == 'admin':
+        if AuthManager.instance().is_admin():
             root.addWidget(_build_archive_group(self))
             root.addSpacing(4)
 
@@ -692,7 +695,7 @@ QRadioButton:checked {
 
 
 # ── General EditDialog ─────────────────────────────────────────
-class GeneralEditDialog(QDialog):
+class GeneralEditDialog(_BaseEditDialog):
     """一般陳報修改彈窗（Tab 2）"""
 
     RADIO_STYLE = CriminalEditDialog.RADIO_STYLE
@@ -709,26 +712,9 @@ class GeneralEditDialog(QDialog):
         self.doc_id  = doc_id
         self.setWindowTitle('一般陳報修改')
 
-        self._LABEL_W = 120
-        self._FIELD_W = 340
-        self._MARGIN  = 40
 
         self.setMinimumWidth(self._LABEL_W + self._FIELD_W + self._MARGIN)
-        self.setStyleSheet("""
-            QDialog, QWidget {
-                background-color: #FFFFFF;
-                color: #000000;
-            }
-            QLineEdit, QComboBox, QDateEdit {
-                background-color: #FFFFFF;
-                color: #000000;
-                border: 1px solid #CCCCCC;
-                border-radius: 4px;
-                padding: 4px 8px;
-            }
-            QCheckBox, QRadioButton { color: #000000; }
-            QLabel { color: #000000; }
-        """)
+        self.setStyleSheet(_CRIMGEN_QSS)
         self._build_ui()
         self._load_data()
 
@@ -812,7 +798,7 @@ class GeneralEditDialog(QDialog):
 
         # 歸檔狀態區塊（僅 admin）
         self.w_arch_reported = None
-        if AuthManager.instance().current_role == 'admin':
+        if AuthManager.instance().is_admin():
             root.addWidget(_build_archive_group(self))
             root.addSpacing(4)
 

@@ -136,6 +136,17 @@ def makeDeleteBtn(callback):
     return container, btn
 
 
+def refreshDeleteBtns(table, enabled, col=0):
+    """逐列切換刪除鈕的啟用狀態（身分變更時即時 greyout/還原）。
+    刪除鈕由 makeDeleteBtn 建立、包在 cellWidget 容器內、objectName='deleteBtn'。"""
+    for r in range(table.rowCount()):
+        cont = table.cellWidget(r, col)
+        if cont:
+            btn = cont.findChild(QPushButton, "deleteBtn")
+            if btn:
+                btn.setEnabled(enabled)
+
+
 def setupPreviewTable(table, headers, row_height=30, stretch_col=None, fixed_overrides=None, cap_mode=False):
     """
     套用 Apple HIG 風格表格樣式，並設定欄位標題。

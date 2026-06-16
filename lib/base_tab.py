@@ -1,7 +1,6 @@
 import re
-import sqlite3
 from datetime import datetime
-from lib.db_utils import msgCritical
+from lib.db_utils import msgCritical, getConn
 
 
 class BaseTab:
@@ -45,8 +44,8 @@ class BaseTab:
 
     # ── DB 工具 ─────────────────────────────────────────────
     def _getConn(self):
-        """回傳新的 sqlite3 連線，呼叫端負責 close()"""
-        return sqlite3.connect(self.db_path)
+        """回傳新的 sqlite3 連線，呼叫端負責 close()（統一走 db_utils.getConn）"""
+        return getConn(self.db_path)
 
     def _dbNow(self):
         """資料庫端當前時間字串，與 trigger 寫入的 last_modified 同基準。"""

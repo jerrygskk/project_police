@@ -59,6 +59,10 @@ class AuthManager(QObject):
     def current_role(self):
         return self._role
 
+    def is_admin(self) -> bool:
+        """便捷判斷：當前是否為管理者。等同 current_role == 'admin'。"""
+        return self._role == 'admin'
+
     def can(self, action: str) -> bool:
         """
         回傳當前身份是否有權執行 action。

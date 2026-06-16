@@ -2,13 +2,13 @@ from datetime import datetime
 
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui  import QColor
-from PySide6.QtWidgets import QTableWidgetItem, QPushButton
+from PySide6.QtWidgets import QTableWidgetItem
 
 from lib.base_tab import BaseTab
 from lib.db_utils import msgInfo, msgWarning, msgCritical, confirmBox, DEBUG_MODE
 from lib.auth_manager import AuthManager
 from ui_utils import (
-    setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
+    setupPreviewTable, autoResizeTable, makeDeleteBtn, refreshDeleteBtns, setDocIdLinkCell,
     TaskEditDialog,
     setupFilterCombo, setupDateEditToToday, refreshFilterCombo,
     calcOverdue, colorForStatus, attachStickyScroll,
@@ -66,16 +66,23 @@ class TabDispatch(BaseTab):
         AuthManager.instance().role_changed.connect(self._onRolePerm)
 
     def _onRolePerm(self, _role=None):
-        """身分變更：逐列切換刪除鈕停用/啟用（編輯連結維持可點，限制於開啟時套用）。"""
+        """身分變更即時生效：逐列切換刪除鈕停用/啟用，並重算編號欄可點狀態
+        （admin 永遠可點，含已發文；一般使用者已發文鎖住）。"""
         if not self.table:
             return
-        is_admin = AuthManager.instance().current_role == 'admin'
+        is_admin = AuthManager.instance().is_admin()
+        refreshDeleteBtns(self.table, is_admin)
         for r in range(self.table.rowCount()):
-            cont = self.table.cellWidget(r, 0)
-            if cont:
-                btn = cont.findChild(QPushButton, "deleteBtn")
-                if btn:
-                    btn.setEnabled(is_admin)
+            # 編號欄（col 1）：依目前身分與發文狀態重算可點，即時切換連結/純文字
+            lbl = self.table.cellWidget(r, 1)
+            id_item = self.table.item(r, 1)
+            doc_id = self._docIdFromLabel(lbl) if lbl else (id_item.text() if id_item else "")
+            if not doc_id:
+                continue
+            disp_item = self.table.item(r, 6)
+            dispatch_str = disp_item.text() if disp_item else ""
+            clickable = is_admin or not dispatch_str or DEBUG_MODE
+            setDocIdLinkCell(self.table, r, 1, doc_id, self._onEditRow, clickable=clickable)
 
     # ── BaseTab 介面 ──────────────────────────────────────
     def get_tables(self):
@@ -172,15 +179,17 @@ class TabDispatch(BaseTab):
         deadline_str = str(data[4]) if data[4] else ""
         dispatch_str = str(data[5]) if data[5] else ""
 
+        is_admin = AuthManager.instance().is_admin()
+
         # 刪除按鈕（col 0）：以 doc_id 為準，不用 row index
         container, del_btn = makeDeleteBtn(lambda _, d=doc_id: self._deleteByDocId(d))
         # 一般使用者不可刪 → 停用變灰（admin 全開）
-        if AuthManager.instance().current_role != 'admin':
+        if not is_admin:
             del_btn.setEnabled(False)
         self.table.setCellWidget(pos, 0, container)
 
-        # 編號欄（col 1）：已發文 + 非 DEBUG_MODE → 純文字，否則超連結
-        clickable = not dispatch_str or DEBUG_MODE
+        # 編號欄（col 1）：admin 永遠可點（含已發文）；一般使用者僅未發文可點，已發文鎖住。DEBUG_MODE 一律可點
+        clickable = is_admin or not dispatch_str or DEBUG_MODE
         setDocIdLinkCell(self.table, pos, 1, doc_id, self._onEditRow, clickable=clickable)
 
         # 其他欄位（col 2~4）
@@ -208,7 +217,7 @@ class TabDispatch(BaseTab):
 
     def _onEditRow(self, row, doc_id):
         """點擊超連結 → 開啟 EditDialog（一般使用者只可改承辦人）"""
-        restricted = AuthManager.instance().current_role != 'admin'
+        restricted = not AuthManager.instance().is_admin()
         dlg = TaskEditDialog(self.db_path, doc_id, self.table, restricted=restricted)
         if dlg.exec():
             updated = dlg.get_updated()

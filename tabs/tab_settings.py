@@ -225,7 +225,7 @@ class TabSettings(BaseTab):
         # 監聽身份變化：登出時自動回到密碼驗證畫面
         AuthManager.instance().role_changed.connect(self._onRoleChanged)
         # 啟動時若已是 admin（理論上不會），直接顯示主畫面
-        if AuthManager.instance().current_role == 'admin':
+        if AuthManager.instance().is_admin():
             self._outer_stack.setCurrentIndex(1)
             self._switchPage(self._PAGE_PERSONNEL)
 

@@ -6,6 +6,13 @@ from PySide6.QtWidgets import QMessageBox
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile
 
+
+def getConn(db_path):
+    """sqlite3 連線單一來源；呼叫端負責 commit/close。
+    後續若要統一加 PRAGMA / timeout / row_factory，集中改這一處即可。"""
+    return sqlite3.connect(db_path)
+
+
 # ── Dialog 按鈕樣式常數 ───────────────────────────────────────
 _BTN_BASE    = "border-radius: 6px; padding: 4px 16px; min-width: 80px; font-weight: bold;"
 BTN_CONFIRM  = f"QPushButton {{ background-color: #D0ECF5; color: #000000; {_BTN_BASE} }} QPushButton:hover {{ background-color: #B8D8E8; }}"
