@@ -71,7 +71,8 @@ class TabDispatch(BaseTab):
         if not self.table:
             return
         is_admin = AuthManager.instance().is_admin()
-        refreshDeleteBtns(self.table, is_admin)
+        # X 為「刪除佇列」（removeRow，不碰 DB），一般使用者亦可用 → 恆啟用
+        refreshDeleteBtns(self.table, True)
         for r in range(self.table.rowCount()):
             # 編號欄（col 1）：依目前身分與發文狀態重算可點，即時切換連結/純文字
             lbl = self.table.cellWidget(r, 1)
@@ -182,10 +183,8 @@ class TabDispatch(BaseTab):
         is_admin = AuthManager.instance().is_admin()
 
         # 刪除按鈕（col 0）：以 doc_id 為準，不用 row index
+        # X 為「刪除佇列」（removeRow，不寫 DB），一般使用者亦可移除誤掃入的列 → 恆啟用
         container, del_btn = makeDeleteBtn(lambda _, d=doc_id: self._deleteByDocId(d))
-        # 一般使用者不可刪 → 停用變灰（admin 全開）
-        if not is_admin:
-            del_btn.setEnabled(False)
         self.table.setCellWidget(pos, 0, container)
 
         # 編號欄（col 1）：admin 永遠可點（含已發文）；一般使用者僅未發文可點，已發文鎖住。DEBUG_MODE 一律可點

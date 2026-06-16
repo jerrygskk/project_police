@@ -66,6 +66,8 @@ def _build_archive_group(dlg):
     v.setSpacing(10)
 
     dlg.w_arch_reported = QCheckBox("已陳報紙本")
+    # 取消紙本須連動取消 PDF 歸檔；用 clicked（僅 user 操作觸發，load 的 setChecked 不觸發）
+    dlg.w_arch_reported.clicked.connect(lambda checked: _on_paper_toggled(dlg, checked))
     v.addWidget(dlg.w_arch_reported)
 
     row = QHBoxLayout()
@@ -101,12 +103,47 @@ def _refresh_arch_name(dlg):
 
 
 def _on_arch_clear(dlg):
-    if not confirmBox("清除電子檔歸檔",
-                      f"將解除本筆電子檔歸檔（{dlg._arch_fname}），\n"
-                      "退回未歸檔清單。實體 PDF 不會被刪除。確認？"):
-        return
+    # 按下清除：當下只標記 pending、清掉檔名顯示（不跳框）。
+    # 二次確認移至儲存時（_confirm_arch_clear），符合「按確認才提醒」流程。
     dlg._arch_clear_pending = True
     _refresh_arch_name(dlg)
+
+
+def _on_paper_toggled(dlg, checked):
+    """紙本 checkbox 連動：取消紙本（該筆仍有電子檔歸檔）須同步取消 PDF。
+    勾選當下純警告告知（不給選擇），動作照做：自動標記清除 PDF（檔名顯示一併清掉）。
+    儲存時仍會跳一次確認（重大操作，刻意保留二次確認）。"""
+    if checked:
+        return  # 重新勾選紙本不擾民
+    if not dlg._arch_fname or dlg._arch_clear_pending:
+        return  # 無電子檔、或 PDF 已標記清除 → 無需連動
+    from lib.db_utils import msgWarning
+    msgWarning("取消紙本歸檔", "取消紙本將同步取消 PDF 歸檔。")
+    dlg._arch_clear_pending = True
+    _refresh_arch_name(dlg)
+
+
+def _confirm_arch_clear(dlg):
+    """儲存時呼叫：依本次「取消歸檔」方向的實際變更動態提醒。
+    取消方向 = PDF 被標記清除、或紙本由已勾改為取消勾（與載入原值比對）。
+    回傳 True=可繼續儲存（無取消動作時恆 True）；取消則回 False，呼叫端中止儲存。"""
+    cb = getattr(dlg, "w_arch_reported", None)
+    if cb is None:
+        return True
+    pdf_cleared   = getattr(dlg, "_arch_clear_pending", False)
+    paper_removed = getattr(dlg, "_arch_reported_orig", False) and not cb.isChecked()
+    if not pdf_cleared and not paper_removed:
+        return True
+
+    parts = []
+    if paper_removed:
+        parts.append("紙本")
+    if pdf_cleared:
+        parts.append("PDF")
+    label = "與".join(parts)
+
+    msg = f"取消本筆{label}歸檔，退回未歸檔清單。"
+    return confirmBox(f"取消{label}歸檔", msg)
 
 
 def _load_arch_status(dlg, reported, electronic):
@@ -114,6 +151,7 @@ def _load_arch_status(dlg, reported, electronic):
     if getattr(dlg, "w_arch_reported", None) is None:
         return
     dlg.w_arch_reported.setChecked(bool(reported))
+    dlg._arch_reported_orig = bool(reported)
     dlg._arch_fname = str(electronic) if electronic else ""
     dlg._arch_clear_pending = False
     _refresh_arch_name(dlg)
@@ -655,6 +693,8 @@ QRadioButton:checked {
             msgWarning("欄位未填", "陳報主旨不可為空")
             return
 
+        if not _confirm_arch_clear(self):
+            return
         try:
             conn = _get_conn(self.db_path)
             conn.execute("""
@@ -864,6 +904,8 @@ class GeneralEditDialog(_BaseEditDialog):
             msgWarning("欄位未填", "陳報主旨不可為空")
             return
 
+        if not _confirm_arch_clear(self):
+            return
         try:
             conn = _get_conn(self.db_path)
             conn.execute("""
