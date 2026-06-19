@@ -1,6 +1,7 @@
 import sys
 import os
 import sqlite3
+import unicodedata
 
 from PySide6.QtWidgets import QMessageBox
 from PySide6.QtUiTools import QUiLoader
@@ -219,3 +220,130 @@ def performYearEndReset(db_path):
         raise
     finally:
         conn.close()
+
+
+# ══════════════════════════════════════════════════════════════════
+# App_Settings 讀寫（key-value 設定；schema 不變，只新增 key）
+# ══════════════════════════════════════════════════════════════════
+def getSetting(db_path, key, default=""):
+    """讀 App_Settings 單一設定；不存在回 default。"""
+    conn = getConn(db_path)
+    try:
+        row = conn.execute(
+            "SELECT value FROM App_Settings WHERE key=?", (key,)).fetchone()
+        return row[0] if row else default
+    finally:
+        conn.close()
+
+
+def setSetting(db_path, key, value):
+    """寫 App_Settings 單一設定（upsert）。value 欄為 NOT NULL，None 一律存空字串。"""
+    conn = getConn(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO App_Settings(key, value) VALUES(?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value or ""))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ══════════════════════════════════════════════════════════════════
+# 歸檔 PDF 定位（瀏覽 Tab4 開啟電子檔用）
+#   - 根存「當年度資料夾」的 UNC（archive_root），與磁碟機代號脫鉤
+#   - 刑案/一般各一個子夾名（archive_subdir_crim/gen），可空（空則走整年度層）
+#   - 用 is_electronic 整串檔名於對應子夾遞迴比對；檔名 NFC 正規化避免同形不同碼
+# ══════════════════════════════════════════════════════════════════
+ARCHIVE_ROOT_KEY = "archive_root"
+_ARCH_SUBDIR_KEY = {"crim": "archive_subdir_crim", "gen": "archive_subdir_gen"}
+
+_PDF_INDEX_CACHE = {}   # base_dir -> {nfc(檔名): 完整路徑}
+
+
+def _nfc(s):
+    return unicodedata.normalize("NFC", s or "")
+
+
+def clearPdfIndexCache():
+    """設定變更或年度重置後呼叫，清掉檔名索引快取。"""
+    _PDF_INDEX_CACHE.clear()
+
+
+def _buildPdfIndex(base_dir, force=False):
+    """遞迴 base_dir 建「nfc(檔名)→完整路徑」索引（含子資料夾）。同名取第一個。"""
+    if not force and base_dir in _PDF_INDEX_CACHE:
+        return _PDF_INDEX_CACHE[base_dir]
+    idx = {}
+    for root, _dirs, files in os.walk(base_dir):
+        for f in files:
+            if f.lower().endswith(".pdf"):
+                idx.setdefault(_nfc(f), os.path.join(root, f))
+    _PDF_INDEX_CACHE[base_dir] = idx
+    return idx
+
+
+def archiveSubdir(db_path, key):
+    """回傳該類別(crim/gen)設定的子夾名稱；未設定回空字串。"""
+    return getSetting(db_path, _ARCH_SUBDIR_KEY.get(key, ""), "")
+
+
+def archiveDefaultDir(db_path, key):
+    """歸檔 Tab 選 PDF 資料夾時的預設起始路徑＝歸檔根(+該類別子夾)。
+    未設定根回空字串（QFileDialog 會退回系統預設位置）。"""
+    root = (getSetting(db_path, ARCHIVE_ROOT_KEY, "") or "").strip()
+    if not root:
+        return ""
+    sub = (archiveSubdir(db_path, key) or "").strip()
+    return os.path.join(root, sub) if sub else root
+
+
+def resolveArchivedPdf(db_path, key, fname):
+    """以 is_electronic 檔名定位實體 PDF。
+    回傳 (完整路徑 or None, 狀態碼)：
+      ok       命中
+      noroot   尚未設定歸檔根
+      noaccess 根/子夾無法存取（網路碟未掛或路徑錯）
+      notfound 走訪後找不到該檔名
+    """
+    fname = _nfc((fname or "").strip())
+    if not fname:
+        return None, "notfound"
+    root = (getSetting(db_path, ARCHIVE_ROOT_KEY, "") or "").strip()
+    if not root:
+        return None, "noroot"
+    sub = (archiveSubdir(db_path, key) or "").strip()
+    base = os.path.join(root, sub) if sub else root
+    if not os.path.isdir(base):
+        return None, "noaccess"
+    idx = _buildPdfIndex(base)
+    hit = idx.get(fname)
+    if hit is None:                       # miss → 重建一次（吸收新歸檔的檔）
+        idx = _buildPdfIndex(base, force=True)
+        hit = idx.get(fname)
+    if hit is None:
+        return None, "notfound"
+    return hit, "ok"
+
+
+def toUncPath(path):
+    """把含磁碟機代號的路徑（如 Z:\\歸檔\\2026）轉成 UNC（\\\\伺服器\\分享\\歸檔\\2026）。
+    已是 UNC 直接回；非網路磁碟或轉換失敗回 None（呼叫端應改要求手動輸入 UNC）。"""
+    if not path:
+        return None
+    p = path.replace("/", "\\")
+    if p.startswith("\\\\"):
+        return p.rstrip("\\")
+    try:
+        from PySide6.QtCore import QStorageInfo
+        si = QStorageInfo(path)
+        dev = (si.device() or "").replace("/", "\\")
+        root = si.rootPath()
+        if dev.startswith("\\\\") and root:
+            rel = os.path.relpath(os.path.abspath(path), os.path.abspath(root))
+            if rel in (".", ""):
+                return dev.rstrip("\\")
+            return dev.rstrip("\\") + "\\" + rel.replace("/", "\\")
+    except Exception:
+        pass
+    return None

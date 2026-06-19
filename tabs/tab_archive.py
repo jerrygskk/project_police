@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from lib.base_tab import BaseTab
-from lib.db_utils import getResourcePath, loadUi, msgCritical, msgInfo, confirmBox
+from lib.db_utils import getResourcePath, loadUi, msgCritical, msgInfo, confirmBox, archiveDefaultDir
 from lib.auth_manager import AuthManager
 from lib.archive_text import _trimName, _tokenize, _parseDate, _sanitize, _pkOf
 from ui_utils import (
@@ -166,6 +166,26 @@ class TabArchive(BaseTab):
                 self._sigs[key] = self._tableSignature(key)
             except Exception:
                 pass
+
+        # 被切換顯示時自動帶入歸檔根資料夾（framework 不會對本頁呼叫 on_activated）
+        self._tab_index = tab_index
+        try:
+            self.tab_widget.currentChanged.connect(self._onShown)
+        except Exception:
+            pass
+        # 若一進來就停在本頁且已是管理者，立即帶入一次
+        if self.tab_widget.currentIndex() == tab_index \
+                and AuthManager.instance().is_admin():
+            for key in ("crim", "gen"):
+                self._autoloadDefault(key)
+
+    def _onShown(self, idx):
+        """本頁被切換顯示時，自動帶入歸檔根資料夾（尚未選擇時）。"""
+        if idx != getattr(self, "_tab_index", -1):
+            return
+        if AuthManager.instance().is_admin():
+            for key in ("crim", "gen"):
+                self._autoloadDefault(key)
 
     def _bind(self, key):
         u = self._ui[key]
@@ -502,9 +522,16 @@ class TabArchive(BaseTab):
 
     # ── 選資料夾、掃 PDF（含子資料夾）──────────────────────
     def _pickFolder(self, key):
-        folder = QFileDialog.getExistingDirectory(self._inner, "選擇 PDF 資料夾")
+        # 預設起始路徑＝設定的歸檔根(+刑案/一般子夾)，省得每次手動找
+        start = archiveDefaultDir(self.db_path, key)
+        folder = QFileDialog.getExistingDirectory(
+            self._inner, "選擇 PDF 資料夾", start)
         if not folder:
             return
+        self._loadFolder(key, folder)
+
+    def _loadFolder(self, key, folder):
+        """掃描資料夾(含子夾)所有 PDF、更新路徑顯示與比對。手動選與自動帶入共用。"""
         self._folders[key] = folder
         pdfs = []
         for root, _dirs, files in os.walk(folder):
@@ -516,6 +543,14 @@ class TabArchive(BaseTab):
         if self._ui[key]["path"]:
             self._ui[key]["path"].setText(f"{folder}（含子資料夾，共 {len(pdfs)} 個 PDF）")
         self._rematch(key)
+
+    def _autoloadDefault(self, key):
+        """進歸檔頁時若尚未選資料夾且已設定歸檔根，自動帶入並掃描（手動選仍可覆蓋）。"""
+        if self._folders.get(key):
+            return
+        d = archiveDefaultDir(self.db_path, key)
+        if d and os.path.isdir(d):
+            self._loadFolder(key, d)
 
     # ── 模糊比對 ────────────────────────────────────────────
     def _pdfTokens(self, filepath):
@@ -964,6 +999,10 @@ class TabArchive(BaseTab):
         if stack:
             is_admin = AuthManager.instance().is_admin()
             stack.setCurrentIndex(1 if is_admin else 0)
+            # 登入成為管理者（即使正停在本頁）也自動帶入歸檔根
+            if is_admin and hasattr(self, "_folders"):
+                for key in ("crim", "gen"):
+                    self._autoloadDefault(key)
 
     def on_activated(self):
         self._applyGate()
@@ -981,3 +1020,8 @@ class TabArchive(BaseTab):
             if self._sigs.get(key) != sig:
                 self._diffDocs(key)        # 差異更新
                 self._sigs[key] = sig
+
+        # 自動帶入歸檔根資料夾（尚未選擇時顯示名稱並掃描），手動選仍可覆蓋
+        if AuthManager.instance().is_admin():
+            for key in ("crim", "gen"):
+                self._autoloadDefault(key)

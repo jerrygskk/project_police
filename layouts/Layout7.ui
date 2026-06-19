@@ -151,6 +151,11 @@
             </widget>
            </item>
            <item>
+            <widget class="QPushButton" name="btn_archive_root">
+             <property name="text"><string>歸檔資料夾</string></property>
+            </widget>
+           </item>
+           <item>
             <widget class="QPushButton" name="btn_change_pwd">
              <property name="text"><string>變更密碼</string></property>
             </widget>

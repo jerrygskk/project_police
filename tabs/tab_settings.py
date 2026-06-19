@@ -34,7 +34,7 @@ from ui_utils import (
     PersonnelAddDialog, PersonnelEditDialog,
     DeptAddDialog, DeptEditDialog,
     CaseTypeAddDialog, CaseTypeEditDialog,
-    ChangePasswordDialog, ResetDialog,
+    ChangePasswordDialog, ResetDialog, ArchiveRootDialog,
 )
 
 # ── 左側導航按鈕樣式 ────────────────────────────────────────────
@@ -173,6 +173,8 @@ class TabSettings(BaseTab):
         btn_change_pwd = inner.findChild(QPushButton, "btn_change_pwd")
         btn_year_reset = inner.findChild(QPushButton, "btn_year_reset")
         btn_logout     = inner.findChild(QPushButton, "btn_logout")
+        btn_archive_root = inner.findChild(QPushButton, "btn_archive_root")
+        self._btn_archive_root = btn_archive_root
 
         # 三子頁的表格、新增/修改/儲存排序按鈕
         self.tbl_personnel = inner.findChild(QTableWidget, "tbl_personnel")
@@ -199,6 +201,8 @@ class TabSettings(BaseTab):
         btn_change_pwd.setStyleSheet(_NAV_BOTTOM)
         btn_year_reset.setStyleSheet(_NAV_DANGER)
         btn_logout.setStyleSheet(_NAV_BOTTOM)
+        if btn_archive_root:
+            btn_archive_root.setStyleSheet(_NAV_BOTTOM)
 
         # ── 綁定 signal ──
         self.w_password.returnPressed.connect(self._doLogin)
@@ -208,6 +212,8 @@ class TabSettings(BaseTab):
         btn_change_pwd.clicked.connect(self._changePassword)
         btn_year_reset.clicked.connect(self._doReset)
         btn_logout.clicked.connect(self._doLogout)
+        if btn_archive_root:
+            btn_archive_root.clicked.connect(self._onSetArchiveRoot)
 
         # ── 初始化三頁的表格與排序暫存狀態 ──
         self._initRefPage("personnel", self.tbl_personnel,
@@ -372,6 +378,11 @@ class TabSettings(BaseTab):
         if dlg.exec():
             msgInfo("完成", "密碼已成功變更", self.tab_widget)
 
+    # ── 歸檔資料夾設定 ──────────────────────────────────────────
+    def _onSetArchiveRoot(self):
+        """設定/更新瀏覽頁開啟電子檔用的歸檔資料夾（年度層 UNC + 刑案/一般子夾名）。"""
+        ArchiveRootDialog(self.db_path, self.tab_widget).exec()
+
     # ── 跨年度重置 ──────────────────────────────────────────────
     def _doReset(self):
         # 1. 確認彈窗（輸入 RESET、列出待清停用項目、防誤按）
@@ -415,6 +426,16 @@ class TabSettings(BaseTab):
                         f"重置過程發生錯誤，資料已還原至重置前狀態：\n{e}",
                         self.tab_widget)
             return
+
+        # 4.5 新年度開始：提示更新本年度歸檔資料夾
+        #     （archive_root 不被重置清掉，但年度層已換，故主動提醒更新）
+        if confirmBox(
+                "更新歸檔資料夾",
+                "新年度開始，是否現在更新本年度的歸檔資料夾位置？\n"
+                "（稍後仍可於設定頁的「歸檔資料夾」變更。）",
+                confirm_text="更新", cancel_text="稍後",
+                default_confirm=True, parent=self.tab_widget):
+            ArchiveRootDialog(self.db_path, self.tab_widget).exec()
 
         # 5. 完成提示 → 按確定後重啟程式
         msgInfo("重置完成",

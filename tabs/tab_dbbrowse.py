@@ -1,12 +1,15 @@
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QUrl, QSize
 from PySide6.QtWidgets import (
     QVBoxLayout, QTabWidget, QComboBox, QLineEdit, QPushButton,
-    QCheckBox, QLabel, QTableWidget, QTableWidgetItem,
+    QCheckBox, QLabel, QTableWidget, QTableWidgetItem, QWidget, QHBoxLayout,
 )
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QIcon, QDesktopServices
 
 from lib.base_tab import BaseTab
-from lib.db_utils import getResourcePath, loadUi, msgCritical, confirmBox
+from lib.db_utils import (
+    getResourcePath, loadUi, msgInfo, msgWarning, msgCritical, confirmBox,
+    resolveArchivedPdf,
+)
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, setDocIdLinkCell, makeDeleteBtn, refreshDeleteBtns,
@@ -80,12 +83,12 @@ TABLE_META = {
     "crim": {
         "cols": CRIM_COLS, "view": "View_Criminal_Full",
         "base": "Document_Criminal", "proc_fk": "processor_id", "id_col": "送文編號",
-        "dialog": CriminalEditDialog,
+        "dialog": CriminalEditDialog, "archive": True,
     },
     "gen": {
         "cols": GEN_COLS, "view": "View_General_Full",
         "base": "Document_General", "proc_fk": "processor_id", "id_col": "送文編號",
-        "dialog": GeneralEditDialog,
+        "dialog": GeneralEditDialog, "archive": True,
     },
 }
 
@@ -465,10 +468,11 @@ class TabDBBrowse(BaseTab):
         self._updateFooter(key, shown, kw, hit_hidden)
 
     def _query(self, key):
-        """回傳 dict 列表，含 View 全欄 + _proc_active。"""
+        """回傳 dict 列表，含 View 全欄 + _proc_active（+ 歸檔表的 _arch_fname 原始檔名）。"""
         meta = TABLE_META[key]
+        arch_sel = ", b.is_electronic AS _arch_fname" if meta.get("archive") else ""
         sql = f"""
-            SELECT v.*, COALESCE(p.is_active, 1) AS _proc_active
+            SELECT v.*, COALESCE(p.is_active, 1) AS _proc_active{arch_sel}
             FROM {meta['view']} v
             LEFT JOIN {meta['base']} b ON v."{meta['id_col']}" = b.doc_id
             LEFT JOIN Ref_Personnel p ON b.{meta['proc_fk']} = p.staff_id
@@ -642,14 +646,43 @@ class TabDBBrowse(BaseTab):
                 )
                 continue
 
-            item = QTableWidgetItem(text)
-            # 長文字欄（stretch）：左對齊較好讀，並掛 tooltip 顯示截斷的全文
+            # 主旨欄：cellWidget =（有真實歸檔檔名時）前置電子檔圖示鈕 + 文字。
+            # 只有點圖示鈕才開檔（行為比照歸檔頁），整格其餘區域不觸發。
             if c.get("stretch"):
-                item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                afn = ""
+                if TABLE_META[key].get("archive"):
+                    afn = (r.get("_arch_fname") or "").strip()
+                    if not afn.lower().endswith(".pdf"):
+                        afn = ""
+                cont = QWidget()
+                hl = QHBoxLayout(cont)
+                hl.setContentsMargins(6, 0, 6, 0)
+                hl.setSpacing(4)
+                hl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                if afn:
+                    bo = QPushButton()
+                    bo.setIcon(QIcon(":/icon_pdf.svg"))
+                    bo.setIconSize(QSize(16, 16))
+                    bo.setFixedSize(22, 22)
+                    bo.setCursor(Qt.PointingHandCursor)
+                    bo.setToolTip("開啟 PDF 檢視")
+                    bo.setStyleSheet(
+                        "QPushButton{border:1px solid #c6c6c8;border-radius:6px;background:#fff;}"
+                        "QPushButton:hover{background:#eaf1f8;}")
+                    bo.clicked.connect(
+                        lambda _=False, k=key, f=afn: self._openArchivedPdf(k, f))
+                    hl.addWidget(bo)
+                lab = QLabel(text)
                 if text:
-                    item.setToolTip(text)
-            else:
-                item.setTextAlignment(Qt.AlignCenter)
+                    lab.setToolTip(text)
+                if inactive:
+                    lab.setStyleSheet("color: #aeaeb2;")
+                hl.addWidget(lab, 1)
+                table.setCellWidget(pos, c_idx, cont)
+                continue
+
+            item = QTableWidgetItem(text)
+            item.setTextAlignment(Qt.AlignCenter)
 
             if c.get("color"):
                 col = _statusColor(text)
@@ -768,6 +801,31 @@ class TabDBBrowse(BaseTab):
                 self._sigs[key] = self._tableSignature(key)
             except Exception:
                 pass
+
+    def _openArchivedPdf(self, key, fname):
+        """以 is_electronic 檔名定位並開啟實體 PDF（唯讀檢視）。"""
+        # 轉檔前存量資料可能只記占位字串（非真正檔名），無法開啟
+        if not fname.lower().endswith(".pdf"):
+            msgInfo("無電子檔",
+                    "本筆未記錄可開啟的電子檔名稱，可能為轉檔前的存量資料。")
+            return
+        path, status = resolveArchivedPdf(self.db_path, key, fname)
+        if status == "ok":
+            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+            return
+        if status == "noroot":
+            msgWarning("尚未設定歸檔資料夾",
+                       "請先於設定頁指定本年度歸檔資料夾後，再開啟電子檔。")
+        elif status == "noaccess":
+            msgCritical("無法存取歸檔資料夾",
+                        "歸檔資料夾目前無法存取，請確認：\n"
+                        "1. 網路磁碟機是否已透過 NET USE 連線\n"
+                        "2. 設定的歸檔資料夾路徑是否正確")
+        else:  # notfound
+            msgCritical("找不到電子檔",
+                        f"無法定位檔案：{fname}\n\n請確認：\n"
+                        "1. 網路磁碟機是否已連線\n"
+                        "2. 該 PDF 是否已被移動或刪除")
 
     # ── 框架掛鉤 ────────────────────────────────────────────
     def get_tables(self):

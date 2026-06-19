@@ -7,6 +7,7 @@ settings_dialogs.py — 設定頁彈窗
   - CaseTypeAddDialog     / CaseTypeEditDialog      案件類型 新增 / 修改
   - ChangePasswordDialog                            變更密碼
 """
+import os
 import re
 import sqlite3
 
@@ -14,6 +15,7 @@ from PySide6.QtCore    import Qt
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QPushButton, QCheckBox,
+    QComboBox, QFileDialog,
 )
 
 from lib.db_utils import BTN_CONFIRM, BTN_CANCEL, BTN_DANGER
@@ -658,4 +660,131 @@ class ResetDialog(QDialog):
             self.w_confirm.clear()
             self.w_confirm.setFocus()
             return
+        self.accept()
+
+
+# ══════════════════════════════════════════════════════════════════
+# 歸檔資料夾設定（瀏覽 Tab4 開啟電子檔用）
+#   存 App_Settings：archive_root(UNC，年度層) / archive_subdir_crim / archive_subdir_gen
+#   - 使用者用一般磁碟機代號選資料夾 → 自動轉 UNC（與代號脫鉤），可手動覆寫
+#   - 自動列出年度層下的子資料夾，供確認刑案/一般對應夾
+# ══════════════════════════════════════════════════════════════════
+class ArchiveRootDialog(QDialog):
+    def __init__(self, db_path, parent=None):
+        super().__init__(parent)
+        self.db_path = db_path
+        self.setWindowTitle("設定歸檔資料夾")
+        self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN + 80)
+        self.setStyleSheet(_DIALOG_SS)
+        self._build()
+
+    def _build(self):
+        from lib.db_utils import getSetting, ARCHIVE_ROOT_KEY
+
+        cur_root = getSetting(self.db_path, ARCHIVE_ROOT_KEY, "")
+        cur_crim = getSetting(self.db_path, "archive_subdir_crim", "")
+        cur_gen  = getSetting(self.db_path, "archive_subdir_gen", "")
+
+        v = QVBoxLayout(self)
+        v.setSpacing(12)
+        v.setContentsMargins(24, 20, 24, 16)
+
+        title = QLabel("指定本年度歸檔資料夾")
+        title.setStyleSheet("font-weight: 700; font-size: 14pt;")
+        v.addWidget(title)
+
+        hint = QLabel(
+            "請選擇存放本年度 PDF 的「年度資料夾」（其下含刑案／一般子夾）。\n"
+            "選擇後將自動轉為網路路徑（UNC），與磁碟機代號脫鉤。")
+        hint.setStyleSheet("color: #3a3a3c;")
+        v.addWidget(hint)
+
+        # 路徑列：可編輯 UNC + 選擇鈕
+        self.w_path = QLineEdit(cur_root)
+        self.w_path.setPlaceholderText("\\\\伺服器\\分享\\…\\年度")
+        btn_pick = QPushButton("選擇資料夾…")
+        btn_pick.setStyleSheet(BTN_CANCEL)
+        row = QHBoxLayout()
+        row.addWidget(self.w_path, 1)
+        row.addWidget(btn_pick)
+        v.addLayout(row)
+        btn_pick.clicked.connect(self._pick)
+
+        # 子夾對應
+        v.addWidget(QLabel("刑案子資料夾"))
+        self.cb_crim = QComboBox()
+        self.cb_crim.setEditable(True)
+        v.addWidget(self.cb_crim)
+        v.addWidget(QLabel("一般子資料夾"))
+        self.cb_gen = QComboBox()
+        self.cb_gen.setEditable(True)
+        v.addWidget(self.cb_gen)
+
+        if cur_crim:
+            self.cb_crim.addItem(cur_crim)
+            self.cb_crim.setCurrentText(cur_crim)
+        if cur_gen:
+            self.cb_gen.addItem(cur_gen)
+            self.cb_gen.setCurrentText(cur_gen)
+
+        note = QLabel(
+            "若分享當下未掛載而無法列出子夾，可直接於上方輸入框輸入 UNC、"
+            "並手動鍵入子夾名稱。")
+        note.setStyleSheet("color: #8e8e93;")
+        note.setWordWrap(True)
+        v.addWidget(note)
+
+        # 以目前路徑（若可存取）預先列出子夾
+        self._populateSubdirs(cur_root)
+
+        _, btn_ok = _add_buttons(self, v, confirm_text="儲存")
+        btn_ok.clicked.connect(self._save)
+
+    def _pick(self):
+        from lib.db_utils import toUncPath
+        start = self.w_path.text().strip()
+        folder = QFileDialog.getExistingDirectory(
+            self, "選擇本年度歸檔資料夾",
+            start if os.path.isdir(start) else "")
+        if not folder:
+            return
+        unc = toUncPath(folder)
+        self.w_path.setText(unc if unc else folder.replace("/", "\\"))
+        # 轉不出 UNC（非網路磁碟）→ 橘框提示請確認/改貼 UNC
+        self.w_path.setStyleSheet("" if unc else "border: 1px solid #e67e22;")
+        # 以實際可存取的本機路徑列子夾（剛選的代號路徑保證可達）
+        self._populateSubdirs(folder)
+
+    def _populateSubdirs(self, accessible_path):
+        try:
+            if accessible_path and os.path.isdir(accessible_path):
+                subs = sorted(
+                    d for d in os.listdir(accessible_path)
+                    if os.path.isdir(os.path.join(accessible_path, d)))
+            else:
+                subs = []
+        except Exception:
+            subs = []
+        for cb, guess in ((self.cb_crim, "刑"), (self.cb_gen, "一般")):
+            cur = cb.currentText().strip()
+            cb.blockSignals(True)
+            cb.clear()
+            for d in subs:
+                cb.addItem(d)
+            if cur and cur not in subs:
+                cb.insertItem(0, cur)
+            pick = cur or next((d for d in subs if guess in d), "")
+            cb.setCurrentText(pick)
+            cb.blockSignals(False)
+
+    def _save(self):
+        from lib.db_utils import setSetting, ARCHIVE_ROOT_KEY, clearPdfIndexCache
+        root = self.w_path.text().strip().replace("/", "\\").rstrip("\\")
+        if not root:
+            self.w_path.setStyleSheet("border: 1px solid #c0392b;")
+            return
+        setSetting(self.db_path, ARCHIVE_ROOT_KEY, root)
+        setSetting(self.db_path, "archive_subdir_crim", self.cb_crim.currentText().strip())
+        setSetting(self.db_path, "archive_subdir_gen",  self.cb_gen.currentText().strip())
+        clearPdfIndexCache()
         self.accept()

@@ -22,7 +22,7 @@ from .settings_dialogs import (
     PersonnelAddDialog, PersonnelEditDialog,
     DeptAddDialog, DeptEditDialog,
     CaseTypeAddDialog, CaseTypeEditDialog,
-    ChangePasswordDialog, ResetDialog,
+    ChangePasswordDialog, ResetDialog, ArchiveRootDialog,
 )
 
 __all__ = [
@@ -46,5 +46,5 @@ __all__ = [
     "PersonnelAddDialog", "PersonnelEditDialog",
     "DeptAddDialog", "DeptEditDialog",
     "CaseTypeAddDialog", "CaseTypeEditDialog",
-    "ChangePasswordDialog", "ResetDialog",
+    "ChangePasswordDialog", "ResetDialog", "ArchiveRootDialog",
 ]
