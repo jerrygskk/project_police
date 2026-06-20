@@ -1,9 +1,8 @@
+﻿HANDOVER.md
+fix_views.py
+dbfile_backup_*.db
+__pycache__/
+*.pyc
 build/
 dist/
 *.spec
-__pycache__/
-*.pyc
-*.pyo
-icon.ico
-*.bak
-error.log
