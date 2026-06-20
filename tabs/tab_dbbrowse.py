@@ -530,24 +530,6 @@ class TabDBBrowse(BaseTab):
                         and not c.get("delete") and not c.get("bool_col")]
         return not any(r.get(c["view_col"]) for c in content_cols)
 
-    def _rowMatchesSearch(self, key, r):
-        """該筆是否符合目前搜尋條件。"""
-        u = self._ui[key]
-        meta = TABLE_META[key]
-        kw = (u["kw"].text() or "").strip() if u["kw"] else ""
-        if not kw:
-            return True
-        scope_col = u["scope"].currentData() if u["scope"] else None
-        if scope_col:
-            search_cols = [scope_col]
-        else:
-            search_cols = [c["view_col"] for c in meta["cols"] if c.get("search")]
-        for vc in search_cols:
-            val = r.get(vc)
-            if val is not None and kw in str(val):
-                return True
-        return False
-
     def _diffUpdate(self, key):
         """差異更新：只處理上次載入後變動（last_modified 更新）的列，
         其餘列不動。新增→加列、修改→更新列、清空刪除/不符搜尋→移除列。"""
