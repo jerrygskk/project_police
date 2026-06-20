@@ -104,3 +104,7 @@
 | `QDateEdit` 月曆打開停在最小年（1752）而非今天 | 空白哨兵 = minimumDate，QDateEdit 開月曆時導到 1752 | 事件過濾器裝在 `dateedit.calendarWidget()`，空白狀態時用 `QTimer.singleShot(0,…) setCurrentPage(今年,今月)`；封裝為 `setupDateEditCalendarOnly` |
 | 歸檔候選 PK 為 1xx 時日期解析空白 | `_parseDate` 舊正則把 PK「103」當民國年 | 日期 token 改 `(?<!\d)(1\d{2})(\d{2})(\d{2})(?!\d)` 完整 7 碼前後不接數字 |
 | 歸檔預覽主旨退回 DB 主旨（檔名無 `-`） | `_parseSubject` 只用 `-` 分段，無 `-` 整串成單段被剝空 | 補「無 `-`」分支：去開頭日期＋從尾端剝人名，中間即主旨 |
+| 多區塊合併進單一 QGridLayout 後，隱藏列出現幽靈間距、兩模式下方表格高度不一 | `verticalSpacing` 對隱藏（高 0）列仍保留間距；form 區高度隨模式列數變動，Expanding 表格吃剩餘空間 | `verticalSpacing=0`，列距全用 `setRowMinimumHeight` 控制；兩模式 form 總高設成**相同固定值**（如刑案 4×45、一般 3×60＝180），下方表格高度才一致（見 `tab_report._switchFormType`） |
+| show/hide 切換欄位時整排左右跳動／同一欄位兩模式寬度不同 | QGridLayout 欄寬只按「當前可見」widget 計算；col0 最寬標籤或右欄寬度錨點若是某模式專屬，另一模式該欄縮水 | 用 `setColumnMinimumWidth` 鎖死結構性欄寬；col0 取最寬標籤 `sizeHint().width()`（自適應字體/縮放，勿寫死） |
+| 切 tab 時共用列上的按鈕上下跳動 | 共用列（含按鈕）在兩模式 row min height 不同，按鈕垂直置中跟著變 | 共用列兩模式設**相同** row min height |
+| `QDateEdit`/`QComboBox` 設灰字結果月曆／下拉清單文字也變灰 | 裸 `color:` stylesheet 會繼承到子元件（月曆 QCalendarWidget、下拉 QAbstractItemView） | 用型別選擇器 `QDateEdit { color: ... }` / `QComboBox { color: ... }`，只染欄位本體 |

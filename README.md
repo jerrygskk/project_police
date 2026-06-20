@@ -94,7 +94,7 @@ main.py
 | 公文陳報 Tab2（刑案／一般） | 全可改 | 開放輸入錯誤修正、開放刪除 |
 | 簽收單列印 Tab3 | 可使用 | 可使用 |
 | 資料庫瀏覽 Tab4 | 全可改 | 不開放編輯 |
-| 檔案歸檔 Tab5 | 全可改 | 無法預覽 |
+| 檔案歸檔 Tab5 | 可使用（需管理者登入） | 無法使用 |
 | 設定 Tab6 | 可使用（需管理者登入） | 無法使用 |
 
 > 一般使用者限制由 `TaskEditDialog(restricted=…)` 控制（鎖定欄位顯示 DB 原值＋灰 `:disabled` 樣式，儲存只動承辦人）；連結可點與否由各 tab `setDocIdLinkCell(clickable=…)` 控制，身分變更時 `_onRolePerm` 重刷（編號連結＋刪除鈕）。
@@ -469,10 +469,3 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 | v1.0.2 | 設定頁拖拉排序（移除四顆排序鈕）；人員別名欄（`Ref_Personnel.alias`，歸檔比對一併納入）；歸檔根目錄未設定三層警示；瀏覽 Tab4 搜尋改為全量載入＋`setRowHidden`，大幅提升搜尋速度。 |
 | v1.0.1 | 人員別名初版（alias 欄）；設定頁人員清單加別名欄；歸檔比對從 DB 讀取別名。 |
 | v1.0.0 | 正式版。瀏覽頁（Tab4）有歸檔檔名者顯示圖示鈕可直接開 PDF；歸檔資料夾設定存 UNC 路徑（Tab6）；歸檔頁（Tab5）自動帶入預設資料夾。 |
-| v0.9.0-beta.12 | admin 解除已發文編號鎖定；內部重構（抽 `lib/archive_text.py`、統一 `AuthManager.is_admin()`、`db_utils.getConn`）。 |
-| v0.9.0-beta.11 | 分頁權限控管（Tab0 限改承辦人、Tab4 無修改、Tab5 需登入）；修 dbbrowse 編號欄 item/cellWidget 疊現；刑案/一般 popup 新增歸檔狀態區塊（僅 admin）。 |
-| v0.9.0-beta.10 | 歸檔頁新增「只歸紙本」鈕；修斷詞比對日期黏主旨漏字（310 筆）；交辦單新增逾期未回篩選。 |
-| v0.9.0-beta.9 | 完成瀏覽（Tab4）與歸檔（Tab5）頁；統一 popup 左確認右取消（ActionRole）；code review 清理 import。 |
-| v0.9.0-beta.8 | 設定 Tab 改用 Layout7.ui 靜態骨架；新增跨年度重置（備份＋兩段式重編 ID＋自動重啟）；版本號集中至 `lib/version.py`。 |
-| v0.9.0-beta.7 | 部門/案類 is_active 軟刪除、sort_order 四向排序鈕；列印改 QPrintPreviewDialog；檔案結構重組（layouts/ res/ lib/）。 |
-| v0.9.0-beta.6 | 設定 Tab 人員/部門/案類維護＋變更密碼；AuthManager；參照表連動；黏底捲動；狀態色。 |

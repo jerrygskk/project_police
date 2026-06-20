@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt, QDate, QTimer
 from PySide6.QtWidgets import (
     QTableWidgetItem, QRadioButton, QVBoxLayout, QHBoxLayout,
-    QStackedWidget, QSizePolicy,
+    QGridLayout, QTabBar, QSizePolicy, QWidget,
     QDateEdit, QComboBox, QLineEdit, QLabel,
     QTableWidget, QPushButton
 )
@@ -66,23 +66,50 @@ class TabReport(BaseTab):
         self.rpt_date   = inner.findChild(QDateEdit, 'rpt_date')
         self.rpt_sender = inner.findChild(QComboBox, 'rpt_sender')
 
-        # ── Radio 按鈕 ────────────────────────────────────
-        self.radio_criminal = inner.findChild(QRadioButton, 'radio_criminal')
-        self.radio_general  = inner.findChild(QRadioButton, 'radio_general')
-        for rb in [self.radio_criminal, self.radio_general]:
-            if rb:
-                rb.setStyleSheet(RADIO_STYLE)
+        # ── mainGrid 參照（供 _switchFormType 調整列高） ────
+        self._mainGrid = inner.findChild(QGridLayout, 'mainGrid')
 
-        # ── QStackedWidget ────────────────────────────────
-        self.form_stack = inner.findChild(QStackedWidget, 'formStack')
+        # ── 獨立 QTabBar：插到 layout 最頂端 ──────────────
+        _TAB_SS = """
+            QTabBar {
+                border: none;
+                background: transparent;
+            }
+            QTabBar::tab {
+                background-color: transparent;
+                color: #636366;
+                border: none;
+                border-bottom: 2px solid transparent;
+                padding: 8px 18px;
+                margin-right: 4px;
+                font-weight: 500;
+            }
+            QTabBar::tab:selected {
+                color: #8fa8c8;
+                border-bottom: 2px solid #8fa8c8;
+                font-weight: 600;
+            }
+            QTabBar::tab:hover:!selected {
+                color: #3a3a3c;
+            }
+        """
+        self.type_tabbar = QTabBar()
+        self.type_tabbar.addTab("❐ 刑案陳報")
+        self.type_tabbar.addTab("❏ 一般陳報")
+        self.type_tabbar.setExpanding(False)
+        self.type_tabbar.setDocumentMode(True)
+        self.type_tabbar.setStyleSheet(_TAB_SS)
+        inner.layout().insertWidget(0, self.type_tabbar)
+        self.type_tabbar.currentChanged.connect(self._switchFormType)
 
-        # ── 刑案欄位（page 0） ────────────────────────────
+        # ── 刑案欄位（rows 1-3） ──────────────────────────
         self.radio_status_a = inner.findChild(QRadioButton, 'radio_status_a')  # CS01 現行犯
         self.radio_status_b = inner.findChild(QRadioButton, 'radio_status_b')  # CS02 到案
         self.radio_status_c = inner.findChild(QRadioButton, 'radio_status_c')  # CS03 未到案
         for rb in [self.radio_status_a, self.radio_status_b, self.radio_status_c]:
             if rb:
                 rb.setStyleSheet(RADIO_STYLE)
+        self.crim_status_group = inner.findChild(QWidget, 'crim_status_group')
         self.crim_casetype  = inner.findChild(QComboBox, 'crim_casetype')
         self.crim_processor = inner.findChild(QComboBox, 'crim_processor')
         self.crim_receiver  = inner.findChild(QComboBox, 'crim_receiver')
@@ -90,16 +117,57 @@ class TabReport(BaseTab):
         self.crim_occdate   = inner.findChild(QDateEdit, 'crim_occdate')
         self.crim_reporter  = inner.findChild(QLineEdit, 'crim_reporter')
 
-        # ── 一般欄位（page 1） ────────────────────────────
+        # ── 一般欄位（rows 4-5） ──────────────────────────
         self.radio_gen_cat_a = inner.findChild(QRadioButton, 'radio_gen_cat_a')  # GC01 業務陳報
         self.radio_gen_cat_b = inner.findChild(QRadioButton, 'radio_gen_cat_b')  # GC03 其他
         self.radio_gen_cat_c = inner.findChild(QRadioButton, 'radio_gen_cat_c')  # GC02 司法相驗
         for rb in [self.radio_gen_cat_a, self.radio_gen_cat_b, self.radio_gen_cat_c]:
             if rb:
                 rb.setStyleSheet(RADIO_STYLE)
+        self.gen_cat_group  = inner.findChild(QWidget, 'gen_cat_group')
         self.gen_dept       = inner.findChild(QComboBox, 'gen_dept')
         self.gen_processor  = inner.findChild(QComboBox, 'gen_processor')
         self.gen_subject    = inner.findChild(QLineEdit, 'gen_subject')
+
+        # ── 統一輸入/下拉欄位高度（含發文/確認鈕） ────────
+        FIELD_H = 38
+        for w in [self.rpt_date, self.rpt_sender,
+                  self.crim_status_group, self.crim_casetype, self.crim_occdate,
+                  self.crim_subject, self.crim_receiver, self.crim_processor,
+                  self.crim_reporter,
+                  self.gen_cat_group, self.gen_dept, self.gen_processor,
+                  self.gen_subject]:
+            if w:
+                w.setFixedHeight(FIELD_H)
+
+        # ── 固定結構性欄寬，切換刑案/一般時欄位位置與寬度一致 ──
+        # col0 以最寬標籤「查獲/受理」為基準（一般模式此標籤隱藏，否則 col0 會縮）
+        # col4/col5 為受理人員(180)/同承辦鈕(60)寬，一般模式無此錨點，需強制
+        if self._mainGrid:
+            occ_lbl = inner.findChild(QLabel, 'lbl_crim_occdate')
+            if occ_lbl:
+                self._mainGrid.setColumnMinimumWidth(0, occ_lbl.sizeHint().width())
+            self._mainGrid.setColumnMinimumWidth(4, 180)
+            self._mainGrid.setColumnMinimumWidth(5, 60)
+
+        # ── show/hide widget 列表（供 _switchFormType） ───
+        self._crim_row_widgets = [
+            inner.findChild(QLabel, 'lbl_crim_status'), self.crim_status_group,
+            inner.findChild(QLabel, 'lbl_crim_subject'), self.crim_subject,
+            inner.findChild(QLabel, 'lbl_crim_casetype'), self.crim_casetype,
+            inner.findChild(QLabel, 'lbl_crim_receiver'), self.crim_receiver,
+            inner.findChild(QPushButton, 'btn_copy_to_receiver'),
+            inner.findChild(QLabel, 'lbl_crim_occdate'), self.crim_occdate,
+            inner.findChild(QLabel, 'lbl_crim_processor'), self.crim_processor,
+            inner.findChild(QPushButton, 'btn_copy_to_processor'),
+            inner.findChild(QLabel, 'lbl_crim_reporter'), self.crim_reporter,
+        ]
+        self._gen_row_widgets = [
+            inner.findChild(QLabel, 'lbl_gen_cat'), self.gen_cat_group,
+            inner.findChild(QLabel, 'lbl_gen_dept'), self.gen_dept,
+            inner.findChild(QLabel, 'lbl_gen_processor'), self.gen_processor,
+            inner.findChild(QLabel, 'lbl_gen_subject'), self.gen_subject,
+        ]
 
         # ── 預覽表格 ──────────────────────────────────────
         self.crim_table = inner.findChild(QTableWidget, 'crim_tableWidget')
@@ -138,10 +206,11 @@ class TabReport(BaseTab):
             setupDateEditCalendarOnly(self.crim_occdate)
             self.crim_occdate.dateChanged.connect(
                 lambda d: self.crim_occdate.setStyleSheet(
-                    "color: #a0a0a0;" if d == self.crim_occdate.minimumDate() else "color: #1c1c1e;"
+                    "QDateEdit { color: #a0a0a0; }" if d == self.crim_occdate.minimumDate()
+                    else "QDateEdit { color: #1c1c1e; }"
                 )
             )
-            self.crim_occdate.setStyleSheet("color: #a0a0a0;")
+            self.crim_occdate.setStyleSheet("QDateEdit { color: #a0a0a0; }")
 
         # ── 載入參照表 ────────────────────────────────────
         self._personnel, self._depts = self._loadRef()
@@ -155,10 +224,11 @@ class TabReport(BaseTab):
         self.crim_casetype.setItemText(0, "輸入或下拉選擇")
         self.crim_casetype.currentIndexChanged.connect(
             lambda idx: self.crim_casetype.setStyleSheet(
-                "color: #a0a0a0;" if idx == 0 else "color: #1c1c1e;"
+                "QComboBox { color: #a0a0a0; }" if idx == 0
+                else "QComboBox { color: #1c1c1e; }"
             )
         )
-        self.crim_casetype.setStyleSheet("color: #a0a0a0;")
+        self.crim_casetype.setStyleSheet("QComboBox { color: #a0a0a0; }")
         setupFilterCombo(self.crim_processor, self._personnel)
         setupFilterCombo(self.crim_receiver,  self._personnel)
         setupFilterCombo(self.gen_dept,       self._depts)
@@ -174,23 +244,15 @@ class TabReport(BaseTab):
                               stretch_col=5, fixed_overrides={"陳報主旨": 184})
             attachStickyScroll(self.gen_table)
 
-        # ── 預設顯示刑案（page 0） ────────────────────────
-        if self.form_stack:
-            self.form_stack.setCurrentIndex(0)
-
         # ── 信號綁定 ──────────────────────────────────────
-        if self.radio_criminal:
-            self.radio_criminal.toggled.connect(
-                lambda checked: self.form_stack.setCurrentIndex(0 if checked else 1)
-            )
-
         btn_clear  = inner.findChild(QPushButton, 'btn_rpt_clear')
         btn_submit = inner.findChild(QPushButton, 'btn_rpt_submit')
-        if btn_clear:  btn_clear.clicked.connect(self._formClear)
-        if btn_submit: btn_submit.clicked.connect(self._submit)
+        if btn_clear:  btn_clear.setFixedHeight(38); btn_clear.clicked.connect(self._formClear)
+        if btn_submit: btn_submit.setFixedHeight(38); btn_submit.clicked.connect(self._submit)
         if self.crim_subject: self.crim_subject.setFocus()
 
         # ── 互填按鈕 ──────────────────────────────────────
+
         btn_copy_to_receiver  = inner.findChild(QPushButton, 'btn_copy_to_receiver')
         btn_copy_to_processor = inner.findChild(QPushButton, 'btn_copy_to_processor')
         for btn in [btn_copy_to_receiver, btn_copy_to_processor]:
@@ -200,6 +262,27 @@ class TabReport(BaseTab):
             btn_copy_to_receiver.clicked.connect(self._copyProcessorToReceiver)
         if btn_copy_to_processor:
             btn_copy_to_processor.clicked.connect(self._copyReceiverToProcessor)
+
+        # ── 初始狀態：顯示刑案、隱藏一般 ─────────────────
+        self._switchFormType(0)
+
+    # ── 陳報類型切換 ──────────────────────────────────────
+    def _switchFormType(self, idx):
+        is_crim = (idx == 0)
+        for w in self._crim_row_widgets:
+            if w:
+                w.setVisible(is_crim)
+        for w in self._gen_row_widgets:
+            if w:
+                w.setVisible(not is_crim)
+        # verticalSpacing=0，列距全由 row min height 控制；兩模式總高固定 180，
+        # 下方 Expanding 預覽表在刑案/一般高度一致。
+        # row0（含清除/確認鈕）兩模式固定 48，避免切換時按鈕跳動。
+        if self._mainGrid:
+            heights = ({0: 48, 1: 44, 2: 44, 3: 44, 4: 0, 5: 0} if is_crim
+                       else {0: 48, 1: 0, 2: 0, 3: 0, 4: 66, 5: 66})
+            for row, h in heights.items():
+                self._mainGrid.setRowMinimumHeight(row, h)
 
     # ── BaseTab 介面 ──────────────────────────────────────
     def get_tables(self):
@@ -342,7 +425,7 @@ class TabReport(BaseTab):
     def _submit(self):
         report_date = self.rpt_date.date().toString("yyyy-MM-dd") if self.rpt_date else ""
         sender_id   = self.rpt_sender.currentData() if self.rpt_sender else None
-        is_criminal = self.radio_criminal.isChecked() if self.radio_criminal else True
+        is_criminal = (self.type_tabbar.currentIndex() == 0) if self.type_tabbar else True
 
         if is_criminal:
             self._submitCriminal(report_date, sender_id)
