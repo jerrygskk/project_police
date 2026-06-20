@@ -13,8 +13,8 @@ import shutil
 import subprocess
 from datetime import datetime
 
-from PySide6.QtCore    import Qt, QSize, QProcess
-from PySide6.QtGui     import QColor, QIcon
+from PySide6.QtCore    import Qt, QProcess, QObject, QEvent
+from PySide6.QtGui     import QColor
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QStackedWidget,
     QLabel, QLineEdit, QPushButton,
@@ -28,7 +28,7 @@ from lib.db_utils import (
     msgInfo, msgWarning, msgCritical, confirmBox,
     BTN_CONFIRM, BTN_CANCEL,
     loadUi, getResourcePath,
-    performYearEndReset,
+    performYearEndReset, getSetting, ARCHIVE_ROOT_KEY,
 )
 from ui_utils import (
     PersonnelAddDialog, PersonnelEditDialog,
@@ -62,6 +62,25 @@ _NAV_DANGER = (
     "QPushButton:hover { background-color: #f8e4e1; }"
 )
 
+class _RowDragFilter(QObject):
+    """攔截 QTableWidget viewport 的 Drop 事件，實作整列拖拉（Qt InternalMove 只移格，不移列）。"""
+    def __init__(self, tbl, callback):
+        super().__init__(tbl)
+        self._tbl = tbl
+        self._cb  = callback  # callback(src_row, dst_row)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Drop:
+            src = self._tbl.currentRow()
+            dst = self._tbl.rowAt(int(event.position().y()))
+            if dst < 0:
+                dst = self._tbl.rowCount() - 1
+            if src >= 0 and src != dst:
+                self._cb(src, dst)
+            return True   # 阻止 Qt 的預設錯位行為
+        return False
+
+
 # ── 表格樣式 ────────────────────────────────────────────────────
 _TABLE_SS = """
     QTableWidget {
@@ -88,20 +107,6 @@ _TABLE_SS = """
     QTableWidget::item:selected {
         background-color: #ccdaeb;
     }
-"""
-
-# 排序小按鈕樣式（表格內四顆）
-_SORT_BTN_SS = """
-    QPushButton {
-        font-size: 12pt;
-        padding: 0px;
-        border: 1px solid #c6c6c8;
-        border-radius: 4px;
-        background-color: #ffffff;
-        color: #1c1c1e;
-    }
-    QPushButton:hover   { background-color: #e8e8ed; }
-    QPushButton:pressed { background-color: #d1d1d6; }
 """
 
 # 停用列灰字
@@ -226,6 +231,13 @@ class TabSettings(BaseTab):
                           self.btn_add_casetype, self.btn_edit_casetype,
                           self.btn_save_casetype, self._addCaseType, self._editCaseType)
 
+        # 提示字（用 inner 查找，避免 btn.parent() 在 QUiLoader 環境觸發 GC 刪 C++ widget）
+        for _key in ("personnel", "dept", "casetype"):
+            _lbl = inner.findChild(QLabel, f"lbl_hint_{_key}")
+            if _lbl:
+                _lbl.setText("可拖拉列以調整排序，完成後按「儲存排序」")
+                _lbl.setStyleSheet("color: #8e8e93; font-size: 11pt;")
+
         self._outer_stack.setCurrentIndex(0)
 
         # 監聽身份變化：登出時自動回到密碼驗證畫面
@@ -245,7 +257,8 @@ class TabSettings(BaseTab):
         )
         self.w_password.setStyleSheet(
             "QLineEdit { background:#f2f2f7; border:1px solid #c6c6c8; "
-            "border-radius:8px; padding:8px 12px; color:#1c1c1e; }"
+            "border-radius:8px; padding:8px 12px; color:#1c1c1e; "
+            "qproperty-alignment: AlignCenter; }"
             "QLineEdit:focus { border:2px solid #8fa8c8; }"
         )
         self.lbl_login_err.setStyleSheet(
@@ -268,14 +281,23 @@ class TabSettings(BaseTab):
         tbl.verticalHeader().setDefaultSectionSize(36)
         tbl.setStyleSheet(_TABLE_SS)
         hdr = tbl.horizontalHeader()
-        name_c, alias_c, status_c, sort_c = self._refCols(key)
-        for col, w in {0: 80, status_c: 80, sort_c: 140}.items():
-            hdr.setSectionResizeMode(col, QHeaderView.Fixed)
-            tbl.setColumnWidth(col, w)
+        name_c, alias_c, status_c = self._refCols(key)
+        hdr.setSectionResizeMode(0, QHeaderView.Fixed)
+        tbl.setColumnWidth(0, 80)
+        hdr.setSectionResizeMode(status_c, QHeaderView.Fixed)
+        tbl.setColumnWidth(status_c, 80)
         hdr.setSectionResizeMode(name_c, QHeaderView.Stretch)
         if alias_c is not None:
             hdr.setSectionResizeMode(alias_c, QHeaderView.Stretch)
         tbl.cellDoubleClicked.connect(lambda row, col, cb=edit_cb: cb(row))
+
+        # 拖拉排序（event filter 攔截 Drop，阻止 Qt 的逐格移動行為，改成整列記憶體操作）
+        from PySide6.QtWidgets import QAbstractItemView
+        tbl.setDragDropMode(QAbstractItemView.InternalMove)
+        tbl.setDefaultDropAction(Qt.MoveAction)
+        tbl.setAutoScrollMargin(90)
+        drag_filter = _RowDragFilter(tbl, lambda s, d, k=key: self._onDragDrop(k, s, d))
+        tbl.viewport().installEventFilter(drag_filter)
 
         # 動作鈕樣式與綁定
         btn_add.setStyleSheet(BTN_CONFIRM)
@@ -287,32 +309,18 @@ class TabSettings(BaseTab):
         btn_save.clicked.connect(lambda _=False, k=key: self._saveSort(k))
 
         self._sort_state[key] = {
-            "rows": [], "dirty": False, "save_btn": btn_save, "table": tbl}
+            "rows": [], "dirty": False, "save_btn": btn_save, "table": tbl,
+            "drag_filter": drag_filter}  # drag_filter 存入防 GC
 
-    # ── 排序欄四顆小按鈕 ────────────────────────────────────────
-    def _make_sort_cell(self, page_key, get_row_fn):
-        """產生一格含四顆排序小鈕的 widget；get_row_fn() 動態回傳當前列號"""
-        cell = QWidget()
-        h = QHBoxLayout(cell)
-        h.setContentsMargins(2, 0, 2, 0)
-        h.setSpacing(2)
-        specs = [(":/sort_top.svg",    "置頂", "top"),
-                 (":/sort_up.svg",     "上移", "up"),
-                 (":/sort_down.svg",   "下移", "down"),
-                 (":/sort_bottom.svg", "置底", "bottom")]
-        for icon_path, tip, act in specs:
-            b = QPushButton()
-            b.setIcon(QIcon(icon_path))
-            b.setIconSize(QSize(14, 14))
-            b.setToolTip(tip)
-            b.setFixedSize(26, 26)
-            b.setStyleSheet(_SORT_BTN_SS)
-            b.clicked.connect(
-                lambda _=False, a=act, k=page_key, f=get_row_fn: self._moveRow(k, f(), a)
-            )
-            h.addWidget(b)
-        h.addStretch()
-        return cell
+    def _onDragDrop(self, key, src_row, dst_row):
+        """整列移動：記憶體 rows 重排，重繪表格，選中移動後的列"""
+        st   = self._sort_state[key]
+        rows = st["rows"]
+        rows.insert(dst_row, rows.pop(src_row))
+        st["dirty"] = True
+        st["save_btn"].setEnabled(True)
+        self._renderSortTable(key)
+        st["table"].selectRow(dst_row)
 
     def _item(self, text, color=None):
         it = QTableWidgetItem(str(text) if text is not None else "")
@@ -344,6 +352,19 @@ class TabSettings(BaseTab):
             return
         if not hasattr(self, "_outer_stack") or self._outer_stack.currentIndex() == 0:
             return  # 還在密碼驗證頁
+
+        # 歸檔根目錄未設定時，每次登入後進入設定頁彈出一次警示
+        if not getattr(self, "_arch_warn_shown", False):
+            if not getSetting(self.db_path, ARCHIVE_ROOT_KEY, "").strip():
+                self._arch_warn_shown = True
+                if confirmBox(
+                    "歸檔資料夾未設定",
+                    "歸檔根目錄尚未設定。\n是否現在前往「歸檔資料夾」更新？",
+                    confirm_text="前往設定", cancel_text="稍後",
+                    default_confirm=True, parent=self.tab_widget
+                ):
+                    self._onSetArchiveRoot()
+
         idx = self._inner_stack.currentIndex()
         loaders = [self._loadPersonnel, self._loadDept, self._loadCaseType]
         if 0 <= idx < len(loaders):
@@ -504,11 +525,12 @@ class TabSettings(BaseTab):
     }
 
     def _refCols(self, key):
-        """回傳該頁的欄索引 (name, alias, status, sort)；alias 為 None 表無別名欄。
-        目前僅人員頁有別名欄（編號0 / 姓名1 / 別名2 / 狀態3 / 排序4）。"""
+        """回傳該頁的欄索引 (name, alias, status)；alias 為 None 表無別名欄。
+        人員頁：編號0 / 姓名1 / 別名2 / 狀態3
+        部門/案類：編號0 / 名稱1 / 狀態2"""
         if key == "personnel":
-            return 1, 2, 3, 4
-        return 1, None, 2, 3
+            return 1, 2, 3
+        return 1, None, 2
 
     def _loadRefGeneric(self, key):
         """從 DB 依 sort_order 撈進記憶體，清掉暫存 dirty，重繪表格"""
@@ -542,9 +564,9 @@ class TabSettings(BaseTab):
         self._renderSortTable(key)
 
     def _renderSortTable(self, key):
-        """依記憶體 rows 重繪整張表（含排序欄四鈕、停用灰字）"""
+        """依記憶體 rows 重繪整張表（含停用灰字）"""
         _, _, _, word_on, word_off = self._REF_CFG[key]
-        name_c, alias_c, status_c, sort_c = self._refCols(key)
+        name_c, alias_c, status_c = self._refCols(key)
         st  = self._sort_state[key]
         tbl = st["table"]
         tbl.setRowCount(0)
@@ -559,38 +581,6 @@ class TabSettings(BaseTab):
                 alias = (row[3] if len(row) > 3 and row[3] else "")
                 tbl.setItem(r, alias_c, self._item(alias, color))
             tbl.setItem(r, status_c, self._item(status, color))
-            # 排序欄：用當前列的 id 動態定位列號（重繪後列號會變）
-            cell = self._make_sort_cell(key, lambda rid=rid, k=key: self._rowOfId(k, rid))
-            tbl.setCellWidget(r, sort_c, cell)
-
-    def _rowOfId(self, key, rid):
-        for i, row in enumerate(self._sort_state[key]["rows"]):
-            if row[0] == rid:
-                return i
-        return -1
-
-    def _moveRow(self, key, row, action):
-        """記憶體層移動列，標 dirty，亮儲存鈕，重繪"""
-        st   = self._sort_state[key]
-        rows = st["rows"]
-        n    = len(rows)
-        if row < 0 or n < 2:
-            return
-        if action == "up":
-            if row == 0: return
-            rows[row-1], rows[row] = rows[row], rows[row-1]
-        elif action == "down":
-            if row == n-1: return
-            rows[row+1], rows[row] = rows[row], rows[row+1]
-        elif action == "top":
-            if row == 0: return
-            rows.insert(0, rows.pop(row))
-        elif action == "bottom":
-            if row == n-1: return
-            rows.append(rows.pop(row))
-        st["dirty"] = True
-        st["save_btn"].setEnabled(True)
-        self._renderSortTable(key)
 
     def _saveSort(self, key, silent=False):
         """把記憶體順序寫回 DB sort_order（連續整數），清 dirty，設 _ref_dirty。

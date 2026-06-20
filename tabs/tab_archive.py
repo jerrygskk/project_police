@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from lib.base_tab import BaseTab
-from lib.db_utils import getResourcePath, loadUi, msgCritical, msgInfo, confirmBox, archiveDefaultDir
+from lib.db_utils import getResourcePath, loadUi, msgCritical, msgInfo, confirmBox, archiveDefaultDir, getSetting, ARCHIVE_ROOT_KEY
 from lib.auth_manager import AuthManager
 from lib.archive_text import _trimName, _tokenize, _parseDate, _sanitize, _pkOf
 from ui_utils import (
@@ -126,6 +126,19 @@ class TabArchive(BaseTab):
         self._pdfs = {"crim": [], "gen": []}       # 各自掃到的 PDF 完整路徑
         self._selected = {"crim": None, "gen": None}  # 鎖定的 doc_id
 
+        # 歸檔根目錄警示 label（放在 pick 按鈕右側，archive_root 空時顯示）
+        _ARCH_WARN_SS  = "color:#e74c3c; font-size:11pt;"
+        _ARCH_WARN_TXT = "⚠ 歸檔資料夾未設定，請至設定頁更新"
+        self._arch_warn = {}
+        for key in ("crim", "gen"):
+            lbl = QLabel(_ARCH_WARN_TXT)
+            lbl.setStyleSheet(_ARCH_WARN_SS)
+            lbl.setVisible(False)
+            fl = inner.findChild(QHBoxLayout, f"{key}_folder")
+            if fl:
+                fl.addWidget(lbl)
+            self._arch_warn[key] = lbl
+
         self._ui = {}
         for key in ("crim", "gen"):
             self._ui[key] = {
@@ -193,9 +206,17 @@ class TabArchive(BaseTab):
         """本頁被切換顯示時，自動帶入歸檔根資料夾（尚未選擇時）。"""
         if idx != getattr(self, "_tab_index", -1):
             return
+        self._updateArchWarn()
         if AuthManager.instance().is_admin():
             for key in ("crim", "gen"):
                 self._autoloadDefault(key)
+
+    def _updateArchWarn(self):
+        has_root = bool(getSetting(self.db_path, ARCHIVE_ROOT_KEY, "").strip())
+        for key in ("crim", "gen"):
+            lbl = self._arch_warn.get(key)
+            if lbl:
+                lbl.setVisible(not has_root)
 
     def _bind(self, key):
         u = self._ui[key]
@@ -1092,6 +1113,7 @@ class TabArchive(BaseTab):
 
     def on_activated(self):
         self._applyGate()
+        self._updateArchWarn()
         # 切換進來時，比對未歸檔資料指紋；變了才做「差異更新」（只動變動列，不重建整表）。
         if not hasattr(self, "_sigs"):
             self._sigs = {}

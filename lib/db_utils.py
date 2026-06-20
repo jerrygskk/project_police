@@ -214,6 +214,12 @@ def performYearEndReset(db_path):
         # 5. 歸零 Seq_DocId
         conn.execute("UPDATE Seq_DocId SET last_id = 0")
 
+        # 6. 清除歸檔根目錄設定（強制使用者進新年度後重新指定）
+        for _k in (ARCHIVE_ROOT_KEY, "archive_subdir_crim", "archive_subdir_gen"):
+            conn.execute(
+                "INSERT INTO App_Settings(key, value) VALUES(?,'')"
+                " ON CONFLICT(key) DO UPDATE SET value=''", (_k,))
+
         conn.commit()
     except Exception:
         conn.rollback()

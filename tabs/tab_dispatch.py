@@ -14,9 +14,6 @@ from ui_utils import (
     calcOverdue, colorForStatus, attachStickyScroll,
 )
 
-# 發文日期欄已有資料時的提醒色（發文後將被覆蓋）
-_DISPATCH_DATE_COLOR = "#e67e22"
-
 
 class TabDispatch(BaseTab):
     """交辦單發文：掃入文號 → 預覽清單 → 批次發文"""

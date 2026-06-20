@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, QDate, QObject, QEvent, QTimer, QPointF
+from PySide6.QtCore import Qt, QDate, QObject, QEvent, QTimer
 from PySide6.QtWidgets import (
     QComboBox, QCompleter, QLabel,
     QStyledItemDelegate, QStyle, QStyleOptionViewItem,

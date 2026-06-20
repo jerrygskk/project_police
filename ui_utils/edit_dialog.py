@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFontMetrics
 
-from lib.db_utils import getResourcePath, BTN_CONFIRM, BTN_CANCEL, confirmBox, getConn
+from lib.db_utils import BTN_CONFIRM, BTN_CANCEL, confirmBox, getConn
 from lib.auth_manager import AuthManager
 from ui_utils.widgets import setupFilterCombo, setupDateEditCalendarOnly
 

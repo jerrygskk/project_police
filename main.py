@@ -58,7 +58,7 @@ def _setup_error_handler():
 
 _setup_error_handler()
 
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
 

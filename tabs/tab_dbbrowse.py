@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor, QIcon, QDesktopServices
 from lib.base_tab import BaseTab
 from lib.db_utils import (
     getResourcePath, loadUi, msgInfo, msgWarning, msgCritical, confirmBox,
-    resolveArchivedPdf,
+    resolveArchivedPdf, getSetting, ARCHIVE_ROOT_KEY,
 )
 from lib.auth_manager import AuthManager
 from ui_utils import (
@@ -164,6 +164,19 @@ class TabDBBrowse(BaseTab):
                 "hint":   inner.findChild(QLabel, f"{key}_hint"),
                 "overdue": inner.findChild(QPushButton, f"{key}_overdue"),
             }
+
+        # 歸檔根目錄警示 label（放在 crim/gen filter row 右側，archive_root 空時顯示）
+        _ARCH_WARN_SS = "color:#e74c3c; font-size:11pt;"
+        _ARCH_WARN_TXT = "⚠ 歸檔資料夾未設定，請至設定頁更新"
+        self._arch_warn = {}
+        for key in ("crim", "gen"):
+            lbl = QLabel(_ARCH_WARN_TXT)
+            lbl.setStyleSheet(_ARCH_WARN_SS)
+            lbl.setVisible(False)
+            fl = inner.findChild(QHBoxLayout, f"{key}_filter")
+            if fl:
+                fl.addWidget(lbl)
+            self._arch_warn[key] = lbl
 
         # 浮水印 QLabel（疊在每張表上）
         self._watermark = {}
@@ -867,3 +880,10 @@ class TabDBBrowse(BaseTab):
             if self._sigs.get(key) != sig:
                 self._diffUpdate(key)
                 self._sigs[key] = sig
+
+        # 歸檔根目錄警示
+        has_root = bool(getSetting(self.db_path, ARCHIVE_ROOT_KEY, "").strip())
+        for key in ("crim", "gen"):
+            lbl = self._arch_warn.get(key)
+            if lbl:
+                lbl.setVisible(not has_root)
