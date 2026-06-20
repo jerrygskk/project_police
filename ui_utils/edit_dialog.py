@@ -827,7 +827,7 @@ class GeneralEditDialog(_BaseEditDialog):
         self.w_processor = QComboBox()
         for sid, sname in self._personnel:
             self.w_processor.addItem(sname, sid)
-        form.addRow("承辦人：", self.w_processor)
+        form.addRow("陳報人：", self.w_processor)
 
         self.w_subject = QLineEdit()
         self.w_subject.setPlaceholderText("請輸入陳報主旨")
@@ -916,7 +916,7 @@ class GeneralEditDialog(_BaseEditDialog):
 
         errors = []
         if not sender_id: errors.append("發文人員")
-        if not proc_id:   errors.append("承辦人")
+        if not proc_id:   errors.append("陳報人")
         if not subject:   errors.append("陳報主旨")
         if errors:
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")

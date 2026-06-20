@@ -32,9 +32,9 @@ META = {
         # 精簡模式只顯示前三欄(slim=True)：編號 案由 承辦人；其餘僅完整模式。
         # 比照資料庫瀏覽：建全欄，切模式用 setColumnHidden 藏/顯示，不重建。
         "cols": [
-            {"view": "送文編號",   "header": "編號",   "slim": True,  "w": 56},
+            {"view": "送文編號",   "header": "編號",   "slim": True,  "w": 64},
             {"view": "嫌疑人_案由", "header": "案由",   "slim": True,  "w": 220, "left": True},
-            {"view": "主承辦人",   "header": "承辦",   "slim": True,  "w": 70, "trim": True},
+            {"view": "主承辦人",   "header": "承辦人", "slim": True,  "w": 80, "trim": True},
             {"view": "報案人",     "header": "報案人", "slim": False, "w": 70},
             {"view": "案類",       "header": "案類",   "slim": False, "w": 90},
             {"view": "陳報日期",   "header": "日期",   "slim": False, "w": 100},
@@ -49,7 +49,7 @@ META = {
         "cols": [
             {"view": "送文編號", "header": "編號",   "slim": True,  "w": 64},
             {"view": "陳報主旨", "header": "主旨",   "slim": True,  "w": 220, "left": True},
-            {"view": "陳報人",   "header": "承辦人", "slim": True,  "w": 80, "trim": True},
+            {"view": "陳報人",   "header": "陳報人", "slim": True,  "w": 80, "trim": True},
             {"view": "陳報日期", "header": "日期",   "slim": False, "w": 140},
             {"view": "業務單位", "header": "單位",   "slim": False, "w": 90},
         ],

@@ -31,7 +31,7 @@ from ui_utils import (
 TASK_COLS = [
     {"header": "", "delete": True, "slim": True, "w": 32},
     {"header": "編號",     "view_col": "編號",     "slim": True,  "link": True,  "search": True, "w": 64},
-    {"header": "所承辦人", "view_col": "所承辦人", "slim": True,  "search": True, "w": 120, "trim_name": True},
+    {"header": "承辦人",   "view_col": "所承辦人", "slim": True,  "search": True, "w": 80,  "trim_name": True},
     {"header": "交辦事由", "view_col": "交辦事由", "slim": True,  "search": True, "stretch": True, "w": 240},
     {"header": "業務組",   "view_col": "業務組",   "slim": True,  "search": True, "w": 80},
     {"header": "狀態",     "view_col": "狀態",     "slim": True,  "color": True, "search": True, "w": 200},
@@ -45,8 +45,8 @@ TASK_COLS = [
 
 CRIM_COLS = [
     {"header": "", "delete": True, "slim": True, "w": 32},
-    {"header": "送文編號",    "view_col": "送文編號",    "slim": True,  "link": True,  "search": True, "w": 80},
-    {"header": "主承辦人",    "view_col": "主承辦人",    "slim": True,  "search": True, "w": 120, "trim_name": True},
+    {"header": "編號",        "view_col": "送文編號",    "slim": True,  "link": True,  "search": True, "w": 64},
+    {"header": "主承辦人",    "view_col": "主承辦人",    "slim": True,  "search": True, "w": 80,  "trim_name": True},
     {"header": "案類",        "view_col": "案類",        "slim": True,  "search": True, "w": 180},
     {"header": "嫌疑人/案由", "view_col": "嫌疑人_案由", "slim": True,  "search": True, "stretch": True, "w": 240},
     {"header": "發文分類",    "view_col": "發文分類",    "slim": True,  "search": True, "w": 96, "map": "status"},
@@ -61,8 +61,8 @@ CRIM_COLS = [
 
 GEN_COLS = [
     {"header": "", "delete": True, "slim": True, "w": 32},
-    {"header": "送文編號", "view_col": "送文編號", "slim": True,  "link": True,  "search": True, "w": 80},
-    {"header": "陳報人",   "view_col": "陳報人",   "slim": True,  "search": True, "w": 120, "trim_name": True},
+    {"header": "編號",     "view_col": "送文編號", "slim": True,  "link": True,  "search": True, "w": 64},
+    {"header": "陳報人",   "view_col": "陳報人",   "slim": True,  "search": True, "w": 80,  "trim_name": True},
     {"header": "陳報主旨", "view_col": "陳報主旨", "slim": True,  "search": True, "stretch": True, "w": 240},
     {"header": "業務單位", "view_col": "業務單位", "slim": True,  "search": True, "w": 96},
     {"header": "分類",     "view_col": "分類",     "slim": True,  "search": True, "w": 96, "map": "cat"},
