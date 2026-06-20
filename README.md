@@ -101,7 +101,7 @@ main.py
 
 ### 別名（alias）
 
-- 別名是「人的屬性」，存在 `Ref_Personnel.alias` 欄，分隔符為**半形逗號**，多別名同欄（如 `馬佐,馬副`）
+- 別名是「人的屬性」，存在 `Ref_Personnel.alias` 欄，分隔符為**半形逗號**，多別名同欄（如 `王佐,王副`）
 - 否決新表 `Ref_Alias`：別名跟著人走，跨年度重編 id 時 alias 自動保留，無需額外關聯
 - 歸檔比對（`lib/archive_text.py`）從 DB 讀別名後與正名一同納入 `_loadNameDict`；移除舊 `tab_archive._ALIAS` hardcode dict
 - 欄位由 `fix_views.py` 補丁新增（見 §5「新增 DB 欄位」）；讀寫前呼叫 `_has_alias_col(conn)` 做 PRAGMA 缺欄退路，避免舊 DB 報錯
