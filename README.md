@@ -99,6 +99,18 @@ main.py
 
 > 一般使用者限制由 `TaskEditDialog(restricted=…)` 控制（鎖定欄位顯示 DB 原值＋灰 `:disabled` 樣式，儲存只動承辦人）；連結可點與否由各 tab `setDocIdLinkCell(clickable=…)` 控制，身分變更時 `_onRolePerm` 重刷（編號連結＋刪除鈕）。
 
+### 別名（alias）
+
+- 別名是「人的屬性」，存在 `Ref_Personnel.alias` 欄，分隔符為**半形逗號**，多別名同欄（如 `馬佐,馬副`）
+- 否決新表 `Ref_Alias`：別名跟著人走，跨年度重編 id 時 alias 自動保留，無需額外關聯
+- 歸檔比對（`lib/archive_text.py`）從 DB 讀別名後與正名一同納入 `_loadNameDict`；移除舊 `tab_archive._ALIAS` hardcode dict
+- 欄位由 `fix_views.py` 補丁新增（見 §5「新增 DB 欄位」）；讀寫前呼叫 `_has_alias_col(conn)` 做 PRAGMA 缺欄退路，避免舊 DB 報錯
+
+### data_sync_tool
+
+- `data_sync_tool.py` **已退役，永不再用**（Excel→SQLite 匯入工具，單次使用歷史任務已完成）
+- 日後 DB 結構變更一律走一次性補丁 `fix_views.py`（見 §5「新增 DB 欄位」）
+
 ### 其他慣例
 
 - 所有彈窗都加 Enter 確認（高風險操作如變更密碼除外）
@@ -115,7 +127,7 @@ main.py
 ```
 專案根/
 ├── main.py              進入點（從專案根目錄啟動）
-├── data_sync_tool.py    Excel→SQLite 匯入工具（單次使用，獨立打包，不被 import）
+├── data_sync_tool.py    Excel→SQLite 匯入工具（**已退役，永不再用**；留檔供參考，不被 import）
 ├── sql.py               DB 結構查看工具（analyze_database，獨立 __main__ 跑，不被 import）
 ├── backfill_archive_names.py  存量補檔腳本（一次性，掃資料夾回填 is_electronic）
 ├── lib/                 核心模組（被各處 import；含 __init__.py，是 package）
@@ -151,6 +163,24 @@ main.py
 ---
 
 ## 5. 操作手冊（要改特定東西時查）
+
+### 新增 DB 欄位
+
+本專案**不做啟動 migration**（單機、版本由維護者自管，migration 的價值皆不成立）。DB 結構變更走**一次性手打補丁 `fix_views.py`**（不進 git）：
+
+1. 在 `fix_views.py` 的 `_NEW_COLUMNS` dict 登記要新增的欄位，腳本執行後自動 `ALTER TABLE ... ADD COLUMN`
+2. 程式碼讀寫新欄位前用 **PRAGMA 缺欄退路**保護，確保套補丁前的舊 DB 不會報錯：
+
+```python
+def _has_alias_col(conn):
+    """欄位是否存在（fix_views 套用後才有）。未套補丁時跳過讀寫。"""
+    return any(r[1] == "alias"
+               for r in conn.execute("PRAGMA table_info(Ref_Personnel)"))
+```
+
+3. `fix_views.py` 同時負責重建 View（`DROP VIEW IF EXISTS … CREATE VIEW …`）；View 定義若有更動，一律更新此檔而非在啟動時跑 DDL
+
+> **上線流程**：維護者在本機執行 `python fix_views.py` 一次即可；打包 exe 無需感知此補丁存在。
 
 ### 新增 Tab 的標準流程
 
