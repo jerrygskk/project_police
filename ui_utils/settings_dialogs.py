@@ -82,6 +82,12 @@ def _next_id(conn, table, id_col, prefix, digits=2):
 # 人員管理
 # ══════════════════════════════════════════════════════════════════
 
+def _has_alias_col(conn):
+    """Ref_Personnel.alias 是否已存在（補丁 fix_views 套用後才有）。
+    未套補丁時別名相關讀寫一律跳過，避免缺欄報錯。"""
+    return any(r[1] == "alias"
+               for r in conn.execute("PRAGMA table_info(Ref_Personnel)"))
+
 class PersonnelAddDialog(QDialog):
 
     def __init__(self, db_path, parent=None):
@@ -116,6 +122,11 @@ class PersonnelAddDialog(QDialog):
         self.w_name.setFixedWidth(_FIELD_W)
         form.addRow("姓名：", self.w_name)
 
+        self.w_alias = QLineEdit()
+        self.w_alias.setPlaceholderText("綽號/簡稱，半形逗號分隔（可空）")
+        self.w_alias.setFixedWidth(_FIELD_W)
+        form.addRow("別名：", self.w_alias)
+
         self.w_retired = QCheckBox("離職")
         self.w_retired.setChecked(False)
         form.addRow("狀態：", self.w_retired)
@@ -128,6 +139,7 @@ class PersonnelAddDialog(QDialog):
 
     def _submit(self):
         name      = self.w_name.text().strip()
+        alias     = self.w_alias.text().strip()
         is_active = 0 if self.w_retired.isChecked() else 1
         if not name:
             self.w_name.setStyleSheet(
@@ -140,6 +152,9 @@ class PersonnelAddDialog(QDialog):
             conn.execute(
                 "INSERT INTO Ref_Personnel (staff_id, staff_name, is_active, sort_order) VALUES (?,?,?,?)",
                 (self._new_id, name, is_active, new_sort))
+            if _has_alias_col(conn):
+                conn.execute("UPDATE Ref_Personnel SET alias=? WHERE staff_id=?",
+                             (alias, self._new_id))
             conn.commit()
             conn.close()
             self._result = (self._new_id, name, bool(is_active))
@@ -181,6 +196,23 @@ class PersonnelEditDialog(QDialog):
         self.w_name.setFixedWidth(_FIELD_W)
         form.addRow("姓名：", self.w_name)
 
+        # 別名預填：清單未帶 alias，直接由 staff_id 查 DB（缺欄則留空）
+        cur_alias = ""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            if _has_alias_col(conn):
+                row = conn.execute(
+                    "SELECT alias FROM Ref_Personnel WHERE staff_id=?",
+                    (self.staff_id,)).fetchone()
+                cur_alias = (row[0] if row and row[0] else "")
+            conn.close()
+        except Exception:
+            pass
+        self.w_alias = QLineEdit(cur_alias)
+        self.w_alias.setPlaceholderText("綽號/簡稱，半形逗號分隔（可空）")
+        self.w_alias.setFixedWidth(_FIELD_W)
+        form.addRow("別名：", self.w_alias)
+
         self.w_retired = QCheckBox("離職")
         self.w_retired.setChecked(not bool(is_active))
         form.addRow("狀態：", self.w_retired)
@@ -193,6 +225,7 @@ class PersonnelEditDialog(QDialog):
 
     def _submit(self):
         name      = self.w_name.text().strip()
+        alias     = self.w_alias.text().strip()
         is_active = 0 if self.w_retired.isChecked() else 1
         if not name:
             self.w_name.setStyleSheet(
@@ -203,6 +236,9 @@ class PersonnelEditDialog(QDialog):
             conn.execute(
                 "UPDATE Ref_Personnel SET staff_name=?, is_active=? WHERE staff_id=?",
                 (name, is_active, self.staff_id))
+            if _has_alias_col(conn):
+                conn.execute("UPDATE Ref_Personnel SET alias=? WHERE staff_id=?",
+                             (alias, self.staff_id))
             conn.commit()
             conn.close()
             self._result = (self.staff_id, name, bool(is_active))

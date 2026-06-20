@@ -225,6 +225,7 @@
               <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
               <column><property name="text"><string>編號</string></property></column>
               <column><property name="text"><string>姓名</string></property></column>
+              <column><property name="text"><string>別名</string></property></column>
               <column><property name="text"><string>狀態</string></property></column>
               <column><property name="text"><string>排序</string></property></column>
              </widget>

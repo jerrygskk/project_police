@@ -867,32 +867,38 @@ class TabArchive(BaseTab):
         QDesktopServices.openUrl(QUrl.fromLocalFile(filepath))
 
     # ── 選定歸檔：重新命名 PDF + 寫回 is_electronic ─────────
-    # 承辦人別名 / 簡稱對照（穩定的綽號類；職稱類請用自訂關鍵字現場補）。
-    # 例：'匿名': ['馬佐']。等使用者提供清單後填入。
-    _ALIAS = {
-    }
-
+    # 承辦人別名 / 簡稱對照純走 DB：Ref_Personnel.alias（半形逗號分隔），
+    # 於設定頁「人員」維護；本檔不再保留硬編別名表。
     def _loadNameDict(self):
         """從 DB 載入人名字典：{全名: 全名}、{去姓2字: 全名}、{別名: 全名}。
+        別名取自 Ref_Personnel.alias（半形逗號分隔）。
         （目前人員去姓後 2 字名皆唯一，可唯一反查。）"""
         if getattr(self, "_name_dict", None) is not None:
             return self._name_dict
         d = {}
         try:
             conn = self._getConn()
-            for (raw,) in conn.execute("SELECT staff_name FROM Ref_Personnel"):
+            # alias 欄可能尚未套補丁 → 動態偵測，缺欄則退回只讀姓名，
+            # 避免「no such column」吞成空字典、害全部人名都對不到。
+            has_alias = any(
+                r[1] == "alias"
+                for r in conn.execute("PRAGMA table_info(Ref_Personnel)"))
+            sql = ("SELECT staff_name, alias FROM Ref_Personnel" if has_alias
+                   else "SELECT staff_name, NULL FROM Ref_Personnel")
+            for raw, alias in conn.execute(sql):
                 full = _trimName(raw)
                 if not full:
                     continue
                 d[full] = full
                 if len(full) >= 3:
                     d[full[1:]] = full          # 去姓(後2字)→全名
+                for a in (alias or "").split(","):
+                    a = a.strip()
+                    if a:
+                        d[a] = full             # 別名→全名
             conn.close()
         except Exception:
             pass
-        for full, aliases in self._ALIAS.items():
-            for a in aliases:
-                d[a] = full                     # 別名→全名
         self._name_dict = d
         return d
 

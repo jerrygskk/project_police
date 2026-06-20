@@ -268,10 +268,13 @@ class TabSettings(BaseTab):
         tbl.verticalHeader().setDefaultSectionSize(36)
         tbl.setStyleSheet(_TABLE_SS)
         hdr = tbl.horizontalHeader()
-        for col, w in {0: 80, 2: 80, 3: 140}.items():
+        name_c, alias_c, status_c, sort_c = self._refCols(key)
+        for col, w in {0: 80, status_c: 80, sort_c: 140}.items():
             hdr.setSectionResizeMode(col, QHeaderView.Fixed)
             tbl.setColumnWidth(col, w)
-        hdr.setSectionResizeMode(1, QHeaderView.Stretch)
+        hdr.setSectionResizeMode(name_c, QHeaderView.Stretch)
+        if alias_c is not None:
+            hdr.setSectionResizeMode(alias_c, QHeaderView.Stretch)
         tbl.cellDoubleClicked.connect(lambda row, col, cb=edit_cb: cb(row))
 
         # 動作鈕樣式與綁定
@@ -500,21 +503,40 @@ class TabSettings(BaseTab):
         "casetype":  ("Ref_CaseTypes",    "case_type_id", "case_type_name", "啟用", "停用"),
     }
 
+    def _refCols(self, key):
+        """回傳該頁的欄索引 (name, alias, status, sort)；alias 為 None 表無別名欄。
+        目前僅人員頁有別名欄（編號0 / 姓名1 / 別名2 / 狀態3 / 排序4）。"""
+        if key == "personnel":
+            return 1, 2, 3, 4
+        return 1, None, 2, 3
+
     def _loadRefGeneric(self, key):
         """從 DB 依 sort_order 撈進記憶體，清掉暫存 dirty，重繪表格"""
         tbl_name, idc, namec, _, _ = self._REF_CFG[key]
+        want_alias = (key == "personnel")
         try:
             conn = self._getConn()
-            rows = conn.execute(
-                f"SELECT {idc}, {namec}, is_active FROM {tbl_name} "
-                f"ORDER BY sort_order"
-            ).fetchall()
+            if want_alias:
+                # alias 欄可能尚未套補丁 → 偵測，缺欄則以 NULL 補位，整頁照常顯示（別名空白）
+                has_alias = any(
+                    c[1] == "alias"
+                    for c in conn.execute(f"PRAGMA table_info({tbl_name})"))
+                acol = "alias" if has_alias else "NULL"
+                rows = conn.execute(
+                    f"SELECT {idc}, {namec}, is_active, {acol} FROM {tbl_name} "
+                    f"ORDER BY sort_order"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    f"SELECT {idc}, {namec}, is_active FROM {tbl_name} "
+                    f"ORDER BY sort_order"
+                ).fetchall()
             conn.close()
         except Exception as e:
             msgCritical("DB錯誤", str(e))
             return
         st = self._sort_state[key]
-        st["rows"]  = [list(r) for r in rows]   # [id, name, is_active]
+        st["rows"]  = [list(r) for r in rows]   # [id, name, is_active(, alias)]
         st["dirty"] = False
         st["save_btn"].setEnabled(False)
         self._renderSortTable(key)
@@ -522,19 +544,24 @@ class TabSettings(BaseTab):
     def _renderSortTable(self, key):
         """依記憶體 rows 重繪整張表（含排序欄四鈕、停用灰字）"""
         _, _, _, word_on, word_off = self._REF_CFG[key]
+        name_c, alias_c, status_c, sort_c = self._refCols(key)
         st  = self._sort_state[key]
         tbl = st["table"]
         tbl.setRowCount(0)
-        for r, (rid, rname, active) in enumerate(st["rows"]):
+        for r, row in enumerate(st["rows"]):
+            rid, rname, active = row[0], row[1], row[2]
             tbl.insertRow(r)
             color  = None if active else _COLOR_INACTIVE
             status = word_on if active else word_off
-            tbl.setItem(r, 0, self._item(rid,    color))
-            tbl.setItem(r, 1, self._item(rname,  color))
-            tbl.setItem(r, 2, self._item(status, color))
+            tbl.setItem(r, 0,        self._item(rid,    color))
+            tbl.setItem(r, name_c,   self._item(rname,  color))
+            if alias_c is not None:
+                alias = (row[3] if len(row) > 3 and row[3] else "")
+                tbl.setItem(r, alias_c, self._item(alias, color))
+            tbl.setItem(r, status_c, self._item(status, color))
             # 排序欄：用當前列的 id 動態定位列號（重繪後列號會變）
             cell = self._make_sort_cell(key, lambda rid=rid, k=key: self._rowOfId(k, rid))
-            tbl.setCellWidget(r, 3, cell)
+            tbl.setCellWidget(r, sort_c, cell)
 
     def _rowOfId(self, key, rid):
         for i, row in enumerate(self._sort_state[key]["rows"]):
@@ -640,7 +667,7 @@ class TabSettings(BaseTab):
             return
         sid    = self.tbl_personnel.item(row, 0).text()
         sname  = self.tbl_personnel.item(row, 1).text()
-        active = self.tbl_personnel.item(row, 2).text() == "在職"
+        active = self.tbl_personnel.item(row, 3).text() == "在職"
         if not self._promptUnsaved():
             return
         dlg = PersonnelEditDialog(self.db_path, sid, sname, active, self.tab_widget)
