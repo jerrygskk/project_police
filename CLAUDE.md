@@ -55,8 +55,9 @@
 ### 打包（PyInstaller）
 
 - **只用 onefile**，不要問要哪種打包方式
-- 習慣**每次砍掉 spec 全新 build**（不信任殘留 spec 會帶過期設定）。打包指令見 README 第 7 節，開頭已含 `del spec & rmdir build dist`
-- 容器無法跑 PyInstaller，打包相關只能給指令 / 改 code，請他上機 build 測
+- 習慣**每次砍掉 spec 全新 build**（不信任殘留 spec 會帶過期設定）。打包指令見 README 第 7 節，開頭已含清除步驟
+- **build 一律用 PowerShell tool**（不用 Bash tool）：`del /q` / `rmdir /s /q` 是 CMD 語法，Bash tool（Git Bash）不識別會靜默失敗，spec 和 dist 不會被清掉
+- Claude 可直接在本機執行 build，完成後只回報成功/失敗（失敗才貼錯誤末段）
 
 ### 找得到就別問
 
