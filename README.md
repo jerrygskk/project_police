@@ -27,17 +27,15 @@ main.py
 
 ### Tab 結構（共 7 個）
 
-| index | 名稱 | 類別 | Layout | 狀態 |
+| index | 名稱 | 類別 | Layout |
 |-------|------|------|--------|------|
-| 0 | 交辦單發文 | TabDispatch | Layout1 | 完成 |
-| 1 | 交辦單收文 | TabReceive | Layout2 | 完成 |
-| 2 | 公文陳報 | TabReport | Layout3 | 完成 |
-| 3 | 簽收單列印 | TabPrint | Layout4 | 完成 |
-| 4 | 資料庫瀏覽 | TabDBBrowse | Layout5 | 完成 |
-| 5 | 檔案歸檔 | TabArchive | Layout6 | 完成 |
-| 6 | 資料庫設定 | TabSettings | Layout7 | 功能完成 |
-
-> **TabSettings 架構**：已比照其他 Tab 改用 `loadUi(Layout7.ui)` 建靜態骨架（密碼驗證頁、左側 nav、三個子頁的表格容器與動作鈕，全部具名），`tab_settings.py` 只保留動態內容（填表格列、拖拉排序邏輯、暫存排序狀態、登入登出、跨年度重置）。動態狀態樣式（nav 選中切換、save_btn disabled 灰色）留在 code，比照其他 Layout（Layout1/2/3/5/6 皆不在 `.ui` 帶 stylesheet）。
+| 0 | 交辦單發文 | TabDispatch | Layout1 |
+| 1 | 交辦單收文 | TabReceive | Layout2 |
+| 2 | 公文陳報 | TabReport | Layout3 |
+| 3 | 簽收單列印 | TabPrint | Layout4 |
+| 4 | 資料庫瀏覽 | TabDBBrowse | Layout5 |
+| 5 | 檔案歸檔 | TabArchive | Layout6 |
+| 6 | 資料庫設定 | TabSettings | Layout7 |
 
 ### 資料流
 
@@ -91,25 +89,23 @@ main.py
 
 | Tab | admin | 一般使用者 |
 |-----|-------|-----------|
-| 交辦單發文 Tab0 | 全可改（含已發文，編號恆可點） | 只能改承辦人；**已發文鎖住開不了** |
-| 交辦單收文 Tab1 | 全可改 | 全可改（誤輸更正屬正常作業，檢查後修改合理） |
-| 公文陳報 Tab2（刑案／一般） | 全可改 | 全可改 |
-| 資料庫瀏覽 Tab4 | 全可改 | 無法開（編號變純文字） |
-| 檔案歸檔 Tab5 | 全可改 | 無法開（整頁 `outer_stack` 登入 gate） |
+| 交辦單發文 Tab0 | 全可改（含已發文，編號恆可點） | 只能改承辦人；**已發文禁止編輯** |
+| 交辦單收文 Tab1 | 全可改 | 開放輸入錯誤修正、開放刪除 |
+| 公文陳報 Tab2（刑案／一般） | 全可改 | 開放輸入錯誤修正、開放刪除 |
+| 簽收單列印 Tab3 | 可使用 | 可使用 |
+| 資料庫瀏覽 Tab4 | 全可改 | 不開放編輯 |
+| 檔案歸檔 Tab5 | 全可改 | 無法預覽 |
+| 設定 Tab6 | 可使用（需管理者登入） | 無法使用 |
 
 > 一般使用者限制由 `TaskEditDialog(restricted=…)` 控制（鎖定欄位顯示 DB 原值＋灰 `:disabled` 樣式，儲存只動承辦人）；連結可點與否由各 tab `setDocIdLinkCell(clickable=…)` 控制，身分變更時 `_onRolePerm` 重刷（編號連結＋刪除鈕）。
 
 ### 別名（alias）
 
-- 別名是「人的屬性」，存在 `Ref_Personnel.alias` 欄，分隔符為**半形逗號**，多別名同欄（如 `王佐,王副`）
+- 別名是「人的屬性」，存在 `Ref_Personnel.alias` 欄，分隔符為**半形逗號**，多別名同欄（如 `王佐,所長,副座`）
 - 否決新表 `Ref_Alias`：別名跟著人走，跨年度重編 id 時 alias 自動保留，無需額外關聯
 - 歸檔比對（`lib/archive_text.py`）從 DB 讀別名後與正名一同納入 `_loadNameDict`；移除舊 `tab_archive._ALIAS` hardcode dict
-- 欄位由 `fix_views.py` 補丁新增（見 §5「新增 DB 欄位」）；讀寫前呼叫 `_has_alias_col(conn)` 做 PRAGMA 缺欄退路，避免舊 DB 報錯
+- 欄位由 `fix_views.py` 補丁新增（見 §5「新增 DB 欄位」,v1.0.2）；讀寫前呼叫 `_has_alias_col(conn)` 做 PRAGMA 缺欄退路，避免舊 DB 報錯
 
-### data_sync_tool
-
-- `data_sync_tool.py` **已退役，永不再用**（Excel→SQLite 匯入工具，單次使用歷史任務已完成）
-- 日後 DB 結構變更一律走一次性補丁 `fix_views.py`（見 §5「新增 DB 欄位」）
 
 ### 資料庫瀏覽（Tab4）搜尋設計
 
@@ -130,7 +126,7 @@ main.py
 ### 其他慣例
 
 - 所有彈窗都加 Enter 確認（高風險操作如變更密碼除外）
-- 跨年度會有 **Reset 按鈕**（尚未做）重編所有 ID，所以**不需要** Seq 流水號機制；現有 `Seq_DocId` 等年底 Reset 一起歸零
+- 跨年度會有 **Reset 按鈕**重編所有 ID，所以**不需要** Seq 流水號機制；現有 `Seq_DocId` 等跨年度 Reset 一起歸零
 - 主表「刪除」是清空欄位保留 doc_id，流水號永久佔用，彈窗會提示「本文號（XXX）無法再被使用」
 - **身分判斷**用 `AuthManager.instance().is_admin()`（等同 `current_role == 'admin'`，勿再各處寫字串比較）
 - **DB 連線**統一走 `db_utils.getConn(db_path)`（單一來源，要加 PRAGMA/timeout 集中改一處）；`base_tab._getConn`、`edit_dialog._get_conn` 皆委派它
@@ -143,9 +139,6 @@ main.py
 ```
 專案根/
 ├── main.py              進入點（從專案根目錄啟動）
-├── data_sync_tool.py    Excel→SQLite 匯入工具（**已退役，永不再用**；留檔供參考，不被 import）
-├── sql.py               DB 結構查看工具（analyze_database，獨立 __main__ 跑，不被 import）
-├── backfill_archive_names.py  存量補檔腳本（一次性，掃資料夾回填 is_electronic）
 ├── lib/                 核心模組（被各處 import；含 __init__.py，是 package）
 │   ├── db_utils.py      路徑解析 / 通用彈窗 / nextDocId / 跨年度重置（performYearEndReset、listInactiveRefItems）（DEBUG_MODE 在第一行）
 │   ├── base_tab.py      BaseTab 基底
@@ -452,16 +445,9 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
   --name Police-Document-Manager main.py
 ```
 
-### 資料同步工具
-
-```cmd
-pyinstaller --onefile --name Data-Sync-Tool data_sync_tool.py
-```
-
 ### 注意事項
 
 - `dbfile.db` 不打包，與 exe 同資料夾（真實資料）
-- `ori.xlsm`（資料同步工具用）不打包，與 Data-Sync-Tool.exe 同資料夾
 - `arrow.svg` / `sort_*.svg` / `icon_pdf.svg` / `icon_archive.svg` 已透過 `resources_rc.py` 內嵌，不需 `--add-data`；改了要重編 qrc
 - 列印用 `QtPrintSupport`，加 `--hidden-import PySide6.QtPrintSupport` 保險
 - matplotlib 只用 `backend_agg`（PNG）+ `backend_pdf`（存 PDF），其餘 backend 全排除
@@ -474,16 +460,7 @@ pyinstaller --onefile --name Data-Sync-Tool data_sync_tool.py
 
 ---
 
-## 8. 待辦
-
-| 項目 | 說明 |
-|------|------|
-| 重跑轉檔重建 DB | schema 有 is_electronic TEXT、last_modified、trigger，差異更新需重跑轉檔才完整生效 |
-| 存量補檔腳本 | backfill_archive_names.py 需重跑轉檔後再執行 |
-
----
-
-## 9. 版本記錄
+## 8. 版本記錄
 
 > 版本號單一來源為 `lib/version.py` 的 `__version__`。進版時改該處一行，主選單顯示自動同步；本表與 git tag（`v{__version__}`）需手動對齊。
 
