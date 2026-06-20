@@ -111,6 +111,22 @@ main.py
 - `data_sync_tool.py` **已退役，永不再用**（Excel→SQLite 匯入工具，單次使用歷史任務已完成）
 - 日後 DB 結構變更一律走一次性補丁 `fix_views.py`（見 §5「新增 DB 欄位」）
 
+### 資料庫瀏覽（Tab4）搜尋設計
+
+**全量載入 + `setRowHidden` 模式**（非搜尋重建表格）：
+
+- `_reload(key)`：DB 全量抓取，所有非軟刪除列全部 `insertRow`，存入 `_allRows[key]`（row dict 列表，與表格列 1:1 對應）+ `_docorder[key]`（doc_id 列表）。**不做關鍵字過濾**
+- `_applyFilter(key)`：讀 `_allRows[key]`，對每列計算是否命中當前 kw/scope，結果存 `_matchedCols[key]`，呼叫 `_applyRowVisibility`
+- `_applyRowVisibility(key)`：單一 pass，同時考慮搜尋 filter（`_matchedCols`）和逾期篩選（vertical header item `Qt.UserRole`），`setRowHidden` 決定每列可見；最後呼叫 `_updateFooter`
+- `_applyOverdue(key)`：僅呼叫 `_applyRowVisibility`（不獨立重算）
+- 搜尋框 / 範圍下拉觸發 `_applyFilter`，**不觸發 `_reload`**；`_reload` 只在 Tab 切換且指紋改變時呼叫（或 `_diffUpdate` fallback）
+
+**差異更新（`_diffUpdate`）**：查 `last_modified > since` 得到變動 PK；對每筆維護 `_allRows[key]`（append / 就地更新 / pop）、`_docorder[key]`、表格列，最後呼叫 `_applyFilter` 重算可見性。
+
+**精簡/完整切換**：`_applyMode` 做 `setColumnHidden`，再呼叫 `_applyRowVisibility` 重算 hit_hidden（命中欄在隱藏欄的提示）。
+
+> ⚠️ `_allRows[key]` 和 `_docorder[key]` 必須與表格列嚴格 1:1 對應（索引相同）。`_diffUpdate` 每次 pop / append 時兩者要同步維護，否則 `_applyRowVisibility` 會取到錯誤的 row data。
+
 ### 其他慣例
 
 - 所有彈窗都加 Enter 確認（高風險操作如變更密碼除外）
@@ -462,7 +478,6 @@ pyinstaller --onefile --name Data-Sync-Tool data_sync_tool.py
 
 | 項目 | 說明 |
 |------|------|
-| 別名對照 | `Ref_Personnel.alias` 欄儲存承辦人別名，歸檔比對時一併納入（設定 Tab 人員維護可編輯）；比對邏輯在 `lib/archive_text.py` |
 | 重跑轉檔重建 DB | schema 有 is_electronic TEXT、last_modified、trigger，差異更新需重跑轉檔才完整生效 |
 | 存量補檔腳本 | backfill_archive_names.py 需重跑轉檔後再執行 |
 
@@ -474,6 +489,8 @@ pyinstaller --onefile --name Data-Sync-Tool data_sync_tool.py
 
 | 版本 | 摘要 |
 |------|------|
+| v1.0.2 | 設定頁拖拉排序（移除四顆排序鈕）；人員別名欄（`Ref_Personnel.alias`，歸檔比對一併納入）；歸檔根目錄未設定三層警示；瀏覽 Tab4 搜尋改為全量載入＋`setRowHidden`，大幅提升搜尋速度。 |
+| v1.0.1 | 人員別名初版（alias 欄）；設定頁人員清單加別名欄；歸檔比對從 DB 讀取別名。 |
 | v1.0.0 | 正式版。瀏覽頁（Tab4）有歸檔檔名者顯示圖示鈕可直接開 PDF；歸檔資料夾設定存 UNC 路徑（Tab6）；歸檔頁（Tab5）自動帶入預設資料夾。 |
 | v0.9.0-beta.12 | admin 解除已發文編號鎖定；內部重構（抽 `lib/archive_text.py`、統一 `AuthManager.is_admin()`、`db_utils.getConn`）。 |
 | v0.9.0-beta.11 | 分頁權限控管（Tab0 限改承辦人、Tab4 無修改、Tab5 需登入）；修 dbbrowse 編號欄 item/cellWidget 疊現；刑案/一般 popup 新增歸檔狀態區塊（僅 admin）。 |

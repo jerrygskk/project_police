@@ -248,18 +248,18 @@ class TabDBBrowse(BaseTab):
     def _bindEvents(self, key):
         u = self._ui[key]
         if u["search"]:
-            u["search"].clicked.connect(lambda _, k=key: self._reload(k))
+            u["search"].clicked.connect(lambda _, k=key: self._applyFilter(k))
         if u["kw"]:
-            u["kw"].returnPressed.connect(lambda k=key: self._reload(k))
-            # 即時搜尋（防抖 1000ms，打字期間不重載，停手 1 秒才查）
+            u["kw"].returnPressed.connect(lambda k=key: self._applyFilter(k))
+            # 即時搜尋（防抖 1000ms，打字期間不重算，停手 1 秒才過濾）
             timer = QTimer(u["kw"])
             timer.setSingleShot(True)
             timer.setInterval(1000)
-            timer.timeout.connect(lambda k=key: self._reload(k))
+            timer.timeout.connect(lambda k=key: self._applyFilter(k))
             self._ui[key]["_debounce"] = timer
             u["kw"].textChanged.connect(lambda _, t=timer: t.start())
         if u["scope"]:
-            u["scope"].currentIndexChanged.connect(lambda _, k=key: self._reload(k))
+            u["scope"].currentIndexChanged.connect(lambda _, k=key: self._applyFilter(k))
         if u["full"]:
             u["full"].toggled.connect(lambda _, k=key: self._onToggleFull(k))
             self._styleSegmented(key)
@@ -324,35 +324,88 @@ class TabDBBrowse(BaseTab):
         from datetime import date
         return date.today().isoformat()
 
+    def _applyFilter(self, key):
+        """搜尋條件（kw/scope）改變時：重算每列是否命中，更新 _matchedCols，
+        再交給 _applyRowVisibility 做 setRowHidden（同時考慮逾期篩選）。"""
+        u = self._ui[key]
+        meta = TABLE_META[key]
+        kw = (u["kw"].text() or "").strip() if u["kw"] else ""
+        scope_col = u["scope"].currentData() if u["scope"] else None
+        search_cols = [scope_col] if scope_col else [
+            c["view_col"] for c in meta["cols"] if c.get("search")]
+
+        all_rows = getattr(self, "_allRows", {}).get(key, [])
+        order = getattr(self, "_docorder", {}).get(key, [])
+        matched_map = {}
+        for row_idx, r in enumerate(all_rows):
+            did = order[row_idx] if row_idx < len(order) else ""
+            if kw:
+                matched = [vc for vc in search_cols
+                           if r.get(vc) is not None and kw in str(r.get(vc))]
+            else:
+                matched = []
+            matched_map[did] = matched
+
+        if not hasattr(self, "_matchedCols"):
+            self._matchedCols = {}
+        self._matchedCols[key] = matched_map
+        if not hasattr(self, "_lastSearch"):
+            self._lastSearch = {}
+        # shown 由 _applyRowVisibility 計算後寫回
+        self._lastSearch[key] = (kw, search_cols, 0)
+        self._applyRowVisibility(key)
+
     def _applyOverdue(self, key):
-        """逾期未回篩選：純 setRowHidden，不重建表格。
-        逾期旗標已於建列時存在 vertical header item(UserRole)。
-        與搜尋天然交集（搜尋決定哪些列在表裡，此處只藏其中非逾期者）。
-        切換後重算可見筆數。"""
-        if key != "task":
-            return
+        """逾期未回篩選切換：不重算 matchedCols，直接重跑可見性。"""
+        self._applyRowVisibility(key)
+
+    def _applyRowVisibility(self, key):
+        """單 pass 同時考慮搜尋 filter 與逾期篩選，setRowHidden，更新 footer。"""
         u = self._ui[key]
         table = u["table"]
-        btn = u.get("overdue")
         if not table:
             return
-        on = bool(btn and btn.isChecked())
+        meta = TABLE_META[key]
+        btn = u.get("overdue")
+        overdue_on = bool(key == "task" and btn and btn.isChecked())
+
+        order = getattr(self, "_docorder", {}).get(key, [])
+        matched_map = getattr(self, "_matchedCols", {}).get(key, {})
+        if not hasattr(self, "_lastSearch"):
+            self._lastSearch = {}
+        kw, search_cols, _ = self._lastSearch.get(key, ("", [], 0))
+
         visible = 0
         table.setUpdatesEnabled(False)
-        for row in range(table.rowCount()):
-            if on:
-                hi = table.verticalHeaderItem(row)
-                is_overdue = bool(hi and hi.data(Qt.UserRole))
-                table.setRowHidden(row, not is_overdue)
-                if is_overdue:
-                    visible += 1
+        for row_idx in range(table.rowCount()):
+            did = order[row_idx] if row_idx < len(order) else ""
+            matched = matched_map.get(did)
+            filter_ok = bool(matched) if kw else True
+            if overdue_on:
+                hi = table.verticalHeaderItem(row_idx)
+                overdue_ok = bool(hi and hi.data(Qt.UserRole))
             else:
-                table.setRowHidden(row, False)
+                overdue_ok = True
+            show = filter_ok and overdue_ok
+            table.setRowHidden(row_idx, not show)
+            if show:
                 visible += 1
         table.setUpdatesEnabled(True)
-        # 更新筆數（沿用 footer 邏輯，hit_hidden 維持現狀）
-        kw = (u["kw"].text() or "").strip() if u["kw"] else ""
-        self._updateFooter(key, visible, kw, False)
+
+        # 更新 _lastSearch shown 並刷 footer
+        self._lastSearch[key] = (kw, search_cols, visible)
+        full = self._isFull(key)
+        hit_hidden = False
+        if kw:
+            visible_view_cols = {
+                c["view_col"] for c in meta["cols"]
+                if (full or c.get("slim")) and c.get("view_col")
+            }
+            for did, matched in matched_map.items():
+                if matched and not (set(matched) & visible_view_cols):
+                    hit_hidden = True
+                    break
+        self._updateFooter(key, visible, kw, hit_hidden)
 
     def _onToggleFull(self, key):
         # 切換精簡/完整：資料不變，只改欄位可見性 + 重算欄寬，不重查/不重建
@@ -363,7 +416,7 @@ class TabDBBrowse(BaseTab):
         btn = self._ui[key]["full"]
         return btn.isChecked() if btn else False
 
-    # ── 主載入 / 搜尋（資料變動時才呼叫，建全欄、塞全部 cell）──
+    # ── 主載入（資料變動時才呼叫，建全欄、塞全部 cell）──────
     def _reload(self, key):
         meta = TABLE_META[key]
         u = self._ui[key]
@@ -393,51 +446,33 @@ class TabDBBrowse(BaseTab):
             msgCritical("DB錯誤", f"載入資料失敗：{e}")
             return
 
-        kw = (u["kw"].text() or "").strip() if u["kw"] else ""
-        scope_col = u["scope"].currentData() if u["scope"] else None
-        if scope_col:
-            search_cols = [scope_col]
-        else:
-            search_cols = [c["view_col"] for c in meta["cols"] if c.get("search")]
-
         id_col = meta["id_col"]
         table.setRowCount(0)
         order = []
-        matched_cols_by_id = {}
-        shown = 0
+        all_rows = []
         for r in rows:
-            # 跳過已清空（軟刪除）的列，全量載入與差異更新一致
+            # 跳過已清空（軟刪除）的列
             if self._isEmptied(key, r):
                 continue
-            # 關鍵字過濾：記下這筆實際命中的欄位
-            if kw:
-                matched = [vc for vc in search_cols
-                           if r.get(vc) is not None and kw in str(r.get(vc))]
-                if not matched:
-                    continue
-            else:
-                matched = []
             did = str(r.get(id_col) or "")
             self._appendRow(key, table, cols, r, id_col)
             order.append(did)
-            matched_cols_by_id[did] = matched
-            shown += 1
+            all_rows.append(r)
 
-        # 記住目前顯示的 doc_id 順序（供差異更新定位列）、搜尋狀態、載入時刻
+        # 記住全量資料（供 _applyFilter setRowHidden 用）、doc_id 順序、載入時刻
         if not hasattr(self, "_docorder"):
             self._docorder = {}
         self._docorder[key] = order
-        self._matchedCols = getattr(self, "_matchedCols", {})
-        self._matchedCols[key] = matched_cols_by_id
-        self._lastSearch = getattr(self, "_lastSearch", {})
-        self._lastSearch[key] = (kw, search_cols, shown)
+        if not hasattr(self, "_allRows"):
+            self._allRows = {}
+        self._allRows[key] = all_rows
         self._lastLoad = getattr(self, "_lastLoad", {})
         self._lastLoad[key] = self._dbNow()
 
         # 套用目前模式（藏/顯示欄）+ 欄寬重算
         self._applyMode(key)
-        # 套用逾期篩選（若開啟，藏非逾期列並重算筆數）
-        self._applyOverdue(key)
+        # 套用搜尋過濾（setRowHidden）→ 內部再呼叫 _applyRowVisibility（含逾期）
+        self._applyFilter(key)
 
     def _dbNow(self):
         """取資料庫端的當前時間字串，與 trigger 寫入的 last_modified 同基準。"""
@@ -463,22 +498,8 @@ class TabDBBrowse(BaseTab):
         # 欄寬重算（藏欄後 stretch 欄要重新吃掉剩餘空間，避免留白/擠壓）
         QTimer.singleShot(0, lambda t=table: autoResizeTable(t))
 
-        # footer：是否有「某筆只命中於目前隱藏欄」→ 才需提示切完整
-        kw, search_cols, shown = getattr(self, "_lastSearch", {}).get(
-            key, ("", [], table.rowCount()))
-        hit_hidden = False
-        if kw:
-            visible_view_cols = {
-                c["view_col"] for c in meta["cols"]
-                if (full or c.get("slim")) and c.get("view_col")
-            }
-            matched_by_id = getattr(self, "_matchedCols", {}).get(key, {})
-            for did, matched in matched_by_id.items():
-                if matched and not (set(matched) & visible_view_cols):
-                    # 這筆命中的欄全是隱藏欄 → 在可見欄看不出為何命中
-                    hit_hidden = True
-                    break
-        self._updateFooter(key, shown, kw, hit_hidden)
+        # 欄位可見性改變後，hit_hidden 判斷可能不同，重跑可見性（同時更新 footer）
+        self._applyRowVisibility(key)
 
     def _query(self, key):
         """回傳 dict 列表，含 View 全欄 + _proc_active（+ 歸檔表的 _arch_fname 原始檔名）。"""
@@ -563,55 +584,39 @@ class TabDBBrowse(BaseTab):
                 rows_by_id[did] = r
 
         order = self._docorder.setdefault(key, [])
-        u = self._ui[key]
-        kw = (u["kw"].text() or "").strip() if u["kw"] else ""
-        scope_col = u["scope"].currentData() if u["scope"] else None
-        if scope_col:
-            search_cols = [scope_col]
-        else:
-            search_cols = [c["view_col"] for c in meta["cols"] if c.get("search")]
-        matched_map = self._matchedCols.setdefault(key, {}) if hasattr(
-            self, "_matchedCols") else {}
-        if not hasattr(self, "_matchedCols"):
-            self._matchedCols = {key: matched_map}
+        matched_map = getattr(self, "_matchedCols", {}).get(key, {})
+        all_rows = self._allRows.setdefault(key, [])
 
         for did in changed_ids:
             r = rows_by_id.get(did)
             in_table = did in order
             emptied = r is not None and self._isEmptied(key, r)
-            should_show = (r is not None) and (not emptied) and self._rowMatchesSearch(key, r)
+            exists = (r is not None) and (not emptied)
 
-            if should_show and not in_table:
+            if exists and not in_table:
                 # 新增：附加到表尾
                 pos = table.rowCount()
                 table.insertRow(pos)
                 order.append(did)
+                all_rows.append(r)
                 self._fillRow(key, table, cols, r, id_col, pos)
-            elif should_show and in_table:
-                # 修改：就地更新該列
+            elif exists and in_table:
+                # 修改：就地更新該列與 _allRows
                 pos = order.index(did)
+                all_rows[pos] = r
                 self._fillRow(key, table, cols, r, id_col, pos)
-            elif (not should_show) and in_table:
+            elif (not exists) and in_table:
                 # 移除：刪該列
                 pos = order.index(did)
                 table.removeRow(pos)
                 order.pop(pos)
+                all_rows.pop(pos)
                 matched_map.pop(did, None)
-                continue
-
-            # 維護命中欄記錄（供切完整提示判斷）
-            if should_show:
-                matched_map[did] = [vc for vc in search_cols
-                                    if r.get(vc) is not None and kw in str(r.get(vc))] if kw else []
 
         self._lastLoad[key] = self._dbNow()
-        # 更新筆數與欄寬
-        shown = table.rowCount()
-        kw, search_cols, _ = getattr(self, "_lastSearch", {}).get(key, ("", [], shown))
-        self._lastSearch[key] = (kw, search_cols, shown)
+        # 重算欄寬 + 可見性（含搜尋 filter 與逾期篩選）
         self._applyMode(key)
-        # 差異更新後同步套用逾期篩選（新列若不符逾期則藏）
-        self._applyOverdue(key)
+        self._applyFilter(key)
 
     def _appendRow(self, key, table, cols, r, id_col):
         pos = table.rowCount()
