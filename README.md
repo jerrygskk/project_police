@@ -145,6 +145,9 @@ main.py
 | 斷詞比對漏字：檔名「日期黏主旨」（如 `1150101匿名竊盜案`）比不到 | `_tokenize` 舊版用 `re.fullmatch([\\u4e00-\\u9fff]+)` 判斷整個片段是否純中文才做滑動切詞，但日期與中文黏連的片段含數字→不符→中文完全沒切出來 | 改成對每個片段用 `re.findall([\\u4e00-\\u9fff]+)` 抽出**所有中文連續段**再做 2 字滑動切詞，不要求整段純中文 |
 | 公文「軟刪除」後仍出現在歸檔待歸檔清單（空白列） | 刪除是清空式 UPDATE（案由/主旨設 NULL + `is_electronic=''`），歸檔頁待歸檔判定只看 `is_electronic` 空 → 空殼符合條件被撈出 | `_queryUnarchived` 與 `_tableSignature` 都要加排除：底層案由欄（crim `subject_summary` / gen `subject`）為 NULL 或空即視為已刪除空殼，不列入。**任何「未歸檔/待處理」查詢都要記得排除軟刪除空殼** |
 | 編號欄同格同時出現「超連結數字」與「純文字數字」（admin↔user 來回切後疊現） | `QTableWidget` 同一格的 `item`（`setItem`）與 `cellWidget`（`setCellWidget`）是兩套獨立儲存、可並存；`setDocIdLinkCell` 切換 clickable 時只寫新表示、沒清舊表示，QLabel 連結背景透明致後方 item 文字透出 | `setDocIdLinkCell` 切換前互清：進連結分支先 `takeItem`、進純文字分支先 `removeCellWidget`。修在 helper，dbbrowse 三表初建與 `_onRolePerm` 一併受惠。**同格切換 item↔cellWidget 一律先清舊表示** |
+| `QDateEdit` 要「顯示空白」又要月曆打開停在今天，卻一直停在最小年（1752/09）；或被迫只能「預設今天」 | 「空白」靠 `setSpecialValueText`，但它只在 `date==minimumDate` 時顯示，故空白哨兵必為 minimumDate(1752)；而 QDateEdit 開月曆時內部會 `setSelectedDate(目前日期)`→導到該日期所在月＝1752。**事件過濾器若裝在 QDateEdit 上，其 `Show` 只在表單載入觸發一次、使用者按鈕開月曆時根本不觸發** | 事件過濾器要裝在 **`dateedit.calendarWidget()`**（它的 `Show` 每次彈窗開啟都觸發），在「目前為空白（date==minimumDate）」時用 `QTimer.singleShot(0, …) setCurrentPage(今年,今月)` 導到今天月份、**不填值**；既有日期則不導走。封裝為 `ui_utils.widgets.setupDateEditCalendarOnly`。**⚠️ 早期「預設今天」就是因為這題沒解出來才退而求其次的。** 驗證務必用真實點開 popup（offscreen 用 `QTest` 點下拉箭頭），別只 `cal.show()`──那不會重現內部 `setSelectedDate` 導頁，會得到假陽性 |
+| 歸檔候選檔名 PK 是 1xx（100–199）時，日期解析成空白 | `_parseDate` 舊正則 `(1\d{2})…` 會把開頭 PK「103」當成民國年吃掉，再把後面真日期數字湊成月/日（如 mo=11、d=50 非法）→回空 | 日期 token 改 `(?<!\d)(1\d{2})(\d{2})(\d{2})(?!\d)`（完整 7 碼、前後不接數字），PK 3/4/5 碼皆不再誤判；同函式整合西元 20xx→民國（年-1911）。真實資料 **142/1317 筆**受此 bug 影響 |
+| 歸檔預覽主旨退回 DB 主旨、而非 PDF 檔名（檔名無 `-` 時） | `_parseSubject` 舊版只用 `-` 分段；實務候選檔 `1150612匿名竊盜(詠翔)` 無 `-`→整串成單一段，尾端人名又被剝掉→中段為空→退用 DB 主旨 | `_parseSubject` 補「無 `-`」分支：去開頭日期（連續數字，含西元/民國）＋從尾端剝人名區（同 `_resolveNames` 規則），中間即主旨；有 `-` 仍走原分段邏輯 |
 
 ---
 
@@ -290,6 +293,8 @@ self.setStyleSheet("""
 | 新元件行為 | `widgets.py` 新增函式 + `__init__.py` export |
 | 身分變更重設刪除鈕（greyout/還原） | `table.py` 的 `refreshDeleteBtns(table, enabled, col=0)` |
 | 表格整排 hover 反白 | `widgets.py` 的 `RowHoverFilter` + `RowHoverDelegate`（自 tab_archive 抽出，通用） |
+| 可空白日期欄、月曆打開停在今天 | `widgets.py` 的 `setupDateEditCalendarOnly(dateedit)`（搭 `setSpecialValueText(" ")` ＋設 minimumDate 當空白哨兵；過濾器裝 calendarWidget，見 §2 雷） |
+| 固定 N 行、超長尾端省略的標籤 | `widgets.py` 的 `TwoLineElideLabel`（固定 2 行高、第 2 行尾 `…`、完整內容入 tooltip；建構後以 `actions.replaceWidget(舊label, 新)` 換掉 .ui 的 QLabel） |
 | 預覽表黏底捲動 | `setupPreviewTable` 後呼叫 `attachStickyScroll(table)` |
 
 ### 通用彈窗（db_utils）

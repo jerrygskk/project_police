@@ -1,13 +1,13 @@
 import os
 import re
 
-from PySide6.QtCore import Qt, QUrl, QSize
-from PySide6.QtGui import QDesktopServices, QPalette, QColor, QIcon
+from PySide6.QtCore import Qt, QUrl, QSize, QTimer
+from PySide6.QtGui import QDesktopServices, QPalette, QColor, QIcon, QIntValidator
 from PySide6.QtWidgets import (
     QVBoxLayout, QTabWidget, QLineEdit, QPushButton, QLabel,
     QTableWidget, QTableWidgetItem, QFileDialog, QWidget,
     QHBoxLayout, QListWidget, QHeaderView,
-    QStackedWidget,
+    QStackedWidget, QSizePolicy,
 )
 
 from lib.base_tab import BaseTab
@@ -16,7 +16,7 @@ from lib.auth_manager import AuthManager
 from lib.archive_text import _trimName, _tokenize, _parseDate, _sanitize, _pkOf
 from ui_utils import (
     setupPreviewTable, autoResizeTable, setDocIdLinkCell,
-    RowHoverFilter, RowHoverDelegate,
+    RowHoverFilter, RowHoverDelegate, TwoLineElideLabel,
     CriminalEditDialog, GeneralEditDialog,
 )
 
@@ -132,6 +132,7 @@ class TabArchive(BaseTab):
                 "path":         inner.findChild(QLineEdit, f"{key}_path"),
                 "pick":         inner.findChild(QPushButton, f"{key}_pick"),
                 "doc":          inner.findChild(QTableWidget, f"{key}_doc_table"),
+                "doc_search":   inner.findChild(QLineEdit, f"{key}_doc_search"),
                 "kw":           inner.findChild(QLineEdit, f"{key}_kw"),
                 "paper_only":   inner.findChild(QPushButton, f"{key}_paper_only"),
                 "match":        inner.findChild(QPushButton, f"{key}_match"),
@@ -153,6 +154,15 @@ class TabArchive(BaseTab):
                 btn = self._ui[key][k]
                 if btn:
                     btn.setStyleSheet(self._SEG_STYLE)
+            # 最終檔名：換成固定 2 行的省略標籤，避免長檔名破版／往下長到第 3 行
+            fin = self._ui[key]["final"]
+            actions = inner.findChild(QHBoxLayout, f"{key}_pv_actions")
+            if fin and actions is not None:
+                new_fin = TwoLineElideLabel(fin.text())
+                new_fin.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                actions.replaceWidget(fin, new_fin)
+                fin.deleteLater()
+                self._ui[key]["final"] = new_fin
             self._curPdf = getattr(self, "_curPdf", {})
             self._curPdf[key] = None
             self._bind(key)
@@ -218,6 +228,17 @@ class TabArchive(BaseTab):
         # 只歸紙本：標記 is_reported=1，不需 PDF
         if u.get("paper_only"):
             u["paper_only"].clicked.connect(lambda _, k=key: self._archivePaperOnly(k))
+        # 待歸檔「編號搜尋」：只收數字、1 秒延遲自動套用、用 setRowHidden 過濾不重建
+        se = u.get("doc_search")
+        if se:
+            se.setValidator(QIntValidator(0, 9_999_999, se))
+            self._searchTimers = getattr(self, "_searchTimers", {})
+            t = QTimer(se)
+            t.setSingleShot(True)
+            t.setInterval(1000)
+            t.timeout.connect(lambda k=key: self._applyDocSearch(k))
+            self._searchTimers[key] = t
+            se.textChanged.connect(lambda _txt, tm=t: tm.start())
 
     # ── 承辦人清單（DB 全體，點擊加入預覽承辦人格）──────────
     def _loadPeople(self, key):
@@ -347,6 +368,8 @@ class TabArchive(BaseTab):
         self._lastLoad[key] = self._dbNow()
         # 套用目前模式（精簡只顯示前三欄）+ 算彈性欄寬
         self._applyDocMode(key)
+        # 全量載入後重新套用編號搜尋（若有）
+        self._applyDocSearch(key)
 
     def _fillDocRow(self, key, table, cols, r, pos):
         """填一列（新建或就地更新）。編號→超連結(點開編輯)、承辦人去後綴、案由靠左+tooltip。"""
@@ -456,6 +479,38 @@ class TabArchive(BaseTab):
 
         self._lastLoad[key] = self._dbNow()
         self._applyDocMode(key)
+        # 列集合可能變動 → 重新套用目前的編號搜尋過濾
+        self._applyDocSearch(key)
+
+    # ── 待歸檔編號搜尋（setRowHidden 過濾，不重建表格）──────────
+    def _applyDocSearch(self, key):
+        u = self._ui.get(key, {})
+        table = u.get("doc")
+        se = u.get("doc_search")
+        if not table or not se:
+            return
+        q = (se.text() or "").strip()
+        order = self._docorder.get(key, [])
+        for row in range(table.rowCount()):
+            doc_id = order[row] if row < len(order) else ""
+            hide = bool(q) and not str(doc_id).startswith(q)
+            table.setRowHidden(row, hide)
+
+    def _clearDocSearch(self, key):
+        """清空搜尋字串＋取消待觸發的延遲＋顯示全部列。"""
+        u = self._ui.get(key, {})
+        se = u.get("doc_search")
+        table = u.get("doc")
+        t = getattr(self, "_searchTimers", {}).get(key)
+        if t:
+            t.stop()
+        if se:
+            se.blockSignals(True)
+            se.clear()
+            se.blockSignals(False)
+        if table:
+            for row in range(table.rowCount()):
+                table.setRowHidden(row, False)
 
     def _queryUnarchived(self, key):
         """查未歸檔公文（is_electronic 為空）的完整 View 列。
@@ -728,22 +783,43 @@ class TabArchive(BaseTab):
         table.setUpdatesEnabled(True)
 
     def _parseSubject(self, old_path):
-        """從舊檔名拆主旨：以 - 分段後，去掉開頭純數字段(PK/日期)與結尾人名區，
-        中間即主旨。拆不到回空字串（呼叫端會退用 DB 主旨）。"""
+        """從舊檔名拆主旨。支援兩種格式：
+        (1) 已格式化「PK-日期-主旨-人名」：以 - 分段，去開頭純數字段＋結尾人名段，中間為主旨。
+        (2) 實務候選檔「日期+主旨(人名)」(無 -)：去開頭日期(連續數字，含西元/民國)，
+            再從尾端剝除人名區（比照 _resolveNames 規則），剩下即主旨。
+        拆不到回空字串（呼叫端會退用 DB 主旨）。"""
         base = os.path.splitext(os.path.basename(old_path))[0]
-        segs = [s.strip() for s in re.split(r"[-－]", base) if s.strip()]
-        if not segs:
-            return ""
-        # 去掉開頭連續純數字段（PK、日期）
-        i = 0
-        while i < len(segs) and re.fullmatch(r"\d+", segs[i]):
-            i += 1
-        # 結尾人名區：若最後一段解析得到人名則去掉
-        j = len(segs)
-        if self._resolveNames(old_path):
-            j -= 1
-        mid = segs[i:j]
-        return "、".join(mid) if mid else ""
+
+        # 格式 (1)：含 - 分隔 → 沿用原分段邏輯
+        if re.search(r"[-－]", base):
+            segs = [s.strip() for s in re.split(r"[-－]", base) if s.strip()]
+            if not segs:
+                return ""
+            i = 0
+            while i < len(segs) and re.fullmatch(r"\d+", segs[i]):
+                i += 1
+            j = len(segs)
+            if self._resolveNames(old_path):
+                j -= 1
+            mid = segs[i:j]
+            return "、".join(mid) if mid else ""
+
+        # 格式 (2)：無 - → 去開頭日期 + 去結尾人名
+        s = re.sub(r"^\s*(?:1\d{2}|20\d{2})[-.\/]?\d{1,2}[-.\/]?\d{1,2}", "", base)
+        if s == base:                      # 開頭非日期格式 → 至少去掉開頭連續數字
+            s = re.sub(r"^\s*\d+", "", base)
+        name_dict = self._loadNameDict()
+        pieces = [p for p in re.split(r"[-－.、，,（）()／/_\s·．]+", s) if p.strip()]
+        # 從尾端剝除人名（純數字→停；短片段(<=3)或 DB 有的視為人名；長且非名→停）
+        while pieces:
+            p = pieces[-1]
+            if re.fullmatch(r"\d+", p):
+                break
+            if len(p) <= 3 or p in name_dict:
+                pieces.pop()
+            else:
+                break
+        return "".join(pieces)
 
     # ── 選定 PDF：把組好的檔名填入可編輯預覽四格（不立即改名）────
     def _selectPdf(self, key, doc_id, filepath):
@@ -869,6 +945,8 @@ class TabArchive(BaseTab):
                 f"此操作不需 PDF，公文仍留在清單等待補電子檔。",
                 confirm_text="標記紙本", default_confirm=True):
             return
+        # 送出確認 → 清空編號搜尋（避免操作後列表停在過濾狀態）
+        self._clearDocSearch(key)
         try:
             conn = self._getConn()
             conn.execute(
@@ -920,6 +998,8 @@ class TabArchive(BaseTab):
                 f"確認後將重新命名檔案並記錄為已歸檔。",
                 confirm_text="歸檔", default_confirm=True):
             return
+        # 送出確認 → 清空編號搜尋
+        self._clearDocSearch(key)
 
         # 1) 重新命名實體檔案
         try:

@@ -10,7 +10,7 @@ from lib.base_tab import BaseTab
 from lib.db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgInfo, msgWarning, msgCritical, confirmBox
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
-    setupFilterCombo, setupDateEditToToday, refreshFilterCombo,
+    setupFilterCombo, setupDateEditToToday, setupDateEditCalendarOnly, refreshFilterCombo,
     CriminalEditDialog, GeneralEditDialog, attachStickyScroll,
 )
 
@@ -133,8 +133,9 @@ class TabReport(BaseTab):
             self.rpt_date.setDate(QDate.currentDate())
             setupDateEditToToday(self.rpt_date)
         if self.crim_occdate:
-            self.crim_occdate.setDate(QDate.currentDate())
-            setupDateEditToToday(self.crim_occdate)
+            self.crim_occdate.setSpecialValueText(" ")
+            self.crim_occdate.setDate(self.crim_occdate.minimumDate())
+            setupDateEditCalendarOnly(self.crim_occdate)
 
         # ── 載入參照表 ────────────────────────────────────
         self._personnel, self._depts = self._loadRef()
@@ -315,7 +316,7 @@ class TabReport(BaseTab):
         setupFilterCombo(self.crim_processor, self._personnel)
         setupFilterCombo(self.crim_receiver,  self._personnel)
         if self.crim_subject:  self.crim_subject.clear()
-        if self.crim_occdate:  self.crim_occdate.setDate(QDate.currentDate())
+        if self.crim_occdate:  self.crim_occdate.setDate(self.crim_occdate.minimumDate())
         if self.crim_reporter: self.crim_reporter.clear()
         if self.radio_gen_cat_a: self.radio_gen_cat_a.setChecked(True)
         setupFilterCombo(self.gen_dept,      self._depts)
@@ -345,7 +346,8 @@ class TabReport(BaseTab):
         processor_id = self.crim_processor.currentData()
         receiver_id  = self.crim_receiver.currentData()
         subject      = self.crim_subject.text().strip()  if self.crim_subject   else ""
-        occ_date     = self.crim_occdate.date().toString("yyyy-MM-dd") if self.crim_occdate else None
+        occ_blank    = self.crim_occdate and self.crim_occdate.date() == self.crim_occdate.minimumDate()
+        occ_date     = None if occ_blank else (self.crim_occdate.date().toString("yyyy-MM-dd") if self.crim_occdate else None)
         reporter     = self.crim_reporter.text().strip() if self.crim_reporter  else ""
 
         errors = []
@@ -353,6 +355,7 @@ class TabReport(BaseTab):
         if not casetype_id:  errors.append("案類")
         if not processor_id: errors.append("承辦人員")
         if not subject:      errors.append("陳報主旨")
+        if occ_blank:        errors.append("查獲日期")
         if errors:
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
             return

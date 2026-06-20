@@ -31,7 +31,7 @@ from ui_utils import (
 TASK_COLS = [
     {"header": "", "delete": True, "slim": True, "w": 32},
     {"header": "編號",     "view_col": "編號",     "slim": True,  "link": True,  "search": True, "w": 64},
-    {"header": "所承辦人", "view_col": "所承辦人", "slim": True,  "search": True, "w": 120},
+    {"header": "所承辦人", "view_col": "所承辦人", "slim": True,  "search": True, "w": 120, "trim_name": True},
     {"header": "交辦事由", "view_col": "交辦事由", "slim": True,  "search": True, "stretch": True, "w": 240},
     {"header": "業務組",   "view_col": "業務組",   "slim": True,  "search": True, "w": 80},
     {"header": "狀態",     "view_col": "狀態",     "slim": True,  "color": True, "search": True, "w": 200},
@@ -46,7 +46,7 @@ TASK_COLS = [
 CRIM_COLS = [
     {"header": "", "delete": True, "slim": True, "w": 32},
     {"header": "送文編號",    "view_col": "送文編號",    "slim": True,  "link": True,  "search": True, "w": 80},
-    {"header": "主承辦人",    "view_col": "主承辦人",    "slim": True,  "search": True, "w": 120},
+    {"header": "主承辦人",    "view_col": "主承辦人",    "slim": True,  "search": True, "w": 120, "trim_name": True},
     {"header": "案類",        "view_col": "案類",        "slim": True,  "search": True, "w": 180},
     {"header": "嫌疑人/案由", "view_col": "嫌疑人_案由", "slim": True,  "search": True, "stretch": True, "w": 240},
     {"header": "發文分類",    "view_col": "發文分類",    "slim": True,  "search": True, "w": 96, "map": "status"},
@@ -54,7 +54,7 @@ CRIM_COLS = [
     {"header": "受理日期",    "view_col": "受理日期",    "slim": True,  "search": True, "w": 140},
     {"header": "送文人員",    "view_col": "送文人員",    "slim": False, "search": True, "w": 120},
     {"header": "報案人",      "view_col": "報案人",      "slim": False, "search": True, "w": 130},
-    {"header": "受理人",      "view_col": "受理人",      "slim": False, "search": True, "w": 120},
+    {"header": "受理人",      "view_col": "受理人",      "slim": False, "search": True, "w": 120, "trim_name": True},
     {"header": "紙本",        "view_col": "紙本",        "slim": False, "search": False, "w": 56, "bool_col": True},
     {"header": "電子檔",      "view_col": "電子檔",      "slim": False, "search": False, "w": 64, "bool_col": True},
 ]
@@ -62,7 +62,7 @@ CRIM_COLS = [
 GEN_COLS = [
     {"header": "", "delete": True, "slim": True, "w": 32},
     {"header": "送文編號", "view_col": "送文編號", "slim": True,  "link": True,  "search": True, "w": 80},
-    {"header": "陳報人",   "view_col": "陳報人",   "slim": True,  "search": True, "w": 120},
+    {"header": "陳報人",   "view_col": "陳報人",   "slim": True,  "search": True, "w": 120, "trim_name": True},
     {"header": "陳報主旨", "view_col": "陳報主旨", "slim": True,  "search": True, "stretch": True, "w": 240},
     {"header": "業務單位", "view_col": "業務單位", "slim": True,  "search": True, "w": 96},
     {"header": "分類",     "view_col": "分類",     "slim": True,  "search": True, "w": 96, "map": "cat"},
@@ -623,6 +623,10 @@ class TabDBBrowse(BaseTab):
 
             val = r.get(c["view_col"])
             text = "" if val is None else str(val)
+
+            # 承辦/協辦欄：顯示去 - 後綴（王小明-19.06 → 王小明），比照預覽頁
+            if c.get("trim_name") and text:
+                text = self._trimName(text)
 
             # 套用顯示對照（發文分類 / 分類）：DB 原始值 → 短詞，
             # 與陳報頁共用 BaseTab 的 _STATUS_MAP / _CAT_MAP。

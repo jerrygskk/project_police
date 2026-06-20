@@ -14,7 +14,7 @@ from PySide6.QtGui import QFontMetrics
 
 from lib.db_utils import getResourcePath, BTN_CONFIRM, BTN_CANCEL, confirmBox, getConn
 from lib.auth_manager import AuthManager
-from ui_utils.widgets import setupFilterCombo
+from ui_utils.widgets import setupFilterCombo, setupDateEditCalendarOnly
 
 
 class _ElidingLabel(QLabel):
@@ -421,8 +421,13 @@ class TaskEditDialog(_BaseEditDialog):
         deadline  = None if no_deadline \
                     else self.w_deadline.date().toString("yyyy-MM-dd")
 
-        if not subject:
-            msgWarning("欄位未填", "交辦事由不可為空")
+        errors = []
+        if not recv_id:  errors.append("收文人員")
+        if not dept_id:  errors.append("業務組")
+        if not subject:  errors.append("交辦事由")
+        if not proc_id:  errors.append("承辦人")
+        if errors:
+            msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
             return
 
         # 已發文的交辦單不再提示逾期
@@ -585,6 +590,8 @@ QRadioButton:checked {
         self.w_occ_date = QDateEdit()
         self.w_occ_date.setCalendarPopup(True)
         self.w_occ_date.setDisplayFormat("yyyy-MM-dd")
+        self.w_occ_date.setSpecialValueText(" ")
+        setupDateEditCalendarOnly(self.w_occ_date)
         form.addRow("查獲日期：", self.w_occ_date)
 
         # 報案人
@@ -663,7 +670,7 @@ QRadioButton:checked {
         if occ_date:
             self.w_occ_date.setDate(QDate.fromString(str(occ_date), "yyyy-MM-dd"))
         else:
-            self.w_occ_date.setDate(QDate.currentDate())
+            self.w_occ_date.setDate(self.w_occ_date.minimumDate())
 
         self.w_reporter.setText(str(reporter) if reporter else "")
 
@@ -680,7 +687,8 @@ QRadioButton:checked {
         proc_id     = self.w_processor.currentData()
         recv_id     = self.w_receiver.currentData()
         subject     = self.w_subject.text().strip()
-        occ_date    = self.w_occ_date.date().toString("yyyy-MM-dd")
+        occ_blank   = self.w_occ_date.date() == self.w_occ_date.minimumDate()
+        occ_date    = None if occ_blank else self.w_occ_date.date().toString("yyyy-MM-dd")
         reporter    = self.w_reporter.text().strip()
 
         status_id = 'CS01'
@@ -689,8 +697,14 @@ QRadioButton:checked {
                 status_id = val
                 break
 
-        if not subject:
-            msgWarning("欄位未填", "陳報主旨不可為空")
+        errors = []
+        if not sender_id: errors.append("發文人員")
+        if not case_type: errors.append("案類")
+        if not proc_id:   errors.append("承辦人員")
+        if not subject:   errors.append("陳報主旨")
+        if occ_blank:     errors.append("查獲日期")
+        if errors:
+            msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
             return
 
         if not _confirm_arch_clear(self):
@@ -900,8 +914,12 @@ class GeneralEditDialog(_BaseEditDialog):
                 cat_id = val
                 break
 
-        if not subject:
-            msgWarning("欄位未填", "陳報主旨不可為空")
+        errors = []
+        if not sender_id: errors.append("發文人員")
+        if not proc_id:   errors.append("承辦人")
+        if not subject:   errors.append("陳報主旨")
+        if errors:
+            msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
             return
 
         if not _confirm_arch_clear(self):
