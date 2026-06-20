@@ -28,7 +28,7 @@ main.py
 ### Tab 結構（共 7 個）
 
 | index | 名稱 | 類別 | Layout |
-|-------|------|------|--------|------|
+|-------|------|------|--------|
 | 0 | 交辦單發文 | TabDispatch | Layout1 |
 | 1 | 交辦單收文 | TabReceive | Layout2 |
 | 2 | 公文陳報 | TabReport | Layout3 |
