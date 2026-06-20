@@ -37,7 +37,7 @@ main.py
 | 5 | 檔案歸檔 | TabArchive | Layout6 | 完成 |
 | 6 | 資料庫設定 | TabSettings | Layout7 | 功能完成 |
 
-> **TabSettings 架構**：已比照其他 Tab 改用 `loadUi(Layout7.ui)` 建靜態骨架（密碼驗證頁、左側 nav、三個子頁的表格容器與動作鈕，全部具名），`tab_settings.py` 只保留動態內容（填表格列、每列四顆排序鈕、暫存排序狀態與邏輯、登入登出、跨年度重置）。動態狀態樣式（nav 選中切換、save_btn disabled 灰色）留在 code，比照其他 Layout（Layout1/2/3/5/6 皆不在 `.ui` 帶 stylesheet）。
+> **TabSettings 架構**：已比照其他 Tab 改用 `loadUi(Layout7.ui)` 建靜態骨架（密碼驗證頁、左側 nav、三個子頁的表格容器與動作鈕，全部具名），`tab_settings.py` 只保留動態內容（填表格列、拖拉排序邏輯、暫存排序狀態、登入登出、跨年度重置）。動態狀態樣式（nav 選中切換、save_btn disabled 灰色）留在 code，比照其他 Layout（Layout1/2/3/5/6 皆不在 `.ui` 帶 stylesheet）。
 
 ### 資料流
 
@@ -63,6 +63,7 @@ main.py
 見 [CLAUDE.md](CLAUDE.md)（動手前必掃）。
 
 ---
+
 ## 3. 慣例與設計決策
 
 ### 軟刪除（is_active）
@@ -76,8 +77,8 @@ main.py
 
 - 人員 / 部門 / 案類三表有 `sort_order` 欄，**下拉與列表一律 `ORDER BY sort_order`**（不是 ID）
 - 目的：讓顯示順序跟 ID 脫鉤，可手動調整（ID 純粹是正規化用的主鍵）
-- 設定 Tab 每列有四顆排序鈕：置頂 / 上移 / 下移 / 置底（SVG 圖示，見 `res/sort_*.svg`）
-- **暫存模式**：排序在記憶體操作，「儲存排序」鈕初始 disabled、動過才亮；儲存才寫回 DB（連續整數重編）並設 `_ref_dirty=True`
+- 設定 Tab 以**拖拉列**調整順序（`_RowDragFilter` 攔 `QEvent.Drop`、手動換列）；hint label 提示可拖。⚠️ `QTableWidget.InternalMove` 只移 cell 不移 row，不可用
+- **暫存模式**：排序在記憶體操作，「儲存排序」鈕初始 disabled、拖拉後才亮；儲存才寫回 DB（連續整數重編）並設 `_ref_dirty=True`
 - 未存排序時切子頁 / 切大 Tab / 按修改，會跳確認；取消行為：按鈕觸發的（修改、子頁）回原狀，大 Tab（攔不住）放棄
 - 新增項目放最前（`MIN-1`）
 
@@ -268,8 +269,21 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 - 依 sort_order **重編參照表 id**（連續，維持原前綴與位數，如 P01/D01/CT01）
 - sort_order 重設為連續整數
 - 歸零 Seq_DocId
+- **清空歸檔根目錄設定**（`App_Settings` 的 `archive_root`/`archive_subdir_crim`/`archive_subdir_gen`）— 強制使用者在新年度重新指定歸檔路徑
 
 重編 id 採**兩段式**避主鍵衝突：先把所有列改成暫時前綴（`__TMP__P0001`...），再編回正式 id。**別改成單段直接 UPDATE**，舊新 id 集合有交集會撞 PRIMARY KEY。
+
+### 歸檔根目錄未設定警示
+
+重置後（或首次安裝）歸檔根目錄為空，程式有三層提醒：
+
+1. **瀏覽 Tab4**（`on_activated`）：刑案 / 一般篩選列右側顯示紅字「⚠ 歸檔資料夾未設定，請至設定頁更新」
+2. **歸檔 Tab5**（`on_activated` / `_onShown`）：刑案 / 一般資料夾列右側同上紅字
+3. **設定 Tab6**（`on_activated`，每次登入首次進入）：彈一次確認框詢問是否立即前往「歸檔資料夾」設定（`_arch_warn_shown` flag 控制，重新登入後重置）
+
+切到 Tab4/5 時每次都檢查；設定頁每次登入只跳一次。
+
+---
 
 重啟（`_restartApp()`）：見第 2 節踩雷表 `_MEI` 條。**打包版啟動新程序前必設 `PYINSTALLER_RESET_ENVIRONMENT=1`**（PyInstaller 6.10+ 官方重啟機制），否則新程序沿用舊 `_MEI` 環境、載入已刪除的 DLL 而崩潰。重置後資料全變（id、主表清空），故用整個程序重啟取代逐一刷新 Tab，最乾淨。
 
@@ -327,7 +341,7 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 
 | 資料表 | 欄位 |
 |--------|------|
-| Ref_Personnel | staff_id / staff_name / is_active / **sort_order** |
+| Ref_Personnel | staff_id / staff_name / **alias** / is_active / **sort_order** |
 | Ref_Departments | dept_id / dept_name / **is_active** / **sort_order** |
 | Ref_CaseTypes | case_type_id / case_type_name / **is_active** / **sort_order**（52 種） |
 | Ref_Case_Status | status_id / status_name（CS01~CS03，程式 hardcode，不動） |
@@ -418,7 +432,7 @@ pyinstaller --onefile --name Data-Sync-Tool data_sync_tool.py
 
 | 項目 | 說明 |
 |------|------|
-| 別名表 `_ALIAS` | tab_archive 的人名別名對照目前為空 dict，等維護者提供綽號清單 |
+| 別名對照 | `Ref_Personnel.alias` 欄儲存承辦人別名，歸檔比對時一併納入（設定 Tab 人員維護可編輯）；比對邏輯在 `lib/archive_text.py` |
 | 重跑轉檔重建 DB | schema 有 is_electronic TEXT、last_modified、trigger，差異更新需重跑轉檔才完整生效 |
 | 存量補檔腳本 | backfill_archive_names.py 需重跑轉檔後再執行 |
 
