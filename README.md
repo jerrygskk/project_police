@@ -1,76 +1,12 @@
-# 公文管理系統
+﻿# 公文管理系統
 
 Windows 桌面應用，PySide6 + SQLite，管理警察單位公文（交辦單、刑案陳報、一般陳報）。
 
 ---
 
-## 0. 給接手者（請先讀這節）
+## 0. 給接手者
 
-你（Claude）是這份文件的主要讀者。這節讓你在新對話中快速進入協作狀態。
-
-### 這是什麼
-
-- **技術棧**：Python + PySide6（Qt）+ SQLite，純桌面單機程式
-- **使用者**：警察單位承辦人員
-- **目標環境**：Windows，顯示縮放 **125%**，全域字體 **14pt**
-- **打包**：PyInstaller 打成單一 exe（`--onefile`）
-- **資料**：軟刪除（清空欄位、保留 `doc_id`），不做真 DELETE
-
-### 動手前先做這三件事
-
-1. **讀第 1 節**（架構心智模型）— 了解程式怎麼跑起來、資料怎麼流
-2. **掃第 2 節**（踩雷速查表）— 不看就會踩，而且有些踩過還會再踩
-3. **對齊第 3 節**（慣例與設計決策）— 為什麼這樣寫，不要自作主張改掉
-
-### 協作偏好（務必遵守）
-
-這是維護者最看重的部分。違反這些會直接消耗他的信任與時間。
-
-**動手節奏**
-- **先討論方案再動手**，不要做完才說「其實有更好做法」。重大改動先給示意圖 / 大綱 / 影響範圍清單，等他點頭再寫
-- 複雜或破壞性的改動（牽動多檔、改結構、改資料），**先盤點影響範圍列清單**給他看
-- 要 Claude **基於專業判斷給建議，且適時提供業界或主流修改方式**。反感「見風轉舵」他說 A 你立刻倒向 A、還拿他的話包裝成你的判斷，這會被點名。有不同意見就誠實講，講完理由讓他決定
-
-**提供產出**
-- **需要檔案直接給**，不用問「要不要給你檔案」
-- 改完檔案要**給可下載的檔案**（present_files），不要只貼 code
-- **code 不主動整段貼出來**，他要看才給；要給時**只給被修改的前後片段**，不完整重寫整支檔案或未變動的函數
-- **不用跟維護者告知改了什麼function**，遇到同檔名檔案(如__init__.py)須告知放在哪個資料夾，產出文字只需簡單說明不長篇大論。
-- **git 指令不主動給**，他要才給。要給時用 **Windows CMD 格式**（多行 commit 用多個 `-m`，不要多行字串）
-- **README 不主動改**，他要才改
-
-**寫 code 的紀律**
-- **省 token**：先讀完相關檔案再動手，`str_replace` 範圍要精準
-- ⚠️ **`str_replace` 容易吃掉相鄰的 `def`**：改完後務必 `grep` 確認上下相鄰的函式定義還在（這個錯在開發時犯過多次，每次都害他重新測試）。尤其是「在某方法前後插入新方法」「刪除某方法」時最容易發生
-- 改完檔案**先 compile（`py_compile`）驗證語法**，能模擬測試的邏輯（演算法、SQL round-trip）就模擬測一下再給。容器沒有 PySide6，GUI 行為無法實跑，這點要主動告知他、請他上機測
-- ⚠️ **動手前對照第 2 節踩雷表**。README 寫過的雷再踩會被直接點名
-
-**版本號**
-- 版本號定義於 `lib/version.py`（目前 `v1.0.0`），進版時只進第三碼
-- 進位與否他決定，不要自己跳版號
-
-**用語約定（他會用簡稱，要對上）**
-- **「進版」** = 改版本號（改 `lib/version.py` 的 `__version__`）+ 打 git tag（`v{版本號}`）+ 在 README 第 9 節補一列版本記錄
-- **「給我 git」** = 把當前所有變動 commit + push（Windows CMD 格式，多 `-m`）
-- **release note** = **一律給 `.md` 檔案**（present_files），讓他直接複製貼上 GitHub Release。**不要把 release note 直接打在對話裡**（會被聊天介面渲染成排版效果，無法複製原始碼），務必給檔案。內容寫給使用者看（功能 / 改進 / 修正），技術細節留 README 踩雷表
-
-**打包（PyInstaller）**
-- **只用 onefile**，不要問要哪種打包方式
-- 習慣**每次砍掉 spec 全新 build**（不信任殘留 spec 會帶過期設定）。打包指令見第 7 節，開頭已含 `del spec & rmdir build dist`
-- 容器無法跑 PyInstaller，打包相關只能給指令 / 改 code，請他上機 build 測
-
-**找得到就別問**
-- zip / README / code / dbfile 裡找得到答案的不要問
-- 但**沒寫進文件的設計決策**（例如「歸檔 Tab 要做什麼」）一定要問，不要憑空假設
-
-**文字風格**
-- UI 上給使用者看的提示文字要**正式**，不要口語（例如不要寫「排序未儲存，要存嗎？」，要寫「儲存目前排序後繼續編輯？」）
-
-**回覆風格（對他說話時）**
-- **直接切入重點**：不說客套話（「好的」「沒問題」「這是個好問題」）
-- **免除前言後語**：直接輸出核心答案，不要開場白（「以下是為您整理的…」）與結尾總結（「希望以上對您有幫助」）
-- **精簡文字**：列點、短句、精準詞彙，在不影響理解與準確度下用最少字數
-- **主動提醒斷點**：對話累積過長時，回覆結尾加「[提示：對話已長，建議備份摘要並開啟新對話]」
+協作規定與偏好見 [CLAUDE.md](CLAUDE.md)（Claude 開新對話時會自動載入）。
 
 ---
 
@@ -122,35 +58,11 @@ main.py
 
 ---
 
-## 2. 踩雷速查表（動手前必掃）
+## 2. 踩雷速查表
 
-| 症狀 | 原因 | 解法 |
-|------|------|------|
-| `.ui` 載入報 `Unable to open/read ui device` | `.ui` 用了 `contentsMargins` + `<rect>` 寫 margin | 改用 `leftMargin`/`topMargin`/`rightMargin`/`bottomMargin` 四個獨立 property |
-| `widget.centralWidget()` 回傳 None | central widget 物件名稱不是全小寫 | 名稱必須是 `centralwidget`（全小寫） |
-| 狀態色（紅/橘/綠）失效、停用列灰字不出現 | stylesheet 寫死 `QTableWidget::item { color }`，優先級蓋過 `setForeground()` | `::item` 只設 padding/border，文字色一律交給 `setForeground()`。`:selected` 的 color 可留。**這個雷開發時踩過不只一次，動表格樣式前先檢查** |
-| 顏色被 stylesheet 蓋掉 | 用了 `Qt.red` 等列舉 | 用 `QColor("#hex")` |
-| 新 Dialog/Widget 文字看不見（深色底） | 沒明確設背景色與文字色，繼承到全域深色 | 每個新 `QDialog`/`QWidget` 都要明確設背景 + 文字色（見第 5 節範例） |
-| 按鈕 `clicked` 連接的 callback 第一個參數變成 `False` | Qt 的 `clicked` signal 會自動多塞一個 `checked` 布林 | lambda 要吃掉它：`lambda _=False, k=key: ...`，否則像 `_REF_CFG[False]` 會 KeyError。**這個雷踩過多次** |
-| `setEnabled(False)` 了按鈕但外觀沒變灰 | 套用的 stylesheet（如 `BTN_CONFIRM`）沒定義 `:disabled` 狀態 | 需要灰掉的按鈕用含 `QPushButton:disabled { ... }` 的自訂 stylesheet |
-| `QTableWidget` / `QAbstractScrollArea` 滾輪事件攔不到 | 滾輪事件由 `viewport()` 接收，覆寫 `table.wheelEvent` 不會被觸發 | 在 `table.viewport()` 上 `installEventFilter` 攔 `QEvent.Wheel`；filter 要存成屬性防 GC |
-| `ORDER BY sort_order` 時新項目跑到最前面 | 新列 `sort_order` 是 NULL，SQLite 把 NULL 排最前 | 新增時務必給 `sort_order` 值（本專案規則：新項目放最前 = `MIN(sort_order)-1`，空表 fallback 1） |
-| 從設定 Tab 切走想攔截「未存」攔不住 | `currentChanged` 切換後才觸發（見第 1 節 Qt 限制） | 大 Tab 只能切過去後補跳提示；子頁切換（按鈕）才能攔住回原狀 |
-| 重置後自動重啟，打包(onefile)版跳 `Failed to load Python DLL ..._MEIxxxxx\python3xx.dll` 或 `ModuleNotFoundError: unicodedata` | PyInstaller 6.x bootloader 把經 `sys.executable` 啟動的新程序當成同一 app 的 worker 子程序，沿用繼承的 `_MEI` 環境（指向舊程序正在清掉的 `_MEIxxxxx`），新程序到已刪除的舊目錄找 DLL/標準庫 | 啟動新程序前設環境變數 **`PYINSTALLER_RESET_ENVIRONMENT=1`**（PyInstaller 6.10+ 官方機制），令新程序解壓全新 `_MEI`。見 `tab_settings.py` 的 `_restartApp()`。**別用 cmd ping 延遲那種歪招**（延遲無效，根因是環境變數沒重設）。開發(非 frozen)無此問題，沿用 `QProcess` 帶 argv 即可 |
-| `setupPreviewTable` 的 200ms 延遲 autoResize 覆蓋欄寬 | `setupPreviewTable` 內建 200ms `QTimer` 重算欄寬，導致手動設完欄寬後又被拉回 | 需自行控制欄寬的表格**不要用 `setupPreviewTable`**，自行初始化 + 彈性欄用 `QHeaderView.Stretch`（Qt 自動吃剩餘空間、elide 切字），固定欄用 `Fixed` + `setColumnWidth`。歸檔待歸檔表即此做法 |
-| 浮貼按鈕(絕對定位)在非當前分頁出現重複/錯位 | QTabWidget 中非可見頁面的 widget layout 未撐開（寬=0），且不同頁的浮貼鈕可能被 Qt 渲染到當前頁 | 不用絕對定位浮貼，**改在 GroupBox 內部 layout 的 HBox 標題列放鈕**（label + spacer + toggle 鈕），走正規 layout 管理、不依賴 resizeEvent 定位 |
-| confirmBox 確認/取消鈕被 Qt 平台慣例重排左右 | `QMessageBox` 的 `AcceptRole`/`RejectRole` 會被 Qt 依作業系統慣例調換位置 | 兩顆鈕都用 **`ActionRole`**（同 role 不會被重排），按 `addButton` 順序就是視覺左右順序。手動設 `setDefaultButton`(Enter) + `setEscapeButton`(Esc) 保留快捷鍵 |
-| Material Icons SVG 在小鈕上白邊太多 | viewBox `0 -960 960 960` 是 960px 座標系，圖案只佔中央約 70% | 裁切 viewBox 到圖案實際 bounding box（如 pdf `100 -870 760 760`、archive `80 -890 800 800`），width/height 統一 512px |
-| SVG icon 在按鈕裡看起來偏一邊（如 pdf 偏右上） | path 含非對稱裝飾（如後景文件陰影 `M140-80`），把主圖視覺重心推往一側；或 viewBox 留白不對稱 | 移除非對稱裝飾，viewBox 以主圖 bounding box 置中（pdf 移除後景後改 `150 -890 760 760`）。並排多個 icon 時務必比對視覺重心一致 |
-| 斷詞比對漏字：檔名「日期黏主旨」（如 `1150101匿名竊盜案`）比不到 | `_tokenize` 舊版用 `re.fullmatch([\\u4e00-\\u9fff]+)` 判斷整個片段是否純中文才做滑動切詞，但日期與中文黏連的片段含數字→不符→中文完全沒切出來 | 改成對每個片段用 `re.findall([\\u4e00-\\u9fff]+)` 抽出**所有中文連續段**再做 2 字滑動切詞，不要求整段純中文 |
-| 公文「軟刪除」後仍出現在歸檔待歸檔清單（空白列） | 刪除是清空式 UPDATE（案由/主旨設 NULL + `is_electronic=''`），歸檔頁待歸檔判定只看 `is_electronic` 空 → 空殼符合條件被撈出 | `_queryUnarchived` 與 `_tableSignature` 都要加排除：底層案由欄（crim `subject_summary` / gen `subject`）為 NULL 或空即視為已刪除空殼，不列入。**任何「未歸檔/待處理」查詢都要記得排除軟刪除空殼** |
-| 編號欄同格同時出現「超連結數字」與「純文字數字」（admin↔user 來回切後疊現） | `QTableWidget` 同一格的 `item`（`setItem`）與 `cellWidget`（`setCellWidget`）是兩套獨立儲存、可並存；`setDocIdLinkCell` 切換 clickable 時只寫新表示、沒清舊表示，QLabel 連結背景透明致後方 item 文字透出 | `setDocIdLinkCell` 切換前互清：進連結分支先 `takeItem`、進純文字分支先 `removeCellWidget`。修在 helper，dbbrowse 三表初建與 `_onRolePerm` 一併受惠。**同格切換 item↔cellWidget 一律先清舊表示** |
-| `QDateEdit` 要「顯示空白」又要月曆打開停在今天，卻一直停在最小年（1752/09）；或被迫只能「預設今天」 | 「空白」靠 `setSpecialValueText`，但它只在 `date==minimumDate` 時顯示，故空白哨兵必為 minimumDate(1752)；而 QDateEdit 開月曆時內部會 `setSelectedDate(目前日期)`→導到該日期所在月＝1752。**事件過濾器若裝在 QDateEdit 上，其 `Show` 只在表單載入觸發一次、使用者按鈕開月曆時根本不觸發** | 事件過濾器要裝在 **`dateedit.calendarWidget()`**（它的 `Show` 每次彈窗開啟都觸發），在「目前為空白（date==minimumDate）」時用 `QTimer.singleShot(0, …) setCurrentPage(今年,今月)` 導到今天月份、**不填值**；既有日期則不導走。封裝為 `ui_utils.widgets.setupDateEditCalendarOnly`。**⚠️ 早期「預設今天」就是因為這題沒解出來才退而求其次的。** 驗證務必用真實點開 popup（offscreen 用 `QTest` 點下拉箭頭），別只 `cal.show()`──那不會重現內部 `setSelectedDate` 導頁，會得到假陽性 |
-| 歸檔候選檔名 PK 是 1xx（100–199）時，日期解析成空白 | `_parseDate` 舊正則 `(1\d{2})…` 會把開頭 PK「103」當成民國年吃掉，再把後面真日期數字湊成月/日（如 mo=11、d=50 非法）→回空 | 日期 token 改 `(?<!\d)(1\d{2})(\d{2})(\d{2})(?!\d)`（完整 7 碼、前後不接數字），PK 3/4/5 碼皆不再誤判；同函式整合西元 20xx→民國（年-1911）。真實資料 **142/1317 筆**受此 bug 影響 |
-| 歸檔預覽主旨退回 DB 主旨、而非 PDF 檔名（檔名無 `-` 時） | `_parseSubject` 舊版只用 `-` 分段；實務候選檔 `1150612匿名竊盜(詠翔)` 無 `-`→整串成單一段，尾端人名又被剝掉→中段為空→退用 DB 主旨 | `_parseSubject` 補「無 `-`」分支：去開頭日期（連續數字，含西元/民國）＋從尾端剝人名區（同 `_resolveNames` 規則），中間即主旨；有 `-` 仍走原分段邏輯 |
+見 [CLAUDE.md](CLAUDE.md)（動手前必掃）。
 
 ---
-
 ## 3. 慣例與設計決策
 
 ### 軟刪除（is_active）
@@ -518,11 +430,11 @@ pyinstaller --onefile --name Data-Sync-Tool data_sync_tool.py
 
 | 版本 | 摘要 |
 |------|------|
-| v1.0.0 | **正式版：歸檔電子檔快速檢視 ＋ 歸檔資料夾設定（脫離 beta）**。**瀏覽頁（Tab4）**：刑案／一般列的主旨欄前，凡有真實歸檔檔名者顯示電子檔圖示鈕，點圖即以系統預設軟體開啟該筆 PDF（唯讀檢視，一般使用者亦可，行為比照歸檔頁；用 item→cellWidget 改寫主旨欄，不踩同格切換雷）。**檔名定位**：DB 僅存 `is_electronic` 檔名，開檔時由設定的「歸檔根（年度層 UNC）」＋對應刑案／一般子夾遞迴建索引、`is_electronic` 整串 NFC 比對命中（記憶體快取、miss 重建一次）；只走對應類別子夾，避開刑案／一般獨立發號（PK 各自從 1）造成的跨類同名。**與磁碟機代號脫鉤**：net use 代號浮動、UNC 固定，故一律存 UNC（`db_utils.toUncPath` 以 `QStorageInfo` 由代號還原 UNC，轉不出則手動輸入）。**設定頁（Tab6）**：左側 nav 新增「歸檔資料夾」鈕＋`ArchiveRootDialog`（選年度層→自動轉 UNC＋可手動覆寫→列出子夾、猜刑案／一般並確認），存 `App_Settings` 三 key（`archive_root`/`archive_subdir_crim`/`archive_subdir_gen`，schema 不變、年度重置不清）；年度重置完成後提示更新歸檔根。**歸檔頁（Tab5）**：選 PDF 資料夾預設起點＝歸檔根；進頁自動帶入並顯示資料夾名稱（`_loadFolder`/`_autoloadDefault`，已選過不覆蓋、手動選優先）。**新增**：`db_utils.getSetting/setSetting/archiveSubdir/archiveDefaultDir/resolveArchivedPdf/clearPdfIndexCache/toUncPath`。靜態驗證（py_compile＋定位邏輯模擬＋三表 `_query` 對真 DB）PASS，GUI／onefile 待上機 |
-| v0.9.0-beta.12 | **交辦單編輯權限細化 ＋ 內部重構**。**權限**（完整矩陣見 §3）：admin 解除「已發文編號鎖定」（可開 popup 全可改，一般使用者仍只能改承辦人且已發文鎖住）；`tab_dispatch._onRolePerm` 改為即時重刷編號連結（身分變更不必重查）；確立收文 Tab1／陳報 Tab2 編輯 popup 對一般使用者全開（誤輸更正屬正常作業）。**內部重構（無行為變更，見 §3/§4/§5）**：`lib/archive_text.py` 抽出比對純函式（§7 補 `--hidden-import`）、`AuthManager.is_admin()`、`db_utils.getConn` 統一連線、hover 元件移入 `ui_utils`、`table.refreshDeleteBtns` 共用、`_BaseEditDialog` 基底。靜態驗證（py_compile＋import 名稱解析＋邏輯等價）PASS，GUI／onefile 打包待上機 |
-| v0.9.0-beta.11 | **分頁權限控管 ＋ 兩處顯示修正**。權限：交辦單發文（Tab0）一般使用者僅可改承辦人（TaskEditDialog `restricted` 模式，其餘欄位鎖定並顯示 DB 原值，儲存只動承辦人）、刪除 X 鈕停用變灰；資料庫瀏覽（Tab4）一般使用者無修改權限（編號不可點、刪除 X 灰）；檔案歸檔（Tab5）一般使用者顯示登入提示頁（Layout6.ui 包 `outer_stack`）；三頁皆監聽 `role_changed` 即時生效；收文/陳報/列印維持全開。修正：TaskEditDialog `restricted` 鎖定欄位補 `:disabled` 灰樣式（先前只 setEnabled 未 greyout）；歸檔頁 PDF/歸檔操作 icon 視覺重心對齊（icon_pdf/icon_archive viewBox 緊貼 bbox 對稱置中，先前 PDF 偏高一格）。`theme.py` 補 `#deleteBtn:disabled` 灰樣式。關閉 DEBUG_MODE 恢復正式行為（已發文編號鎖定、送出後清表）；修 tab_dbbrowse 點編號超連結 AttributeError（`_rowOf` def 修復）。**後續修補**：修 dbbrowse 編號欄連結與純文字並存重複（`setDocIdLinkCell` 切換前互清 item/cellWidget，user↔admin 來回切不再殘留）；刑案/一般陳報編輯 popup 新增「歸檔狀態」區塊（僅 admin，`CriminalEditDialog`/`GeneralEditDialog`，dbbrowse 與 archive 共用）：紙本 `is_reported` checkbox 雙向、電子檔 `is_electronic` 顯示檔名＋清除鈕（僅退回未歸、不動實體 PDF，長檔名 `ElideMiddle` 省略），儲存才寫回、取消還原 |
-| v0.9.0-beta.10 | **歸檔「只歸紙本」＋ 逾期未回篩選 ＋ 比對演算法修正**。歸檔頁：新增「只歸紙本」鈕（is_reported=1，不需 PDF、續留清單等補 PDF，案由前顯示靛藍紙圖示 icon_paper.svg）；自訂關鍵字修復（_rematch 未選公文不再 return，可純關鍵字比對）；`_tokenize` 修正日期黏主旨檔名（如 `1150101匿名竊盜案`）中文無法切詞問題（真實資料 310/1317 筆受影響）；已歸檔遭刪除的空殼不再殘留待歸檔（_queryUnarchived/_tableSignature 排除底層案由/主旨為 NULL 者）；icon_pdf.svg 移除後景陰影+viewBox 置中修偏移；只歸紙本/檔案歸檔鈕套墨藍。資料庫瀏覽：交辦單頁「逾期未回」篩選（限辦日<今天且未發文，setRowHidden 不重建、與精簡完整/搜尋交集，逾期旗標存 vertical header UserRole）。刑案 popup 案件分類改可搜尋下拉（setupFilterCombo）。三大送出鈕統一墨藍（#a1b4cb/#4977b1/#39649a），發文鈕更名「確認發文」 |
-| v0.9.0-beta.9 | **資料庫瀏覽（Tab4）＋ 檔案歸檔（Tab5）完成**。歸檔頁：精簡/完整模式（Stretch 欄寬 + setColumnHidden + toggle 膠囊鈕）、候選過濾（顯示已歸檔 toggle）、演算法優化 14x（斷詞快取）、預覽案由填 PDF 檔名主旨、候選欄位改操作\|符合\|檔名、Material Icons SVG 操作鈕（icon_pdf/icon_archive，裁切 viewBox 降白邊）、歸檔提示字改「歸檔刑案編號xxx：」、Enter 預設歸檔、編號超連結開編輯視窗 + dirty flag 差異更新（_diffDocs/_tableSignature/_lastLoad/_docorder）。全系統 popup 統一左確認右取消（confirmBox 改 ActionRole）。code review：清 9 個未用 import、_dbNow 上移 BaseTab、移除冗餘 _rowDoc、集中 inline import。init_ref_tables.sql 內嵌進 data_sync_tool.py、新增 backfill_archive_names.py |
-| v0.9.0-beta.8 | 設定 Tab 改用 Layout7.ui 建靜態骨架（密碼頁 + 左側 nav + 三子頁，比照其他 Layout）；新增跨年度重置（清主表 + 兩段式重編參照表 ID + 刪停用項目 + 歸零流水號，確認彈窗 + 自動備份 + 可另存 + 重置後自動重啟）；重啟改用 `PYINSTALLER_RESET_ENVIRONMENT` 官方機制（解 onefile `_MEI` 重啟 DLL 載入失敗）；版本號集中至 `lib/version.py` 單一來源，主選單動態顯示 |
-| v0.9.0-beta.7 | is_active 軟刪除擴及部門/案類、sort_order 排序功能（設定 Tab 四向排序鈕 + 暫存模式）、列印改 QPrintPreviewDialog（解 WinError 1155）、檔案結構重組（layouts/ + res/ + lib/）、排序鈕 SVG 圖示、黏底捲動修正、變更密碼防誤按 |
-| v0.9.0-beta.6 | 設定 Tab（人員/部門/案類維護 + 變更密碼）、AuthManager、參照表連動、黏底捲動、狀態色 |
+| v1.0.0 | 正式版。瀏覽頁（Tab4）有歸檔檔名者顯示圖示鈕可直接開 PDF；歸檔資料夾設定存 UNC 路徑（Tab6）；歸檔頁（Tab5）自動帶入預設資料夾。 |
+| v0.9.0-beta.12 | admin 解除已發文編號鎖定；內部重構（抽 `lib/archive_text.py`、統一 `AuthManager.is_admin()`、`db_utils.getConn`）。 |
+| v0.9.0-beta.11 | 分頁權限控管（Tab0 限改承辦人、Tab4 無修改、Tab5 需登入）；修 dbbrowse 編號欄 item/cellWidget 疊現；刑案/一般 popup 新增歸檔狀態區塊（僅 admin）。 |
+| v0.9.0-beta.10 | 歸檔頁新增「只歸紙本」鈕；修斷詞比對日期黏主旨漏字（310 筆）；交辦單新增逾期未回篩選。 |
+| v0.9.0-beta.9 | 完成瀏覽（Tab4）與歸檔（Tab5）頁；統一 popup 左確認右取消（ActionRole）；code review 清理 import。 |
+| v0.9.0-beta.8 | 設定 Tab 改用 Layout7.ui 靜態骨架；新增跨年度重置（備份＋兩段式重編 ID＋自動重啟）；版本號集中至 `lib/version.py`。 |
+| v0.9.0-beta.7 | 部門/案類 is_active 軟刪除、sort_order 四向排序鈕；列印改 QPrintPreviewDialog；檔案結構重組（layouts/ res/ lib/）。 |
+| v0.9.0-beta.6 | 設定 Tab 人員/部門/案類維護＋變更密碼；AuthManager；參照表連動；黏底捲動；狀態色。 |
