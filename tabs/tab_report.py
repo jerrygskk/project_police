@@ -133,9 +133,15 @@ class TabReport(BaseTab):
             self.rpt_date.setDate(QDate.currentDate())
             setupDateEditToToday(self.rpt_date)
         if self.crim_occdate:
-            self.crim_occdate.setSpecialValueText(" ")
+            self.crim_occdate.setSpecialValueText("下拉選擇日期")
             self.crim_occdate.setDate(self.crim_occdate.minimumDate())
             setupDateEditCalendarOnly(self.crim_occdate)
+            self.crim_occdate.dateChanged.connect(
+                lambda d: self.crim_occdate.setStyleSheet(
+                    "color: #a0a0a0;" if d == self.crim_occdate.minimumDate() else "color: #1c1c1e;"
+                )
+            )
+            self.crim_occdate.setStyleSheet("color: #a0a0a0;")
 
         # ── 載入參照表 ────────────────────────────────────
         self._personnel, self._depts = self._loadRef()
@@ -146,6 +152,13 @@ class TabReport(BaseTab):
         # ── 填入下拉選單 ──────────────────────────────────
         setupFilterCombo(self.rpt_sender,     self._personnel)
         setupFilterCombo(self.crim_casetype,  self._case_types)
+        self.crim_casetype.setItemText(0, "輸入或下拉選擇")
+        self.crim_casetype.currentIndexChanged.connect(
+            lambda idx: self.crim_casetype.setStyleSheet(
+                "color: #a0a0a0;" if idx == 0 else "color: #1c1c1e;"
+            )
+        )
+        self.crim_casetype.setStyleSheet("color: #a0a0a0;")
         setupFilterCombo(self.crim_processor, self._personnel)
         setupFilterCombo(self.crim_receiver,  self._personnel)
         setupFilterCombo(self.gen_dept,       self._depts)
@@ -202,6 +215,7 @@ class TabReport(BaseTab):
         )
         refreshFilterCombo(self.rpt_sender,     self._personnel)
         refreshFilterCombo(self.crim_casetype,  self._case_types)
+        self.crim_casetype.setItemText(0, "輸入或下拉選擇")
         refreshFilterCombo(self.crim_processor, self._personnel)
         refreshFilterCombo(self.crim_receiver,  self._personnel)
         refreshFilterCombo(self.gen_dept,       self._depts)
@@ -313,6 +327,7 @@ class TabReport(BaseTab):
         if self.radio_status_a:
             self.radio_status_a.setChecked(True)
         setupFilterCombo(self.crim_casetype,  self._case_types)
+        self.crim_casetype.setItemText(0, "輸入或下拉選擇")
         setupFilterCombo(self.crim_processor, self._personnel)
         setupFilterCombo(self.crim_receiver,  self._personnel)
         if self.crim_subject:  self.crim_subject.clear()

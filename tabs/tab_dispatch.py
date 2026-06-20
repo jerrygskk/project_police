@@ -51,6 +51,7 @@ class TabDispatch(BaseTab):
             setupFilterCombo(self.dispatch_sender, personnel)
 
         if self.lineEdit:
+            self.lineEdit.setPlaceholderText("輸入文號後按 Enter 或右側按鈕")
             self.lineEdit.returnPressed.connect(self.handleQuery)
             self.lineEdit.setFocus()
         btn_input = getattr(mw, 'btn_input_docnum', None)

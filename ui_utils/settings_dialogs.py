@@ -640,11 +640,15 @@ class ResetDialog(QDialog):
         lbl_title.setStyleSheet("font-weight: 700; font-size: 14pt;")
         vlay.addWidget(lbl_title)
 
+        lbl_db = QLabel(f"目標資料庫：{os.path.basename(self.db_path)}")
+        lbl_db.setStyleSheet("color: #8e8e93;")
+        vlay.addWidget(lbl_db)
+
         lbl_scope = QLabel(
             "1. 清空全部交辦單、刑案陳報、一般陳報資料\n"
-            "2. 移除已停用的人員、部門、案件類型\n"
-            "3. 重新編排參照表編號與排序\n"
-            "4. 流水號歸零"
+            "2. 移除已停用的人員、部門、案件類型（如需保留請先返回啟用）\n"
+            "3. 流水號歸零\n"
+            "4. 清除歸檔資料夾路徑設定（需於新年度重新指定）"
         )
         lbl_scope.setStyleSheet("color: #3a3a3c;")
         vlay.addWidget(lbl_scope)
@@ -654,8 +658,8 @@ class ResetDialog(QDialog):
         if inactive:
             lines = "\n".join(f"　• {kind}　{name}" for kind, _id, name in inactive)
             lbl_inactive = QLabel(
-                "本次將一併移除以下停用項目：\n" + lines +
-                "\n\n如需保留，請先返回啟用該項目。")
+                "本次將一併移除以下停用項目：\n" + lines
+            )
             lbl_inactive.setStyleSheet(
                 "background-color: #FDF2F2; color: #c0392b; "
                 "border: 1px solid #f5c6c6; border-radius: 6px; padding: 8px 12px;"
