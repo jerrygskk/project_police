@@ -123,7 +123,7 @@ class DocumentManager:
 
     def _updateTitle(self, role):
         suffix = "管理者模式" if role == 'admin' else "一般使用者"
-        self.window.setWindowTitle(f"{self._base_title}  [{suffix}]")
+        self.window.setWindowTitle(f"{self._base_title}  [{suffix}]  - v{__version__}")
         # 登入時啟動計時，登出時停掉
         if hasattr(self, '_idle_timer'):
             if role == 'admin':
