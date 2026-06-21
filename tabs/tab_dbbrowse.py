@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, QTimer, QUrl, QSize
+from PySide6.QtCore import Qt, QTimer, QUrl, QSize, QEvent, QObject
 from PySide6.QtWidgets import (
     QVBoxLayout, QTabWidget, QComboBox, QLineEdit, QPushButton,
     QCheckBox, QLabel, QTableWidget, QTableWidgetItem, QWidget, QHBoxLayout,
@@ -15,6 +15,25 @@ from ui_utils import (
     setupPreviewTable, autoResizeTable, setDocIdLinkCell, makeDeleteBtn, refreshDeleteBtns,
     TaskEditDialog, CriminalEditDialog, GeneralEditDialog,
 )
+
+
+class _WatermarkFitter(QObject):
+    """貼合浮水印到 viewport：尺寸/顯示變動時，若浮水印正顯示就重新覆滿。
+
+    解決切子頁問題：初次載入時非當前子頁的 viewport size=0，浮水印會縮成
+    0×0；切過去（Show/Resize）時在此重新貼合。"""
+    def __init__(self, viewport, wm):
+        super().__init__(viewport)
+        self._wm = wm
+
+    def eventFilter(self, obj, event):
+        # 一律重貼尺寸：顯示與否由 _updateFooter 的 show/hide 控制，
+        # 隱藏的 widget 重貼尺寸無副作用。不可用 isVisible() 當條件——
+        # 切子頁瞬間 Show/Resize 可能早於浮水印可見性傳遞，會被誤跳過。
+        if event.type() in (QEvent.Resize, QEvent.Show):
+            self._wm.resize(obj.size())
+            self._wm.move(0, 0)
+        return False  # 不吃事件
 
 
 # ─────────────────────────────────────────────────────────────
@@ -190,6 +209,13 @@ class TabDBBrowse(BaseTab):
             wm.setAttribute(Qt.WA_TransparentForMouseEvents)
             wm.hide()
             self._watermark[key] = wm
+            # 切子頁/縮放時，viewport 尺寸改變要重新貼合浮水印
+            # （初次載入時非當前子頁的 viewport size=0，否則浮水印縮成 0×0 看不到）
+            vp = tbl.viewport()
+            fitter = _WatermarkFitter(vp, wm)
+            vp.installEventFilter(fitter)
+            self._wm_fitters = getattr(self, "_wm_fitters", [])
+            self._wm_fitters.append(fitter)   # 存參考防 GC
 
         # 填充範圍下拉、綁定事件
         for key in ("task", "crim", "gen"):

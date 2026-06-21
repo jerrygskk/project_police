@@ -15,7 +15,7 @@ from PySide6.QtCore    import Qt
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QPushButton, QCheckBox,
-    QComboBox, QFileDialog,
+    QComboBox, QFileDialog, QScrollArea, QWidget,
 )
 
 from lib.db_utils import BTN_CONFIRM, BTN_CANCEL, BTN_DANGER
@@ -656,15 +656,27 @@ class ResetDialog(QDialog):
         # 動態列出待清停用項目
         inactive = listInactiveRefItems(self.db_path)
         if inactive:
-            lines = "\n".join(f"　• {kind}　{name}" for kind, _id, name in inactive)
-            lbl_inactive = QLabel(
-                "本次將一併移除以下停用項目：\n" + lines
+            lbl_hint = QLabel(f"本次將一併移除以下停用項目（共 {len(inactive)} 項）：")
+            lbl_hint.setStyleSheet("color: #c0392b; font-weight: 600;")
+            vlay.addWidget(lbl_hint)
+
+            lines = "\n".join(f"• {kind}　{name}" for kind, _id, name in inactive)
+            lbl_inactive = QLabel(lines)
+            lbl_inactive.setStyleSheet("color: #c0392b; background: transparent; border: none;")
+
+            scroll = QScrollArea()
+            scroll.setWidget(lbl_inactive)
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.NoFrame)
+            scroll.setMaximumHeight(180)  # 項目多時改捲動，避免彈窗撐爆畫面
+            scroll.setStyleSheet(
+                "QScrollArea { background-color: #FDF2F2; border: 1px solid #f5c6c6; "
+                "border-radius: 6px; }"
+                "QScrollArea > QWidget > QWidget { background: transparent; }"
             )
-            lbl_inactive.setStyleSheet(
-                "background-color: #FDF2F2; color: #c0392b; "
-                "border: 1px solid #f5c6c6; border-radius: 6px; padding: 8px 12px;"
-            )
-            vlay.addWidget(lbl_inactive)
+            # padding 套在內層 label，避免捲軸貼邊
+            lbl_inactive.setContentsMargins(12, 8, 12, 8)
+            vlay.addWidget(scroll)
         else:
             lbl_none = QLabel("（目前無停用項目需移除）")
             lbl_none.setStyleSheet("color: #8e8e93;")
