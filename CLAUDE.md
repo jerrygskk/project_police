@@ -46,10 +46,11 @@
 
 - 版本號定義於 `lib/version.py`，進版時只進第三碼
 - 進位與否他決定，不要自己跳版號
+- **進版一律跑 `python bump_version.py <版號>`**（版號自帶、不自動進位；會先印出目前版號），它會同時改 `version.py` 與產出 `version_info.txt`（exe 檔案資訊）。**勿手改 `version.py`**，否則 `version_info.txt` 不同步
 
 ### 用語約定（他會用簡稱，要對上）
 
-- **「進版」** = 改版本號（改 `lib/version.py` 的 `__version__`）+ 打 git tag（`v{版本號}`）+ 在 README 第 9 節補一列版本記錄
+- **「進版」** = 跑 `python bump_version.py <版號>`（改 `lib/version.py` ＋ 產出 `version_info.txt`）+ 打 git tag（`v{版本號}`）+ 在 README §8 補一列版本記錄
 - **「push上去」、「推上去」** = 把當前所有變動 commit + push
 - **release note** = **一律給 `.md` 檔案**（present_files），讓他直接複製貼上 GitHub Release。**不要把 release note 直接打在對話裡**（會被聊天介面渲染成排版效果，無法複製原始碼），務必給檔案。內容寫給使用者看（功能 / 改進 / 修正），技術細節留 README 或 Claude 踩雷表
 

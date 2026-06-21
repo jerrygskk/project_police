@@ -403,6 +403,7 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 
 ```cmd
 del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyinstaller --clean --onefile --windowed --icon=res/police_badge.ico ^
+  --version-file version_info.txt ^
   --add-data "layouts/*.ui;layouts" ^
   --add-data "res/police_badge.svg;res" ^
   --add-data "res/banner.png;res" ^
@@ -457,12 +458,13 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 - 若打包後報 `No module named res`，加 `--hidden-import res.resources_rc`
 - 核心模組在 `lib/`，主程式打包已列 `--hidden-import lib.*` 七個（含 `lib.archive_text`）；若仍報 `No module named lib.xxx`，補對應的 hidden-import
 - GitHub release 上傳用英文檔名
+- **exe 檔案資訊（右鍵→內容→詳細資料）**：由 `--version-file version_info.txt` 帶入。`version_info.txt` 不在 build 時生成，而是**進版時由 `bump_version.py` 連同版號一起產生**（見 §8 進版），已收進 git。打包只需引用、不用多做。要改顯示文字（公司/產品名）改 `bump_version.py` 頂部常數
 
 ---
 
 ## 8. 版本記錄
 
-> 版本號單一來源為 `lib/version.py` 的 `__version__`。進版時改該處一行，主選單顯示自動同步；本表與 git tag（`v{__version__}`）需手動對齊。
+> 版本號單一來源為 `lib/version.py` 的 `__version__`。**進版一律用 `python bump_version.py <版號>`**（版號自帶，不自動進位；執行前會先印出目前版號），它會同時改 `version.py` 與產出 `version_info.txt`（exe 檔案資訊）；標題列與主選單顯示自動同步。本表與 git tag（`v{__version__}`）需手動對齊。⚠️ 勿手改 `version.py`，否則 `version_info.txt` 不同步。
 
 | 版本 | 摘要 |
 |------|------|
