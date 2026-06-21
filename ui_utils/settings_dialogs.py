@@ -169,10 +169,11 @@ class PersonnelAddDialog(QDialog):
 
 class PersonnelEditDialog(QDialog):
 
-    def __init__(self, db_path, staff_id, staff_name, is_active, parent=None):
+    def __init__(self, db_path, staff_id, seq, staff_name, is_active, parent=None):
         super().__init__(parent)
         self.db_path  = db_path
-        self.staff_id = staff_id
+        self.staff_id = staff_id      # 真 PK，給 UPDATE 用，不顯示
+        self.seq      = seq           # 序號（列位置），僅供顯示
         self._result  = None
         self.setWindowTitle('修改人員')
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
@@ -188,9 +189,9 @@ class PersonnelEditDialog(QDialog):
         form.setLabelAlignment(Qt.AlignRight)
         form.setSpacing(10)
 
-        lbl_id = QLabel(self.staff_id)
+        lbl_id = QLabel(str(self.seq))
         lbl_id.setStyleSheet("font-weight: bold;")
-        form.addRow("人員編號：", lbl_id)
+        form.addRow("序號：", lbl_id)
 
         self.w_name = QLineEdit(staff_name)
         self.w_name.setFixedWidth(_FIELD_W)
@@ -327,10 +328,11 @@ class DeptAddDialog(QDialog):
 
 class DeptEditDialog(QDialog):
 
-    def __init__(self, db_path, dept_id, dept_name, is_active, parent=None):
+    def __init__(self, db_path, dept_id, seq, dept_name, is_active, parent=None):
         super().__init__(parent)
         self.db_path = db_path
-        self.dept_id = dept_id
+        self.dept_id = dept_id        # 真 PK，給 UPDATE 用，不顯示
+        self.seq     = seq            # 序號（列位置），僅供顯示
         self._result = None
         self.setWindowTitle('修改部門')
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
@@ -346,9 +348,9 @@ class DeptEditDialog(QDialog):
         form.setLabelAlignment(Qt.AlignRight)
         form.setSpacing(10)
 
-        lbl_id = QLabel(self.dept_id)
+        lbl_id = QLabel(str(self.seq))
         lbl_id.setStyleSheet("font-weight: bold;")
-        form.addRow("部門編號：", lbl_id)
+        form.addRow("序號：", lbl_id)
 
         self.w_name = QLineEdit(dept_name)
         self.w_name.setFixedWidth(_FIELD_W)
@@ -464,10 +466,11 @@ class CaseTypeAddDialog(QDialog):
 
 class CaseTypeEditDialog(QDialog):
 
-    def __init__(self, db_path, type_id, type_name, is_active, parent=None):
+    def __init__(self, db_path, type_id, seq, type_name, is_active, parent=None):
         super().__init__(parent)
         self.db_path = db_path
-        self.type_id = type_id
+        self.type_id = type_id        # 真 PK，給 UPDATE 用，不顯示
+        self.seq     = seq            # 序號（列位置），僅供顯示
         self._result = None
         self.setWindowTitle('修改案件類型')
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
@@ -483,9 +486,9 @@ class CaseTypeEditDialog(QDialog):
         form.setLabelAlignment(Qt.AlignRight)
         form.setSpacing(10)
 
-        lbl_id = QLabel(self.type_id)
+        lbl_id = QLabel(str(self.seq))
         lbl_id.setStyleSheet("font-weight: bold;")
-        form.addRow("類型編號：", lbl_id)
+        form.addRow("序號：", lbl_id)
 
         self.w_name = QLineEdit(type_name)
         self.w_name.setFixedWidth(_FIELD_W)
@@ -668,7 +671,7 @@ class ResetDialog(QDialog):
             scroll.setWidget(lbl_inactive)
             scroll.setWidgetResizable(True)
             scroll.setFrameShape(QScrollArea.NoFrame)
-            scroll.setMaximumHeight(180)  # 項目多時改捲動，避免彈窗撐爆畫面
+            scroll.setMaximumHeight(230)  # 項目多時改捲動，避免彈窗撐爆畫面
             scroll.setStyleSheet(
                 "QScrollArea { background-color: #FDF2F2; border: 1px solid #f5c6c6; "
                 "border-radius: 6px; }"
@@ -746,14 +749,14 @@ class ArchiveRootDialog(QDialog):
         v.addWidget(title)
 
         hint = QLabel(
-            "請選擇存放本年度 PDF 的「年度資料夾」（其下含刑案／一般子夾）。\n"
-            "選擇後將自動轉為網路路徑（UNC），與磁碟機代號脫鉤。")
+            "請選擇本年度的 PDF 資料夾（包含刑案類與一般類兩種分類）。\n"
+            "選擇後自動轉成網路路徑，不受各電腦磁碟機代號（如 Z:）影響。")
         hint.setStyleSheet("color: #3a3a3c;")
         v.addWidget(hint)
 
         # 路徑列：可編輯 UNC + 選擇鈕
         self.w_path = QLineEdit(cur_root)
-        self.w_path.setPlaceholderText("\\\\伺服器\\分享\\…\\年度")
+        self.w_path.setPlaceholderText("如：Z:\\案件掃描檔\\115年")
         btn_pick = QPushButton("選擇資料夾…")
         btn_pick.setStyleSheet(BTN_CANCEL)
         row = QHBoxLayout()
@@ -766,10 +769,12 @@ class ArchiveRootDialog(QDialog):
         v.addWidget(QLabel("刑案子資料夾"))
         self.cb_crim = QComboBox()
         self.cb_crim.setEditable(True)
+        self.cb_crim.lineEdit().setPlaceholderText("下拉或手動輸入資料夾名稱")
         v.addWidget(self.cb_crim)
         v.addWidget(QLabel("一般子資料夾"))
         self.cb_gen = QComboBox()
         self.cb_gen.setEditable(True)
+        self.cb_gen.lineEdit().setPlaceholderText("下拉或手動輸入資料夾名稱")
         v.addWidget(self.cb_gen)
 
         if cur_crim:
@@ -780,8 +785,8 @@ class ArchiveRootDialog(QDialog):
             self.cb_gen.setCurrentText(cur_gen)
 
         note = QLabel(
-            "若分享當下未掛載而無法列出子夾，可直接於上方輸入框輸入 UNC、"
-            "並手動鍵入子夾名稱。")
+            "上列路徑將使用在「資料庫瀏覽」與「檔案歸檔」分頁，"
+            "若未設定將無法正確開啟歸檔檔案及正確使用歸檔功能。")
         note.setStyleSheet("color: #8e8e93;")
         note.setWordWrap(True)
         v.addWidget(note)

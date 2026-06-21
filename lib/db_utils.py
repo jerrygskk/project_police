@@ -332,6 +332,32 @@ def resolveArchivedPdf(db_path, key, fname):
     return hit, "ok"
 
 
+def _driveToUnc(path):
+    """用 Windows 原生 WNetGetConnection 把對應的網路磁碟機代號（如 Z:）解析成 UNC。
+    非對應磁碟機 / 非 Windows / 失敗皆回 None。"""
+    p = path.replace("/", "\\")
+    if len(p) < 2 or p[1] != ":":
+        return None
+    drive = p[:2]  # 如 Z:
+    try:
+        import ctypes
+        from ctypes import wintypes
+        mpr = ctypes.WinDLL("mpr")
+        length = wintypes.DWORD(1024)
+        buf = ctypes.create_unicode_buffer(length.value)
+        res = mpr.WNetGetConnectionW(drive, buf, ctypes.byref(length))
+        if res != 0:  # 緩衝不足等，依回報長度重試一次
+            buf = ctypes.create_unicode_buffer(length.value)
+            res = mpr.WNetGetConnectionW(drive, buf, ctypes.byref(length))
+        if res == 0 and buf.value.startswith("\\\\"):
+            unc = buf.value.rstrip("\\")
+            rel = p[2:].lstrip("\\")  # 磁碟機代號之後的相對路徑
+            return unc + ("\\" + rel if rel else "")
+    except Exception:
+        pass
+    return None
+
+
 def toUncPath(path):
     """把含磁碟機代號的路徑（如 Z:\\歸檔\\2026）轉成 UNC（\\\\伺服器\\分享\\歸檔\\2026）。
     已是 UNC 直接回；非網路磁碟或轉換失敗回 None（呼叫端應改要求手動輸入 UNC）。"""
@@ -340,6 +366,11 @@ def toUncPath(path):
     p = path.replace("/", "\\")
     if p.startswith("\\\\"):
         return p.rstrip("\\")
+    # 首選：WNetGetConnection 直接問磁碟機代號對應的 UNC（最可靠）
+    unc = _driveToUnc(p)
+    if unc:
+        return unc
+    # 後備：QStorageInfo（部分環境可抓到 \\伺服器\分享 來源）
     try:
         from PySide6.QtCore import QStorageInfo
         si = QStorageInfo(path)

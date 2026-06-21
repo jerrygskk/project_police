@@ -354,16 +354,7 @@ class TabSettings(BaseTab):
             return  # 還在密碼驗證頁
 
         # 歸檔根目錄未設定時，每次登入後進入設定頁彈出一次警示
-        if not getattr(self, "_arch_warn_shown", False):
-            if not getSetting(self.db_path, ARCHIVE_ROOT_KEY, "").strip():
-                self._arch_warn_shown = True
-                if confirmBox(
-                    "歸檔資料夾未設定",
-                    "歸檔根目錄尚未設定。\n是否現在前往「歸檔資料夾」更新？",
-                    confirm_text="前往設定", cancel_text="稍後",
-                    default_confirm=True, parent=self.tab_widget
-                ):
-                    self._onSetArchiveRoot()
+        self._maybeWarnArchiveRoot()
 
         idx = self._inner_stack.currentIndex()
         loaders = [self._loadPersonnel, self._loadDept, self._loadCaseType]
@@ -381,6 +372,8 @@ class TabSettings(BaseTab):
             self.w_password.clear()
             self._outer_stack.setCurrentIndex(1)
             self._switchPage(self._PAGE_PERSONNEL)
+            # 登入成功即檢查（登入不走 on_activated，否則重置後首次登入不會提示）
+            self._maybeWarnArchiveRoot()
         else:
             self.lbl_login_err.setText("密碼錯誤，請再試一次")
             self.w_password.clear()
@@ -395,6 +388,7 @@ class TabSettings(BaseTab):
             self._outer_stack.setCurrentIndex(0)
             self.w_password.clear()
             self.lbl_login_err.setText("")
+            self._arch_warn_shown = False  # 重置，下次登入仍會檢查
 
     # ── 變更密碼 ────────────────────────────────────────────────
     def _changePassword(self):
@@ -403,6 +397,21 @@ class TabSettings(BaseTab):
             msgInfo("完成", "密碼已成功變更", self.tab_widget)
 
     # ── 歸檔資料夾設定 ──────────────────────────────────────────
+    def _maybeWarnArchiveRoot(self):
+        """歸檔根目錄未設定時，登入後彈出一次警示（每次登入最多一次）。"""
+        if getattr(self, "_arch_warn_shown", False):
+            return
+        if getSetting(self.db_path, ARCHIVE_ROOT_KEY, "").strip():
+            return
+        self._arch_warn_shown = True
+        if confirmBox(
+            "歸檔資料夾未設定",
+            "歸檔根目錄尚未設定。\n是否現在前往「歸檔資料夾」更新？",
+            confirm_text="前往設定", cancel_text="稍後",
+            default_confirm=True, parent=self.tab_widget
+        ):
+            self._onSetArchiveRoot()
+
     def _onSetArchiveRoot(self):
         """設定/更新瀏覽頁開啟電子檔用的歸檔資料夾（年度層 UNC + 刑案/一般子夾名）。"""
         ArchiveRootDialog(self.db_path, self.tab_widget).exec()
@@ -452,7 +461,7 @@ class TabSettings(BaseTab):
             return
 
         # 4.5 新年度開始：提示更新本年度歸檔資料夾
-        #     （archive_root 不被重置清掉，但年度層已換，故主動提醒更新）
+        #     （重置已清空 archive_root，須於新年度重新指定，故主動提醒）
         if confirmBox(
                 "更新歸檔資料夾",
                 "新年度開始，是否現在更新本年度的歸檔資料夾位置？\n"
@@ -575,7 +584,8 @@ class TabSettings(BaseTab):
             tbl.insertRow(r)
             color  = None if active else _COLOR_INACTIVE
             status = word_on if active else word_off
-            tbl.setItem(r, 0,        self._item(rid,    color))
+            # col0 顯示「序號」＝目前列位置（r+1），非內部 PK；rid 仍存記憶體供存檔
+            tbl.setItem(r, 0,        self._item(r + 1,  color))
             tbl.setItem(r, name_c,   self._item(rname,  color))
             if alias_c is not None:
                 alias = (row[3] if len(row) > 3 and row[3] else "")
@@ -655,12 +665,13 @@ class TabSettings(BaseTab):
         if row < 0:
             msgWarning("請選擇項目", "請先點選要修改的人員", self.tab_widget)
             return
-        sid    = self.tbl_personnel.item(row, 0).text()
-        sname  = self.tbl_personnel.item(row, 1).text()
-        active = self.tbl_personnel.item(row, 3).text() == "在職"
+        srow   = self._sort_state["personnel"]["rows"][row]
+        sid    = srow[0]              # 真 PK，給 UPDATE 用
+        sname  = srow[1]
+        active = bool(srow[2])
         if not self._promptUnsaved():
             return
-        dlg = PersonnelEditDialog(self.db_path, sid, sname, active, self.tab_widget)
+        dlg = PersonnelEditDialog(self.db_path, sid, row + 1, sname, active, self.tab_widget)
         if dlg.exec():
             if dlg.get_result():
                 self._ref_dirty = True
@@ -684,12 +695,13 @@ class TabSettings(BaseTab):
         if row < 0:
             msgWarning("請選擇項目", "請先點選要修改的部門", self.tab_widget)
             return
-        did    = self.tbl_dept.item(row, 0).text()
-        dname  = self.tbl_dept.item(row, 1).text()
-        active = self.tbl_dept.item(row, 2).text() == "啟用"
+        drow   = self._sort_state["dept"]["rows"][row]
+        did    = drow[0]             # 真 PK，給 UPDATE 用
+        dname  = drow[1]
+        active = bool(drow[2])
         if not self._promptUnsaved():
             return
-        dlg = DeptEditDialog(self.db_path, did, dname, active, self.tab_widget)
+        dlg = DeptEditDialog(self.db_path, did, row + 1, dname, active, self.tab_widget)
         if dlg.exec():
             if dlg.get_result():
                 self._ref_dirty = True
@@ -713,12 +725,13 @@ class TabSettings(BaseTab):
         if row < 0:
             msgWarning("請選擇項目", "請先點選要修改的案件類型", self.tab_widget)
             return
-        tid    = self.tbl_casetype.item(row, 0).text()
-        tname  = self.tbl_casetype.item(row, 1).text()
-        active = self.tbl_casetype.item(row, 2).text() == "啟用"
+        trow   = self._sort_state["casetype"]["rows"][row]
+        tid    = trow[0]             # 真 PK，給 UPDATE 用
+        tname  = trow[1]
+        active = bool(trow[2])
         if not self._promptUnsaved():
             return
-        dlg = CaseTypeEditDialog(self.db_path, tid, tname, active, self.tab_widget)
+        dlg = CaseTypeEditDialog(self.db_path, tid, row + 1, tname, active, self.tab_widget)
         if dlg.exec():
             if dlg.get_result():
                 self._ref_dirty = True
