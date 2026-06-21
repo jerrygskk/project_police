@@ -21,6 +21,26 @@ from ui_utils import (
 )
 
 
+# 車牌／案號連字號（MQM-1763、P77-965、822-NHS、9362-F6…）：兩側英數。
+# 字母可能在左或右（數字開頭車牌如 822-NHS），故不用 lookahead 限定側別，
+# 改於替換時要求「整段至少含一字母」——純數字-數字（日期 1150617、PK「10」、
+# 已格式化的「10-1140601」）不含字母，不會被誤遮成主旨/人名分隔符。
+_PLATE_DASH_RE = re.compile(r"[A-Za-z0-9]{2,5}[-－][A-Za-z0-9]{2,6}")
+# 開頭（PK-）日期：保護用，遮罩車牌前先抓出，避免日期尾數字與車牌頭被連在一起。
+_HEAD_DATE_RE = re.compile(
+    r"\s*(?:\d+[-－])*(?:1\d{2}|20\d{2})[-.\/]?\d{1,2}[-.\/]?\d{1,2}")
+_PLATE_SENT = "\x01"   # 遮罩用哨兵，組完主旨後還原成 -
+
+
+def _maskPlateDash(text):
+    """把車牌型連字號的 - 暫換成哨兵，避免被當主旨/人名分隔符切散。"""
+    def repl(m):
+        s = m.group(0)
+        if re.search(r"[A-Za-z]", s):   # 含字母才視為車牌/案號
+            return s.replace("-", _PLATE_SENT).replace("－", _PLATE_SENT)
+        return s
+    return _PLATE_DASH_RE.sub(repl, text)
+
 
 # ─────────────────────────────────────────────────────────────
 # 兩張表的設定：View、底層表、可比對欄位、組檔名用的欄位
@@ -810,6 +830,13 @@ class TabArchive(BaseTab):
             再從尾端剝除人名區（比照 _resolveNames 規則），剩下即主旨。
         拆不到回空字串（呼叫端會退用 DB 主旨）。"""
         base = os.path.splitext(os.path.basename(old_path))[0]
+        # 遮罩車牌連字號（MQM-1763、822-NHS 等）前，先保護開頭的（PK-）日期：
+        # 否則日期尾數字會和後方車牌頭被遮罩規則連起來（如 1150617-MQM、1150617-822
+        # 被當車牌），反吃掉日期與車牌間分隔。只對日期之後做遮罩，組完再還原。
+        m = _HEAD_DATE_RE.match(base)
+        head = base[:m.end()] if m else ""
+        base = head + _maskPlateDash(base[m.end():] if m else base)
+        unmask = lambda s: s.replace(_PLATE_SENT, "-")
 
         # 格式 (1)：含 - 分隔 → 沿用原分段邏輯
         if re.search(r"[-－]", base):
@@ -820,10 +847,25 @@ class TabArchive(BaseTab):
             while i < len(segs) and re.fullmatch(r"\d+", segs[i]):
                 i += 1
             j = len(segs)
-            if self._resolveNames(old_path):
-                j -= 1
+            # 只有「最後一段的開頭詞本身是人名」才視為人名段移除。
+            # 開頭詞 = 末段以括號/頓號切出的第一片；若開頭是主旨（如
+            # 「NXK-1252匿名竊盜(馬佐)」承辦黏在括號內、無 -人名段），
+            # 開頭詞為長案由非人名 → 不移除，避免把主旨整段砍掉成空。
+            if len(segs) > 1:
+                nd = self._loadNameDict()
+                head_tok = next(
+                    (t for t in re.split(r"[、,，（）()]+", segs[-1]) if t.strip()), "")
+                if head_tok and (len(head_tok) <= 3 or head_tok in nd):
+                    j -= 1
             mid = segs[i:j]
-            return "、".join(mid) if mid else ""
+            # 日期可能與主旨黏在同一段（如「1150617陳若蘭詐欺」非純數字、逃過上面 i 迴圈），
+            # 剝掉首段開頭日期，否則最終檔名會「日期-日期主旨」重複日期。
+            if mid:
+                mid[0] = re.sub(
+                    r"^\s*(?:1\d{2}|20\d{2})[-.\/]?\d{1,2}[-.\/]?\d{1,2}",
+                    "", mid[0]).strip()
+                mid = [m for m in mid if m]
+            return self._stripStaffParen(unmask("、".join(mid))) if mid else ""
 
         # 格式 (2)：無 - → 去開頭日期 + 去結尾人名
         s = re.sub(r"^\s*(?:1\d{2}|20\d{2})[-.\/]?\d{1,2}[-.\/]?\d{1,2}", "", base)
@@ -840,7 +882,19 @@ class TabArchive(BaseTab):
                 pieces.pop()
             else:
                 break
-        return "".join(pieces)
+        return self._stripStaffParen(unmask("".join(pieces)))
+
+    def _stripStaffParen(self, subj):
+        """主旨尾端括號內若全是承辦/協辦（皆能對到人名字典）則整組去掉；
+        對不到（被害人、關係人、窗口地點等不在名單）則保留。"""
+        nd = self._loadNameDict()
+        m = re.search(r"[（(]([^（）()]*)[）)]\s*$", subj)
+        if not m:
+            return subj
+        parts = [p for p in re.split(r"[、,，/／\s]+", m.group(1)) if p.strip()]
+        if parts and all(p in nd for p in parts):
+            return subj[:m.start()].strip()
+        return subj
 
     # ── 選定 PDF：把組好的檔名填入可編輯預覽四格（不立即改名）────
     def _selectPdf(self, key, doc_id, filepath):

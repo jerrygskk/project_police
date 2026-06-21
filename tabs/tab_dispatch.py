@@ -15,6 +15,10 @@ from ui_utils import (
 )
 
 
+# 發文日期欄已有資料時的橘色提醒（與狀態橘一致）
+_DISPATCH_DATE_COLOR = "#e67e22"
+
+
 class TabDispatch(BaseTab):
     """交辦單發文：掃入文號 → 預覽清單 → 批次發文"""
 

@@ -98,6 +98,7 @@ class TabReport(BaseTab):
         self.type_tabbar.addTab("❏ 一般陳報")
         self.type_tabbar.setExpanding(False)
         self.type_tabbar.setDocumentMode(True)
+        self.type_tabbar.setDrawBase(False)   # 關掉貫穿基準線（滿版橫線/框），只留選中頁籤底線
         self.type_tabbar.setStyleSheet(_TAB_SS)
         inner.layout().insertWidget(0, self.type_tabbar)
         self.type_tabbar.currentChanged.connect(self._switchFormType)
