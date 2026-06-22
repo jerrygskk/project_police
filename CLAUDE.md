@@ -75,6 +75,8 @@
 
 - **「進版」** = 跑 `python bump_version.py <版號>`（機制見上「版本號」節）+ 打 git tag `v{版本號}` + README §8 補一列版本記錄
 - **「push上去」、「推上去」** = 把改動 commit + push。**逐檔 add**（當輪或上次 push 後改動的檔案逐一 add，**不要一次全加**，跳過 `dbfile.db`）；**叫你推才推**，沒說不要問「要推嗎？」
+- ⚠️ **push 前必確認無真實人名／個資**：要 commit／push 的內容（含測試 fixture 檔名、文件範例、`dbfile.db`）不得含真實人名，有則先替換成虛構佔位名才能推。`dbfile.db` 只能是**乾淨空殼**（人員僅佔位、無公文），且提交前先 `VACUUM`（刪除的資料會殘留在 slack space，strings 掃得到）。
+  - 自動防呆：`tests/test_no_pii.py` 會比對本機 `tests/pii_denylist.local.txt`（真名清單，已 gitignore 不入庫）掃描 git 追蹤內容＋已提交的 `dbfile.db` blob，命中即 fail。**push 前跑一次 `python -m unittest tests.test_no_pii`**；有新進真名就補進該清單。
 - **release note** = 給 `.md` 檔（`release_note_v{版號}.md`，比照前版**不入庫**，留著貼 GitHub Release）。**不要直接打在對話裡**（會被渲染、無法複製原始碼）；內容寫給使用者看（功能 / 改進 / 修正），技術細節留 README
 - **「發布版本」、「出一版」** = 見下方標準流程
 

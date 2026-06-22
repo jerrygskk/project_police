@@ -1,6 +1,7 @@
 ﻿HANDOVER.md
 fix_views.py
 dbfile_backup_*.db
+tests/pii_denylist.local.txt
 dbfile.db-journal
 *.xlsm
 *.crdownload
