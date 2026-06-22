@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt, QTimer, QUrl, QSize, QEvent, QObject
 from PySide6.QtWidgets import (
     QVBoxLayout, QTabWidget, QComboBox, QLineEdit, QPushButton,
-    QCheckBox, QLabel, QTableWidget, QTableWidgetItem, QWidget, QHBoxLayout,
+    QLabel, QTableWidget, QTableWidgetItem, QWidget, QHBoxLayout,
 )
 from PySide6.QtGui import QColor, QIcon, QDesktopServices
 

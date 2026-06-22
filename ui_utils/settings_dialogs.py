@@ -15,7 +15,7 @@ from PySide6.QtCore    import Qt
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QPushButton, QCheckBox,
-    QComboBox, QFileDialog, QScrollArea, QWidget,
+    QComboBox, QFileDialog, QScrollArea,
 )
 
 from lib.db_utils import BTN_CONFIRM, BTN_CANCEL, BTN_DANGER

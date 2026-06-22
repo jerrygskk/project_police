@@ -64,7 +64,7 @@ from PySide6.QtGui import QFont
 
 from lib.theme import APPLE_STYLE
 from lib.version import __version__
-from lib.db_utils import getResourcePath, loadUi, msgInfo, msgWarning, msgCritical
+from lib.db_utils import getResourcePath, loadUi, msgInfo
 from lib.auth_manager import AuthManager
 from tabs     import TabDispatch, TabReceive, TabReport, TabPrint, TabDBBrowse, TabArchive, TabSettings
 from res import resources_rc  # 註冊 Qt resource（arrow.svg）

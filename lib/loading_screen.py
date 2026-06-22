@@ -64,7 +64,6 @@ class LoadWorker(QThread):
         time.sleep(DEBUG_DELAY)
 
         # 步驟 4：載入主選單 UI
-        from lib.db_utils import loadUi
         results['menu_ui_path'] = getResourcePath("layouts/main_menu.ui")
         self.step_done.emit(*LOAD_STEPS[3])
         time.sleep(DEBUG_DELAY)

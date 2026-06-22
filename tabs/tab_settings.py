@@ -8,7 +8,6 @@ tab_settings.py — 資料庫設定 Tab
 """
 import os
 import sys
-import sqlite3
 import shutil
 import subprocess
 from datetime import datetime
@@ -16,7 +15,7 @@ from datetime import datetime
 from PySide6.QtCore    import Qt, QProcess, QObject, QEvent
 from PySide6.QtGui     import QColor
 from PySide6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QStackedWidget,
+    QVBoxLayout, QStackedWidget,
     QLabel, QLineEdit, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView,
     QWidget, QApplication, QFileDialog,
@@ -580,7 +579,7 @@ class TabSettings(BaseTab):
         tbl = st["table"]
         tbl.setRowCount(0)
         for r, row in enumerate(st["rows"]):
-            rid, rname, active = row[0], row[1], row[2]
+            rname, active = row[1], row[2]
             tbl.insertRow(r)
             color  = None if active else _COLOR_INACTIVE
             status = word_on if active else word_off

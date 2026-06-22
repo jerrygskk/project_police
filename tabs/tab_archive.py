@@ -15,7 +15,7 @@ from lib.db_utils import getResourcePath, loadUi, msgCritical, msgInfo, confirmB
 from lib.auth_manager import AuthManager
 from lib.archive_text import _trimName, _tokenize, _parseDate, _sanitize, _pkOf
 from ui_utils import (
-    setupPreviewTable, autoResizeTable, setDocIdLinkCell,
+    setDocIdLinkCell,
     RowHoverFilter, RowHoverDelegate, TwoLineElideLabel,
     CriminalEditDialog, GeneralEditDialog, runWithBusy,
 )
@@ -957,7 +957,6 @@ class TabArchive(BaseTab):
         meta = META[key]
         doc = self._docrows.get(key, {}).get(doc_id, {})
         self._curPdf[key] = filepath
-        u = self._ui[key]
         pk = str(doc.get(meta["id_col"]) or "")
         date = _parseDate(os.path.basename(filepath))
         # 主旨：預設填 PDF 檔名解析出的主旨；拆不到才退用 DB 主旨

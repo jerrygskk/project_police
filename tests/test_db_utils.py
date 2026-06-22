@@ -1,0 +1,217 @@
+"""lib/db_utils.py 純 SQL / 檔案邏輯單元測試（用暫存 sqlite，無 GUI）。
+
+涵蓋：
+  - nextDocId 只增不減
+  - listInactiveRefItems 只列停用、依 sort_order
+  - performYearEndReset 兩段式重編 id 不撞 PK、清主表、刪停用、歸零 Seq、清歸檔設定、rollback
+  - getSetting / setSetting upsert
+  - resolveArchivedPdf 各狀態碼（用暫存資料夾）
+執行：專案根目錄下 `python -m unittest tests.test_db_utils`
+"""
+import os
+import sys
+import sqlite3
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from lib import db_utils
+from lib.db_utils import (
+    nextDocId, listInactiveRefItems, performYearEndReset,
+    getSetting, setSetting, resolveArchivedPdf, ARCHIVE_ROOT_KEY,
+)
+
+
+def _build_schema(conn):
+    conn.executescript(
+        """
+        CREATE TABLE Seq_DocId (table_name TEXT PRIMARY KEY, last_id INTEGER);
+        CREATE TABLE App_Settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE Ref_Personnel (
+            staff_id TEXT PRIMARY KEY, staff_name TEXT, alias TEXT,
+            is_active INTEGER, sort_order INTEGER);
+        CREATE TABLE Ref_Departments (
+            dept_id TEXT PRIMARY KEY, dept_name TEXT,
+            is_active INTEGER, sort_order INTEGER);
+        CREATE TABLE Ref_CaseTypes (
+            case_type_id TEXT PRIMARY KEY, case_type_name TEXT,
+            is_active INTEGER, sort_order INTEGER);
+        CREATE TABLE Document_Task (doc_id TEXT PRIMARY KEY);
+        CREATE TABLE Document_Criminal (doc_id TEXT PRIMARY KEY);
+        CREATE TABLE Document_General (doc_id TEXT PRIMARY KEY);
+        """
+    )
+
+
+class _DbTestBase(unittest.TestCase):
+    def setUp(self):
+        fd, self.db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        self.conn = sqlite3.connect(self.db_path)
+        _build_schema(self.conn)
+        self.conn.commit()
+
+    def tearDown(self):
+        self.conn.close()
+        os.remove(self.db_path)
+
+
+class TestNextDocId(_DbTestBase):
+    def test_increments(self):
+        self.conn.execute(
+            "INSERT INTO Seq_DocId VALUES('Document_Task', 5)")
+        self.assertEqual(nextDocId(self.conn, "Document_Task"), "6")
+        self.assertEqual(nextDocId(self.conn, "Document_Task"), "7")
+
+    def test_from_zero(self):
+        self.conn.execute("INSERT INTO Seq_DocId VALUES('Document_Criminal', 0)")
+        self.assertEqual(nextDocId(self.conn, "Document_Criminal"), "1")
+
+
+class TestListInactive(_DbTestBase):
+    def test_only_inactive_sorted(self):
+        self.conn.executemany(
+            "INSERT INTO Ref_Personnel VALUES(?,?,?,?,?)",
+            [("P01", "在職甲", "", 1, 1),
+             ("P02", "離職乙", "", 0, 3),
+             ("P03", "離職丙", "", 0, 2)])
+        self.conn.commit()
+        out = listInactiveRefItems(self.db_path)
+        # 只含停用，依 sort_order：丙(2) 先於乙(3)
+        self.assertEqual(out, [("人員", "P03", "離職丙"),
+                               ("人員", "P02", "離職乙")])
+
+    def test_empty(self):
+        self.assertEqual(listInactiveRefItems(self.db_path), [])
+
+
+class TestYearEndReset(_DbTestBase):
+    def _seed(self):
+        c = self.conn
+        c.execute("INSERT INTO Document_Task VALUES('T1')")
+        c.execute("INSERT INTO Document_Criminal VALUES('C1')")
+        c.execute("INSERT INTO Document_General VALUES('G1')")
+        c.execute("INSERT INTO Seq_DocId VALUES('Document_Task', 42)")
+        # 人員：故意讓 sort_order 與 id 不同序，且含一個停用
+        c.executemany(
+            "INSERT INTO Ref_Personnel VALUES(?,?,?,?,?)",
+            [("P05", "甲", "", 1, 2),
+             ("P09", "乙", "", 1, 1),
+             ("P03", "丙停用", "", 0, 3)])
+        c.execute("INSERT INTO App_Settings VALUES(?, 'X:/old')",
+                  (ARCHIVE_ROOT_KEY,))
+        c.commit()
+
+    def test_full_reset(self):
+        self._seed()
+        performYearEndReset(self.db_path)
+        c = sqlite3.connect(self.db_path)
+        try:
+            # 主表清空
+            for t in ("Document_Task", "Document_Criminal", "Document_General"):
+                self.assertEqual(
+                    c.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0], 0)
+            # 停用刪除，存活 2 人，依 sort_order 重編：乙(原so1)→P01、甲(原so2)→P02
+            rows = c.execute(
+                "SELECT staff_id, staff_name, sort_order FROM Ref_Personnel "
+                "ORDER BY sort_order").fetchall()
+            self.assertEqual(rows, [("P01", "乙", 1), ("P02", "甲", 2)])
+            # Seq 歸零
+            self.assertEqual(
+                c.execute("SELECT last_id FROM Seq_DocId").fetchone()[0], 0)
+            # 歸檔設定清空
+            self.assertEqual(getSetting(self.db_path, ARCHIVE_ROOT_KEY), "")
+        finally:
+            c.close()
+
+    def test_no_pk_collision_on_shift(self):
+        # 重編後 id 集合與舊集合有交集（P05/P09→P01/P02），兩段式須不撞 PK
+        self._seed()
+        try:
+            performYearEndReset(self.db_path)
+        except sqlite3.IntegrityError:
+            self.fail("兩段式重編仍撞 PRIMARY KEY")
+
+    def test_rollback_on_failure(self):
+        self._seed()
+        # 移除 Seq_DocId 表使重置中途失敗，驗證 rollback（資料不變）
+        self.conn.execute("DROP TABLE Seq_DocId")
+        self.conn.commit()
+        with self.assertRaises(sqlite3.Error):
+            performYearEndReset(self.db_path)
+        c = sqlite3.connect(self.db_path)
+        try:
+            # 主表仍在（已 rollback）
+            self.assertEqual(
+                c.execute("SELECT COUNT(*) FROM Document_Task").fetchone()[0], 1)
+            # 人員未被重編（P05 仍在）
+            self.assertIsNotNone(
+                c.execute("SELECT 1 FROM Ref_Personnel WHERE staff_id='P05'"
+                          ).fetchone())
+        finally:
+            c.close()
+
+
+class TestSettings(_DbTestBase):
+    def test_get_default(self):
+        self.assertEqual(getSetting(self.db_path, "missing", "def"), "def")
+
+    def test_set_then_get(self):
+        setSetting(self.db_path, "k", "v1")
+        self.assertEqual(getSetting(self.db_path, "k"), "v1")
+
+    def test_upsert_overwrites(self):
+        setSetting(self.db_path, "k", "v1")
+        setSetting(self.db_path, "k", "v2")
+        self.assertEqual(getSetting(self.db_path, "k"), "v2")
+
+    def test_none_stored_as_empty(self):
+        setSetting(self.db_path, "k", None)
+        self.assertEqual(getSetting(self.db_path, "k"), "")
+
+
+class TestResolveArchivedPdf(_DbTestBase):
+    def setUp(self):
+        super().setUp()
+        self.tmpdir = tempfile.mkdtemp()
+        db_utils.clearPdfIndexCache()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+        super().tearDown()
+
+    def test_noroot(self):
+        self.assertEqual(
+            resolveArchivedPdf(self.db_path, "crim", "a.pdf")[1], "noroot")
+
+    def test_empty_fname(self):
+        self.assertEqual(
+            resolveArchivedPdf(self.db_path, "crim", "")[1], "notfound")
+
+    def test_noaccess(self):
+        setSetting(self.db_path, ARCHIVE_ROOT_KEY,
+                   os.path.join(self.tmpdir, "不存在"))
+        self.assertEqual(
+            resolveArchivedPdf(self.db_path, "crim", "a.pdf")[1], "noaccess")
+
+    def test_notfound(self):
+        setSetting(self.db_path, ARCHIVE_ROOT_KEY, self.tmpdir)
+        self.assertEqual(
+            resolveArchivedPdf(self.db_path, "crim", "missing.pdf")[1],
+            "notfound")
+
+    def test_ok_recursive(self):
+        sub = os.path.join(self.tmpdir, "刑案")
+        os.makedirs(sub)
+        target = os.path.join(sub, "103-1150612.pdf")
+        open(target, "w").close()
+        setSetting(self.db_path, ARCHIVE_ROOT_KEY, self.tmpdir)
+        path, code = resolveArchivedPdf(self.db_path, "crim", "103-1150612.pdf")
+        self.assertEqual(code, "ok")
+        self.assertEqual(os.path.normpath(path), os.path.normpath(target))
+
+
+if __name__ == "__main__":
+    unittest.main()

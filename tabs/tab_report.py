@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 )
 
 from lib.base_tab import BaseTab
-from lib.db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgInfo, msgWarning, msgCritical, confirmBox
+from lib.db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgWarning, msgCritical, confirmBox
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
     setupFilterCombo, setupDateEditToToday, setupDateEditCalendarOnly, refreshFilterCombo,

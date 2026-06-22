@@ -171,7 +171,8 @@ main.py
 │   ├── arrow.svg / sort_*.svg / banner.png / police_badge.*
 │   ├── icon_pdf.svg / icon_archive.svg    ← 歸檔頁操作鈕 Material Icons（灰 #636366）
 ├── tabs/                各 Tab
-└── ui_utils/            共用 UI 工具（table/widgets/status/sticky_scroll/edit_dialog/settings_dialogs）
+├── ui_utils/            共用 UI 工具（table/widgets/status/sticky_scroll/edit_dialog/settings_dialogs）
+└── tests/               純邏輯單元測試（unittest，見下「單元測試」節）
 ```
 
 > 核心模組（db_utils、base_tab、auth_manager、theme、loading_screen）在 `lib/`，本文其餘章節為精簡仍以簡稱（如「db_utils」）指稱，實際 import 路徑為 `from lib.db_utils import ...`。`main.py`、`data_sync_tool.py`、`sql.py` 留根目錄（入口與獨立工具，互不 import 核心模組）。
@@ -186,6 +187,16 @@ main.py
 - ⚠️ `lib/` 是 package（有 `__init__.py`），核心模組用 `from lib.db_utils import ...` 等
 - ⚠️ `getResourcePath` 用「當前工作目錄」（`os.path.abspath('.')`）找 dbfile.db，**不是** `__file__`，所以 **程式務必從專案根目錄啟動**（`python main.py`），打包後則是 exe 所在目錄
 - ⚠️ 改了任何 qrc 內的 SVG，要重編：`cd res && pyside6-rcc resources.qrc -o resources_rc.py`
+
+### 單元測試（tests/）
+
+純邏輯回歸測試，**不碰 GUI**（容器無法跑 Qt 視窗，故只測無視窗依賴的純邏輯）。
+
+- **跑法**（專案根目錄）：`python -m unittest discover -s tests`
+- **命名**：檔案 `test_*.py`（unittest 自動探索的預設規則，勿改名）
+- **環境**：`test_db_utils` / `test_status` / `test_auth_manager` 的受測模組 import 時會載入 PySide6，故**執行環境需裝 PySide6**；僅 `test_archive_text` 是純 stdlib
+- **涵蓋**：歸檔檔名解析（`archive_text`：日期/PK/斷詞，含 PK 撞號雷）、流水號/跨年度重置/設定/歸檔定位（`db_utils`）、逾期計算與狀態色（`status`）、權限與密碼（`auth_manager`）
+- **紀律**：動到可單測的純邏輯（解析、SQL round-trip、狀態計算、權限判斷）時，**一併新增/更新對應測試**；GUI 互動部分仍須上機驗證
 
 ---
 

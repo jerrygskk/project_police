@@ -33,29 +33,22 @@ def _tokenize(text):
 
 
 def _parseDate(filename):
-    """從舊檔名拆出日期片段，拆不到回空字串。
-    以民國年為主（如 1150612 = 115年6月12日，亦容忍 115-06-12 / 115.6.12），
-    保留民國年原樣；若抓不到民國年，再嘗試西元 20xx 格式。
+    r"""從舊檔名拆出日期片段，拆不到回空字串。
+    以民國年為主（7 碼緊湊：1150612 = 115年6月12日），抓不到再試西元 8 碼。
+
+    ⚠️ 正規檔名為「PK-日期-主旨-承辦」，開頭 PK 也是 1xx（如 103-1150120-…）。
+    日期 token 必須前後不接數字（`(?<!\d)…(?!\d)`），否則 PK「103」會被當成
+    民國年、咬住後方數字湊成不合理日期而整串解析失敗（README 踩雷表已記載）。
+    實務檔名日期中間不含分隔符，故用緊湊式即可，不容忍 115-06-12。
     """
     base = os.path.splitext(filename)[0]
-    # 民國年：1xx(3碼) + 月 + 日，分隔可有可無，並做月/日合理性檢查
-    m = re.search(r"(1\d{2})[-.\/]?(\d{1,2})[-.\/]?(\d{1,2})", base)
-    if m:
-        try:
+    # 民國年：前後不接數字的 1xx + 2碼月 + 2碼日，並做月/日合理性檢查
+    for pat in (r"(?<!\d)(1\d{2})(\d{2})(\d{2})(?!\d)",
+                r"(?<!\d)(20\d{2})(\d{2})(\d{2})(?!\d)"):
+        for m in re.finditer(pat, base):
             mo, d = int(m.group(2)), int(m.group(3))
             if 1 <= mo <= 12 and 1 <= d <= 31:
-                return f"{m.group(1)}{mo:02d}{d:02d}"
-        except ValueError:
-            pass
-    # 退而求其次：西元 20xx
-    m = re.search(r"(20\d{2})[-.\/]?(\d{1,2})[-.\/]?(\d{1,2})", base)
-    if m:
-        try:
-            mo, d = int(m.group(2)), int(m.group(3))
-            if 1 <= mo <= 12 and 1 <= d <= 31:
-                return f"{m.group(1)}{mo:02d}{d:02d}"
-        except ValueError:
-            pass
+                return f"{m.group(1)}{m.group(2)}{m.group(3)}"
     return ""
 
 
