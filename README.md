@@ -48,11 +48,21 @@ main.py
 
 `main.py` 的 `_onTabChanged(index)` 是核心調度，做三件事：
 
-1. **從設定 Tab 切走時**：呼叫 `settings_tab._promptUnsaved(context="leave")` 處理未存排序；若 `_ref_dirty=True`，呼叫**其他所有 Tab** 的 `on_activated()` 刷新下拉
+1. **從設定 Tab 切走時**：呼叫 `settings_tab._promptUnsaved(context="leave")` 處理未存排序；若 `_ref_dirty=True`，對**其他所有 Tab** 設 `_ref_changed=True` 後呼叫 `on_activated()` 刷新下拉
 2. **切到設定 Tab 時**：呼叫 `settings_tab.on_activated()` 重載當前子頁（與 DB 同步）
 3. autoresize 表格 + 設定焦點
 
 > ⚠️ **Qt 限制**：`QTabWidget.currentChanged` 是「切換**後**」才發出，無法在切換前攔截詢問「要不要存」。所以「離開大 Tab」的未存提醒只能是「切過去後補跳」，不能攔住不讓切。設定 Tab 內部的子頁切換（按鈕觸發）則攔得住，可以「取消 = 回原狀」。
+
+#### 瀏覽／歸檔頁的三層刷新（避免大表頓挫）
+
+瀏覽頁（Tab4）三表、歸檔頁（Tab5）待歸檔清單各約 700+ 列，重建 cellWidget 才是成本所在。故依「變動性質」分三條路徑：
+
+1. **參照改名（人員／部門／案類）→ 就地輕量更新**：設定頁改過參照表時 `_ref_changed=True`，`on_activated` 走 `_refreshRefCells`（瀏覽）／重載小清單（歸檔），**只對 `ref_col` 標記欄 `setText`，不重建列**（700 列實測 ~20ms）。指紋只看公文表 `last_modified`，碰不到參照改名，故必須走此旗標路徑。
+2. **跨頁增／修／刪 → 指紋差異更新**：比對 `(COUNT, MAX(last_modified))`，變了才 `_diffUpdate`／`_diffDocs`，只重建變動列。變動列數 `>= _BUSY_ROW_THRESHOLD`（預設 100）才跳「更新中」提示。
+3. **手動「重載」鈕**：瀏覽頁每區塊、歸檔頁每類各一顆，強制整表重建（瀏覽）／重掃資料夾＋重載清單＋重新比對（歸檔），一律以 `runWithBusy` 顯示「更新中」。是使用者面對任何外部變動（如外部新增／改名 PDF）的逃生口。
+
+> 「更新中」提示 `ui_utils.runWithBusy`：同步阻塞工作前 `show + repaint` 強制畫出（frameless 視窗 `processEvents` 不一定即時 repaint），並有最短顯示時間（避免一閃即逝）。
 
 ---
 
@@ -117,11 +127,19 @@ main.py
 - `_applyOverdue(key)`：僅呼叫 `_applyRowVisibility`（不獨立重算）
 - 搜尋框 / 範圍下拉觸發 `_applyFilter`，**不觸發 `_reload`**；`_reload` 只在 Tab 切換且指紋改變時呼叫（或 `_diffUpdate` fallback）
 
-**差異更新（`_diffUpdate`）**：查 `last_modified > since` 得到變動 PK；對每筆維護 `_allRows[key]`（append / 就地更新 / pop）、`_docorder[key]`、表格列，最後呼叫 `_applyFilter` 重算可見性。
+**比對方式**：`kw in str(值)` 的**子字串包含、區分大小寫**（非模糊比對）；選了範圍下拉只比該欄，否則比所有 `search:True` 欄。
 
-**精簡/完整切換**：`_applyMode` 做 `setColumnHidden`，再呼叫 `_applyRowVisibility` 重算 hit_hidden（命中欄在隱藏欄的提示）。
+**差異更新（`_diffUpdate`）**：查 `last_modified > since` 得到變動 PK；對每筆維護 `_allRows[key]`（append / 就地更新 / pop）、`_docorder[key]`、表格列，最後呼叫 `_applyFilter` 重算可見性。變動列數 `>= _BUSY_ROW_THRESHOLD`（預設 100）時，重建段落以 `runWithBusy` 包起來顯示「更新中」。
+
+**精簡/完整切換**：單顆「完整」切換鈕（`{key}_seg_full`，預設未選＝精簡，與歸檔頁一致）。`_applyMode` 做 `setColumnHidden`，再呼叫 `_applyRowVisibility` 重算 hit_hidden（命中欄在隱藏欄的提示）。
 
 > ⚠️ `_allRows[key]` 和 `_docorder[key]` 必須與表格列嚴格 1:1 對應（索引相同）。`_diffUpdate` 每次 pop / append 時兩者要同步維護，否則 `_applyRowVisibility` 會取到錯誤的 row data。
+
+> ⚠️ `_applyRowVisibility` / 歸檔 `_rematch` 內 `setUpdatesEnabled(False)…(True)` 必須用 **try/finally** 包覆。否則中途丟例外會把表格卡在「不更新」狀態，之後所有 `setRowHidden`（搜尋）在畫面上都無效＝「搜尋完全沒反應」，且持續到下次整表重建。
+
+### 歸檔頁「檔名過濾」（Tab5 候選 PDF）
+
+候選 PDF 區的關鍵字框（`{key}_kw`，標籤「檔名過濾」）做的是**檔名子字串過濾、不分大小寫**：輸入文字 → `_rematch` 只保留 `os.path.basename(fp)` 含該串的 PDF，其餘排除（不是重排、不是斷詞比對）。關鍵字**不**再混入對選定公文的比對分數；評分排序仍照 `match_cols` 斷詞交集計算。觸發為 Enter 或「比對」鈕。
 
 ### 其他慣例
 
@@ -468,6 +486,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 
 | 版本 | 摘要 |
 |------|------|
+| v1.0.4 | 瀏覽頁／歸檔頁新增「重載」鈕（強制重掃資料夾＋整表重建）；設定頁改參照表名稱後，瀏覽／歸檔頁自動就地反映（零重建成本）；重載與大量差異更新顯示「更新中」提示；歸檔頁「自訂關鍵字」改為檔名過濾（只留符合的 PDF）；搜尋畫面更新改 try/finally 避免凍結；瀏覽頁精簡／完整改單顆切換鈕（預設精簡）。歸檔檔名解析強化（黏連日期、車牌連字號、承辦括號）。 |
 | v1.0.3 | 公文陳報頁（Tab3）改版：刑案／一般陳報合併為單一表單版面，切換時欄位位置、寬度、高度一致不跳動；下方左右預覽表高度對齊；輸入欄與下拉欄高度統一；案件分類／查獲受理日期灰字不再影響下拉清單與月曆。 |
 | v1.0.2 | 設定頁拖拉排序（移除四顆排序鈕）；人員別名欄（`Ref_Personnel.alias`，歸檔比對一併納入）；歸檔根目錄未設定三層警示；瀏覽 Tab4 搜尋改為全量載入＋`setRowHidden`，大幅提升搜尋速度。 |
 | v1.0.1 | 人員別名初版（alias 欄）；設定頁人員清單加別名欄；歸檔比對從 DB 讀取別名。 |
