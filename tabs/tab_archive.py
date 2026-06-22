@@ -17,7 +17,7 @@ from lib.archive_text import _trimName, _tokenize, _parseDate, _sanitize, _pkOf
 from ui_utils import (
     setDocIdLinkCell,
     RowHoverFilter, RowHoverDelegate, TwoLineElideLabel,
-    CriminalEditDialog, GeneralEditDialog, runWithBusy,
+    CriminalEditDialog, GeneralEditDialog, runWithBusy, preserveScroll,
 )
 
 
@@ -349,6 +349,9 @@ class TabArchive(BaseTab):
         table = self._ui[key]["doc"]
         if not table:
             return
+        # 整表重建前後保留捲動位置（重載／歸檔後不跳回頂端）
+        _sb = table.verticalScrollBar()
+        _scroll_pos = _sb.value() if _sb else 0
         # 未歸檔 = is_electronic 為空（查詢統一走 _queryUnarchived）
         try:
             rows = self._queryUnarchived(key)
@@ -435,6 +438,8 @@ class TabArchive(BaseTab):
         self._applyDocMode(key)
         # 全量載入後重新套用編號搜尋（若有）
         self._applyDocSearch(key)
+        if _sb:
+            QTimer.singleShot(0, lambda b=_sb, v=_scroll_pos: b.setValue(min(v, b.maximum())))
 
     def _fillDocRow(self, key, table, cols, r, pos):
         """填一列（新建或就地更新）。編號→超連結(點開編輯)、承辦人去後綴、案由靠左+tooltip。"""
@@ -548,11 +553,13 @@ class TabArchive(BaseTab):
             # 列集合可能變動 → 重新套用目前的編號搜尋過濾
             self._applyDocSearch(key)
 
-        # 變動列數達門檻才跳「更新中」提示
-        if len(changed_ids) >= _BUSY_ROW_THRESHOLD:
-            runWithBusy(self._inner, _rebuild)
-        else:
-            _rebuild()
+        # 變動列數達門檻才跳「更新中」提示；保留捲動位置避免跳回頂端
+        def _run():
+            if len(changed_ids) >= _BUSY_ROW_THRESHOLD:
+                runWithBusy(self._inner, _rebuild)
+            else:
+                _rebuild()
+        preserveScroll(table, _run)
 
     # ── 待歸檔編號搜尋（setRowHidden 過濾，不重建表格）──────────
     def _applyDocSearch(self, key):
@@ -567,22 +574,6 @@ class TabArchive(BaseTab):
             doc_id = order[row] if row < len(order) else ""
             hide = bool(q) and not str(doc_id).startswith(q)
             table.setRowHidden(row, hide)
-
-    def _clearDocSearch(self, key):
-        """清空搜尋字串＋取消待觸發的延遲＋顯示全部列。"""
-        u = self._ui.get(key, {})
-        se = u.get("doc_search")
-        table = u.get("doc")
-        t = getattr(self, "_searchTimers", {}).get(key)
-        if t:
-            t.stop()
-        if se:
-            se.blockSignals(True)
-            se.clear()
-            se.blockSignals(False)
-        if table:
-            for row in range(table.rowCount()):
-                table.setRowHidden(row, False)
 
     def _queryUnarchived(self, key):
         """查未歸檔公文（is_electronic 為空）的完整 View 列。
@@ -802,6 +793,9 @@ class TabArchive(BaseTab):
         table = self._ui[key]["pdf"]
         if not table:
             return
+        # 重建候選表前後保留捲動位置（歸檔後／重載不跳回頂端）
+        _sb = table.verticalScrollBar()
+        _scroll_pos = _sb.value() if _sb else 0
         table.setRowCount(0)
         doc_id = self._selected.get(key)
         keyword = (self._ui[key]["kw"].text() or "").strip() if self._ui[key]["kw"] else ""
@@ -878,6 +872,8 @@ class TabArchive(BaseTab):
                 table.setItem(pos, 2, ni)
         finally:
             table.setUpdatesEnabled(True)
+        if _sb:
+            QTimer.singleShot(0, lambda b=_sb, v=_scroll_pos: b.setValue(min(v, b.maximum())))
 
     def _parseSubject(self, old_path):
         """從舊檔名拆主旨。支援兩種格式：
@@ -1065,24 +1061,21 @@ class TabArchive(BaseTab):
         meta = META[key]
         doc_id = self._selected.get(key)
         if not doc_id:
-            msgCritical("尚未選擇", "請先在左側「待歸檔」清單選一筆公文。")
+            msgCritical("尚未選擇", "請先點選歸檔公文。")
             return
         doc = self._docrows.get(key, {}).get(doc_id, {})
         # 已是紙本歸檔 → 提示無需重複
         if str(doc.get("紙本") or "") == "是":
             msgInfo("已歸紙本", f"公文 {doc_id} 的紙本已標記歸檔。")
             return
-        subj = doc.get(meta["match_cols"][0]) if meta.get("match_cols") else ""
+        subj = doc.get(meta["subject_col"]) if meta.get("subject_col") else ""
         kind = "刑案" if key == "crim" else "一般"
         if not confirmBox(
                 "只歸紙本",
-                f"將{kind}編號 {doc_id} 標記為「紙本已歸檔」：\n\n"
-                f"{subj or ''}\n\n"
-                f"此操作不需 PDF，公文仍留在清單等待補電子檔。",
+                f"將{kind}編號 {doc_id} 紙本歸檔？",
+                informative=f"主旨：{subj or '（無）'}\n掃描檔仍未歸檔，待後續補登。",
                 confirm_text="標記紙本", default_confirm=True):
             return
-        # 送出確認 → 清空編號搜尋（避免操作後列表停在過濾狀態）
-        self._clearDocSearch(key)
         try:
             conn = self._getConn()
             conn.execute(
@@ -1093,9 +1086,9 @@ class TabArchive(BaseTab):
         except Exception as e:
             msgCritical("寫入資料庫失敗", str(e))
             return
-        msgInfo("完成", f"公文 {doc_id} 已標記紙本歸檔。")
-        # 差異更新該頁（案由前出現紙圖示），同步指紋
+        # 成功不跳提示（僅失敗才提示）；不清空 PK 搜尋：差異更新待歸檔＋刷新候選 PDF
         self._diffDocs(key)
+        self._rematch(key)
         self._sigs = getattr(self, "_sigs", {})
         try:
             self._sigs[key] = self._tableSignature(key)
@@ -1108,10 +1101,10 @@ class TabArchive(BaseTab):
         u = self._ui[key]
         old_path = self._curPdf.get(key)
         if not old_path:
-            msgCritical("尚未選定", "請先在 PDF 候選清單點「選定」。")
+            msgCritical("尚未選定", "請先在 PDF 候選清單點擊「歸檔預覽」。")
             return
         if not os.path.exists(old_path):
-            msgCritical("歸檔失敗", "選定的 PDF 不存在或已被移動，請重新比對。")
+            msgCritical("歸檔失敗", "選擇的 PDF 不存在或已被移動，請重新比對。")
             return
 
         pk = (u["h_pk"].text() or "").strip() if u["h_pk"] else ""
@@ -1128,15 +1121,11 @@ class TabArchive(BaseTab):
         kind = "刑案" if key == "crim" else "一般"
         if not confirmBox(
                 "確認歸檔",
-                f"歸檔{kind}編號 {pk}：\n\n"
-                f"原檔名：{os.path.basename(old_path)}\n"
-                f"新檔名：{new_name}\n\n"
-                f"確認後將重新命名檔案並記錄為已歸檔。",
-                confirm_text="歸檔", default_confirm=True):
+                f"將{kind}編號 {pk} 重新命名並歸檔？",
+                informative=f"原檔名：{os.path.basename(old_path)}\n"
+                            f"新檔名：{new_name}",
+                confirm_text="歸檔", default_confirm=True, min_width=560):
             return
-        # 送出確認 → 清空編號搜尋
-        self._clearDocSearch(key)
-
         # 1) 重新命名實體檔案
         try:
             if os.path.exists(new_path) and os.path.abspath(new_path) != os.path.abspath(old_path):
@@ -1163,7 +1152,7 @@ class TabArchive(BaseTab):
             msgCritical("寫入資料庫失敗", str(e))
             return
 
-        msgInfo("歸檔完成", f"公文 {pk} 已歸檔。\n檔名：{new_name}")
+        # 成功不跳提示（僅失敗才提示）
         # 該 PDF 已改名；該筆已歸檔 → 重載未歸檔清單、清空預覽、重新比對
         self._pdfs[key] = [
             new_path if p == old_path else p for p in self._pdfs.get(key, [])

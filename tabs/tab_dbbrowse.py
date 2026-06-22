@@ -13,7 +13,7 @@ from lib.db_utils import (
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, setDocIdLinkCell, makeDeleteBtn, refreshDeleteBtns,
-    TaskEditDialog, CriminalEditDialog, GeneralEditDialog, runWithBusy,
+    TaskEditDialog, CriminalEditDialog, GeneralEditDialog, runWithBusy, preserveScroll,
 )
 
 
@@ -521,6 +521,9 @@ class TabDBBrowse(BaseTab):
         table = u["table"]
         if not table:
             return
+        # 整表重建前後保留捲動位置（重載鈕／切回 Tab 不跳回頂端）
+        _sb = table.verticalScrollBar()
+        _scroll_pos = _sb.value() if _sb else 0
         self._today_cache = self._today()
 
         # 一律建「完整模式的全部欄位」，精簡模式之後用 setColumnHidden 藏欄，
@@ -571,6 +574,8 @@ class TabDBBrowse(BaseTab):
         self._applyMode(key)
         # 套用搜尋過濾（setRowHidden）→ 內部再呼叫 _applyRowVisibility（含逾期）
         self._applyFilter(key)
+        if _sb:
+            QTimer.singleShot(0, lambda b=_sb, v=_scroll_pos: b.setValue(min(v, b.maximum())))
 
     def _dbNow(self):
         """取資料庫端的當前時間字串，與 trigger 寫入的 last_modified 同基準。"""
@@ -700,10 +705,13 @@ class TabDBBrowse(BaseTab):
             self._applyFilter(key)
 
         # 變動列數達門檻才跳「更新中」提示（重建 cellWidget 才是成本所在）。
-        if len(changed_ids) >= _BUSY_ROW_THRESHOLD:
-            runWithBusy(self._inner, _rebuild)
-        else:
-            _rebuild()
+        # 包 preserveScroll 保留捲動位置，避免新增/刪除/修改後跳回頂端。
+        def _run():
+            if len(changed_ids) >= _BUSY_ROW_THRESHOLD:
+                runWithBusy(self._inner, _rebuild)
+            else:
+                _rebuild()
+        preserveScroll(table, _run)
 
     def _appendRow(self, key, table, cols, r, id_col):
         pos = table.rowCount()
@@ -884,14 +892,8 @@ class TabDBBrowse(BaseTab):
             msgCritical("刪除失敗", str(e))
             return
         # 差異更新：清空後該列會被判定為 emptied → 自動移除。
-        # 刪除前後保留捲動位置，避免畫面跳回頂端。
-        table = self._ui[key]["table"]
-        sb = table.verticalScrollBar() if table else None
-        scroll_pos = sb.value() if sb else 0
+        # 捲動位置由 _diffUpdate 內的 preserveScroll 保留。
         self._diffUpdate(key)
-        if sb:
-            # autoResize 在下一個事件迴圈才跑，捲動還原也排在其後
-            QTimer.singleShot(0, lambda b=sb, v=scroll_pos: b.setValue(min(v, b.maximum())))
         self._sigs = getattr(self, "_sigs", {})
         try:
             self._sigs[key] = self._tableSignature(key)

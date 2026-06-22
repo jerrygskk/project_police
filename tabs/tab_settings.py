@@ -34,6 +34,7 @@ from ui_utils import (
     DeptAddDialog, DeptEditDialog,
     CaseTypeAddDialog, CaseTypeEditDialog,
     ChangePasswordDialog, ResetDialog, ArchiveRootDialog,
+    preserveScroll,
 )
 
 # ── 左側導航按鈕樣式 ────────────────────────────────────────────
@@ -577,19 +578,24 @@ class TabSettings(BaseTab):
         name_c, alias_c, status_c = self._refCols(key)
         st  = self._sort_state[key]
         tbl = st["table"]
-        tbl.setRowCount(0)
-        for r, row in enumerate(st["rows"]):
-            rname, active = row[1], row[2]
-            tbl.insertRow(r)
-            color  = None if active else _COLOR_INACTIVE
-            status = word_on if active else word_off
-            # col0 顯示「序號」＝目前列位置（r+1），非內部 PK；rid 仍存記憶體供存檔
-            tbl.setItem(r, 0,        self._item(r + 1,  color))
-            tbl.setItem(r, name_c,   self._item(rname,  color))
-            if alias_c is not None:
-                alias = (row[3] if len(row) > 3 and row[3] else "")
-                tbl.setItem(r, alias_c, self._item(alias, color))
-            tbl.setItem(r, status_c, self._item(status, color))
+
+        def _build():
+            tbl.setRowCount(0)
+            for r, row in enumerate(st["rows"]):
+                rname, active = row[1], row[2]
+                tbl.insertRow(r)
+                color  = None if active else _COLOR_INACTIVE
+                status = word_on if active else word_off
+                # col0 顯示「序號」＝目前列位置（r+1），非內部 PK；rid 仍存記憶體供存檔
+                tbl.setItem(r, 0,        self._item(r + 1,  color))
+                tbl.setItem(r, name_c,   self._item(rname,  color))
+                if alias_c is not None:
+                    alias = (row[3] if len(row) > 3 and row[3] else "")
+                    tbl.setItem(r, alias_c, self._item(alias, color))
+                tbl.setItem(r, status_c, self._item(status, color))
+
+        # 重繪前後保留捲動位置（新增／修改後不跳回頂端）
+        preserveScroll(tbl, _build)
 
     def _saveSort(self, key, silent=False):
         """把記憶體順序寫回 DB sort_order（連續整數），清 dirty，設 _ref_dirty。

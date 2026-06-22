@@ -50,6 +50,23 @@ def runWithBusy(parent, func, text="更新中，請稍候…", min_ms=350):
         QApplication.processEvents()
 
 
+def preserveScroll(table, func):
+    """執行 func（重建／差異更新表格）前後保留垂直捲動位置，避免畫面跳回頂端。
+
+    重建後 maximum 可能改變，還原值 clamp 到當下 maximum；autoResize 等
+    延遲動作排在下一個事件迴圈，故還原也用 QTimer.singleShot(0) 排在其後。
+    回傳 func() 的結果。
+    """
+    if table is None:
+        return func()
+    sb = table.verticalScrollBar()
+    pos = sb.value() if sb else 0
+    result = func()
+    if sb:
+        QTimer.singleShot(0, lambda b=sb, v=pos: b.setValue(min(v, b.maximum())))
+    return result
+
+
 def setupDateEditToToday(date_edit):
     """QDateEdit 開啟月曆後自動捲到今天所在的月份"""
 

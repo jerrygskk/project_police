@@ -277,6 +277,7 @@ self.setStyleSheet("""
 | 可空白日期欄、月曆打開停在今天 | `widgets.py` 的 `setupDateEditCalendarOnly(dateedit)`（搭 `setSpecialValueText(" ")` ＋設 minimumDate 當空白哨兵；過濾器裝 calendarWidget，見 §2 雷） |
 | 固定 N 行、超長尾端省略的標籤 | `widgets.py` 的 `TwoLineElideLabel`（固定 2 行高、第 2 行尾 `…`、完整內容入 tooltip；建構後以 `actions.replaceWidget(舊label, 新)` 換掉 .ui 的 QLabel） |
 | 預覽表黏底捲動 | `setupPreviewTable` 後呼叫 `attachStickyScroll(table)` |
+| 重建/差異更新表格時保留捲動位置 | `widgets.py` 的 `preserveScroll(table, func)`：執行 func 前記下 `verticalScrollBar().value()`，func 後以 `QTimer.singleShot(0,…)` 還原並 clamp 到當下 maximum。已用於瀏覽 `_diffUpdate`/`_reload`、歸檔 `_diffDocs`/`_loadDocs`/`_rematch`、設定 `_renderSortTable`。輸入暫存預覽表（交辦發/收文、陳報）刻意維持 `attachStickyScroll` 捲到底，不套此 helper |
 
 ### 通用彈窗（db_utils）
 
@@ -287,7 +288,9 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 | 函式 | 按鈕 |
 |------|------|
 | `msgInfo / msgWarning / msgCritical(title, text)` | 確定 |
-| `confirmBox(title, text, confirm_text, cancel_text, confirm_danger, default_confirm)` | 自訂，回傳 True=確認 |
+| `confirmBox(title, text, confirm_text, cancel_text, confirm_danger, default_confirm, informative, min_width)` | 自訂，回傳 True=確認 |
+
+> `confirmBox` 的 `informative`：次要說明，呈現 Apple HIG 兩層式（主訊息深色＋次要灰字 `#6b6b6e`，同為 14pt）。⚠️ Windows 的 `QMessageBox` 不會自動把 `informativeText` 縮小／變灰（那是 macOS 原生行為），故內部改用 rich text 自排版。`min_width`：撐出最小內容寬度(px)供長檔名等不換行用（於 grid layout 末列塞 spacer；超長仍會自動換行，不會無限拉寬），內容短的彈窗不要設、用自動寬度。
 
 ### 修改功能（EditDialog）
 
@@ -497,6 +500,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 
 | 版本 | 摘要 |
 |------|------|
+| v1.0.5 | **歸檔頁**：確認歸檔／只歸紙本後不再清空 PK 編號搜尋（改為刷新待歸檔清單＋候選 PDF，保留搜尋狀態）；歸檔成功不再跳提示（僅失敗才提示）；確認彈窗改 Apple HIG 兩層式（主訊息＋灰字次要說明）、文字精修，確認歸檔加寬以容長檔名；修正「只歸紙本」確認框誤顯示承辦人而非主旨之 bug。**全頁**：所有捲動表格在資料新增／刪除／修改後保留捲動位置，不再跳回頂端（瀏覽 Tab4、歸檔 Tab5 待歸檔＋候選 PDF、設定 Tab6 參照表）；輸入暫存預覽表維持原本捲到底行為。**協作文件**：CLAUDE.md 補「開新對話先讀 README」。 |
 | v1.0.4 | **瀏覽／歸檔頁**：新增「重載」鈕（強制重掃資料夾＋整表重建）；設定改參照表名稱後自動就地反映（零重建成本）；重載與大量差異更新顯示「更新中」提示（`runWithBusy`）；歸檔頁關鍵字改為檔名過濾；搜尋 `setUpdatesEnabled` 改 try/finally 避免凍結；精簡／完整改單顆切換鈕（預設精簡）。**設定頁**：三表與修改彈窗改顯示序號（隱藏內部 PK，並修正修改誤用序號當 PK 之 bug）；歸檔資料夾設定白話化、子夾下拉提示；`toUncPath` 以 `WNetGetConnection` 解析網路磁碟機代號為 UNC；重置後首登提示歸檔未設定；ResetDialog 停用清單可捲動。**其他**：標題列＋exe 內容頁顯示版本號（`bump_version.py` 進版工具）；瀏覽頁空表浮水印 viewport size=0 修正；歸檔檔名解析強化（黏連日期、車牌連字號、承辦括號）；陳報子頁籤多餘基準線移除。 |
 | v1.0.3 | 公文陳報頁（Tab3）改版：刑案／一般陳報合併為單一表單版面，切換時欄位位置、寬度、高度一致不跳動；下方左右預覽表高度對齊；輸入欄與下拉欄高度統一；案件分類／查獲受理日期灰字不再影響下拉清單與月曆。 |
 | v1.0.2 | 設定頁拖拉排序（移除四顆排序鈕）；人員別名欄（`Ref_Personnel.alias`，歸檔比對一併納入）；歸檔根目錄未設定三層警示；瀏覽 Tab4 搜尋改為全量載入＋`setRowHidden`，大幅提升搜尋速度。 |

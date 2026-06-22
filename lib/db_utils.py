@@ -2,10 +2,11 @@ import sys
 import os
 import sqlite3
 import unicodedata
+import html as _html
 
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox, QSpacerItem, QSizePolicy, QGridLayout
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtCore import QFile
+from PySide6.QtCore import QFile, Qt
 
 
 def getConn(db_path):
@@ -43,17 +44,40 @@ def msgCritical(title, text, parent=None):
 
 # ── 通用確認彈窗 ───────────────────────────────────────────────
 def confirmBox(title, text, confirm_text="確認", cancel_text="取消",
-               confirm_danger=False, default_confirm=True, parent=None):
+               confirm_danger=False, default_confirm=True, parent=None,
+               informative="", min_width=0):
     """
     Apple HIG 風格確認對話框。版面統一為「左確認、右取消」。
     confirm_danger=True：確認按鈕顯示紅色（破壞性操作）
     default_confirm=False：預設選取「取消」
+    informative：次要說明（顯示為較小的灰字，置於主訊息下方，HIG 兩層式）
+    min_width：對話框最小內容寬度(px)；用於長檔名等需要更寬不換行的場合（有上限）
     回傳 True 表示使用者點確認
     """
     msg = QMessageBox(parent)
     msg.setWindowTitle(title)
-    msg.setText(text)
+    if informative:
+        # Windows 的 QMessageBox 不會自動把 informativeText 縮小／變灰（那是 macOS
+        # 原生行為），故用 rich text 自行做 HIG 兩層式：主訊息正常、次要說明灰字。
+        body = (
+            f'<div style="font-size:14pt; color:#1c1c1e;">{_html.escape(text)}</div>'
+            f'<div style="font-size:14pt; color:#6b6b6e; margin-top:10px; '
+            f'line-height:150%;">{_html.escape(informative).replace(chr(10), "<br>")}</div>'
+        )
+        msg.setTextFormat(Qt.RichText)
+        msg.setText(body)
+    else:
+        msg.setText(text)
     msg.setIcon(QMessageBox.Question)
+
+    # 拉寬對話框：QMessageBox 無直接設寬 API，於 grid layout 末列塞水平 spacer 撐出
+    # 最小寬度；超過上限的超長內容仍會自動換行（不會無限拉寬）。
+    if min_width:
+        lay = msg.layout()
+        if isinstance(lay, QGridLayout):
+            lay.addItem(
+                QSpacerItem(min_width, 0, QSizePolicy.Minimum, QSizePolicy.Expanding),
+                lay.rowCount(), 0, 1, lay.columnCount())
 
     # 兩顆都用 ActionRole，避免 Qt 依平台慣例重排左右；
     # 如此按加入順序排列 → 左：確認、右：取消。
