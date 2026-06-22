@@ -14,7 +14,21 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from lib.archive_text import _trimName, _tokenize, _parseDate, _sanitize, _pkOf
+from lib.archive_text import (
+    _trimName, _tokenize, _parseDate, _sanitize, _pkOf,
+    _resolveNames, _parseSubject, _stripStaffParen,
+)
+
+
+def _make_name_dict(*full_names):
+    """模擬 tab_archive._loadNameDict 產出：{全名: 全名, 去姓2字: 全名}。
+    人名皆為虛構，不含真實個資。"""
+    d = {}
+    for full in full_names:
+        d[full] = full
+        if len(full) >= 3:
+            d[full[1:]] = full   # 去姓(後2字)→全名
+    return d
 
 
 class TestTrimName(unittest.TestCase):
@@ -148,6 +162,154 @@ class TestPkOf(unittest.TestCase):
         # 已格式化檔名上用 _pkOf，這裡僅記錄無 PK 時的實際行為）
         self.assertEqual(
             _pkOf("1150101林淑芬竊盜案-黃文雄.pdf"), "1150101林淑芬竊盜案")
+
+
+class TestResolveNames(unittest.TestCase):
+    """承辦人解析：只收對得到人名字典者，案由詞/報案人不誤收。
+    人名皆虛構。"""
+    def setUp(self):
+        # 承辦人：王測乙、王測甲、游瑛媛、歐陽建國(4字測長名仍可對)
+        self.nd = _make_name_dict("王測乙", "王測甲", "游瑛媛", "歐陽建國")
+
+    def test_multi_dash_processors(self):
+        # 多個 - 分隔承辦人都要收；案由「竊盜案」、報案人「王小華」不可收
+        self.assertEqual(
+            _resolveNames("1150611-林大明(王小華)竊盜案-王測乙-王測甲.pdf", self.nd),
+            ["王測乙", "王測甲"])
+
+    def test_dunhao_processors_with_short_name(self):
+        # 頓號多人 + 去姓2字（測甲→王測甲、測乙→王測乙）
+        self.assertEqual(
+            _resolveNames("1150620-高大同竊盜案-測甲、測乙.pdf", self.nd),
+            ["王測甲", "王測乙"])
+
+    def test_case_word_not_treated_as_name(self):
+        # 回歸：「竊盜案」3字但非人名，不得混入承辦人
+        names = _resolveNames("1150611-林大明竊盜案-王測乙.pdf", self.nd)
+        self.assertEqual(names, ["王測乙"])
+        self.assertNotIn("竊盜案", names)
+
+    def test_long_name_in_dict_collected(self):
+        # 4字全名在字典 → 仍收
+        self.assertEqual(
+            _resolveNames("1150611-林大明竊盜案-歐陽建國.pdf", self.nd),
+            ["歐陽建國"])
+
+    def test_single_processor(self):
+        self.assertEqual(
+            _resolveNames("103-1150612-林大明竊盜案-游瑛媛.pdf", self.nd),
+            ["游瑛媛"])
+
+
+class TestParseSubjectWithDict(unittest.TestCase):
+    """主旨解析：剝乾淨承辦人、保留報案人括號。人名皆虛構。"""
+    def setUp(self):
+        self.nd = _make_name_dict("王測乙", "王測甲", "游瑛媛")
+
+    def test_multi_dash_processors_stripped(self):
+        # 多個 - 承辦人全剝除；報案人括號保留
+        self.assertEqual(
+            _parseSubject("1150611-林大明(王小華)竊盜案-王測乙-王測甲.pdf", self.nd),
+            "林大明(王小華)竊盜案")
+
+    def test_dunhao_processor_segment_stripped(self):
+        self.assertEqual(
+            _parseSubject("1150620-高大同竊盜案-測甲、測乙.pdf", self.nd),
+            "高大同竊盜案")
+
+    def test_keeps_reporter_paren(self):
+        # 報案人(王小華)不在承辦字典 → 主旨保留括號
+        self.assertEqual(
+            _parseSubject("1150611-林大明(王小華)竊盜案-游瑛媛.pdf", self.nd),
+            "林大明(王小華)竊盜案")
+
+    def test_strips_trailing_staff_paren(self):
+        # 尾端括號內為承辦人 → 整組去掉
+        self.assertEqual(
+            _parseSubject("1150611-林大明竊盜案(游瑛媛).pdf", self.nd),
+            "林大明竊盜案")
+
+    def test_format2_space_separated(self):
+        # 無 - 格式：日期黏主旨、空白分承辦人
+        self.assertEqual(
+            _parseSubject("1150101林大明竊盜案 游瑛媛.pdf", self.nd),
+            "林大明竊盜案")
+
+    def test_subject_never_emptied(self):
+        # 全是承辦人段時至少保留主旨段，不砍成空
+        out = _parseSubject("1150611-林大明竊盜案-王測乙-王測甲.pdf", self.nd)
+        self.assertTrue(out)
+
+
+class TestRealWorldCorpus(unittest.TestCase):
+    """取自真實檔名語料（已去識別化為虛構人名）的回歸案例。
+    good_* 為應正確解析；edge_* 為低頻邊緣格式，記錄目前行為（已知限制、不修），
+    若日後改動解析邏輯，這些斷言會提醒行為變化。"""
+    def setUp(self):
+        self.nd = _make_name_dict("王志強", "陳測甲", "王測丁")
+
+    # ── 應正確 ──────────────────────────────────────────
+    def test_good_dunhao(self):
+        s, n = self._run("107-1150123-林大明竊盜案-王志強、陳測甲.pdf")
+        self.assertEqual(s, "林大明竊盜案")
+        self.assertEqual(n, ["王志強", "陳測甲"])
+
+    def test_good_paren_reporter(self):
+        # 報案人(王測丙)非承辦 → 主旨保留括號、不混入承辦人
+        s, n = self._run("114-1150124-周建宏(王測丙)詐欺案-陳測甲、王測丁、王志強.pdf")
+        self.assertEqual(s, "周建宏(王測丙)詐欺案")
+        self.assertEqual(n, ["陳測甲", "王測丁", "王志強"])
+
+    def test_good_quxing_glued_date(self):
+        # 日期黏主旨於首段 + 去姓2字承辦（志強→王志強）
+        s, n = self._run("1150107林淑芬肇事逃逸兼過失傷害案-志強.pdf")
+        self.assertEqual(s, "林淑芬肇事逃逸兼過失傷害案")
+        self.assertEqual(n, ["王志強"])
+
+    def test_good_multi_dash_processors(self):
+        # 多個 - 分隔的承辦人全數剝除/收集
+        s, n = self._run("467-1150411-嶺東竊盜案-王志強-王測丁-陳測甲.pdf")
+        self.assertEqual(s, "嶺東竊盜案")
+        self.assertEqual(n, ["王志強", "王測丁", "陳測甲"])
+
+    # ── 邊緣格式：記錄現況（已知限制，不修）─────────────────
+    def test_edge_duplicate_marker(self):
+        # 承辦人後接 (2) 重複註記 → (2) 含純數字使承辦區提早中止
+        s, n = self._run("434-1150317-林大明侵入住宅案-王志強 (2).pdf")
+        self.assertEqual(s, "林大明侵入住宅案、王志強 (2)")
+        self.assertEqual(n, [])
+
+    def test_edge_role_paren(self):
+        # 承辦人帶角色括號(普仁單窗) → 角色非人名，承辦區提早中止
+        s, n = self._run("28-1150106-林大明詐欺案-王測丁(普仁單窗).pdf")
+        self.assertEqual(s, "林大明詐欺案、王測丁(普仁單窗)")
+        self.assertEqual(n, [])
+
+    def test_edge_dash_role(self):
+        # 承辦人後接 -單窗 角色標記 → 同上
+        s, n = self._run("729-1150607-林大明所報詐欺案-王志強-單窗.pdf")
+        self.assertEqual(s, "林大明所報詐欺案、王志強、單窗")
+        self.assertEqual(n, [])
+
+    def test_edge_mazuo_prefix(self):
+        # 「馬佐」職稱黏承辦名、無分隔 → 整串對不到字典
+        s, n = self._run("382-1150326林大明竊盜通緝-馬佐志強.pdf")
+        self.assertEqual(s, "林大明竊盜通緝、馬佐志強")
+        self.assertEqual(n, [])
+
+    def _run(self, fn):
+        return _parseSubject(fn, self.nd), _resolveNames(fn, self.nd)
+
+
+class TestStripStaffParen(unittest.TestCase):
+    def test_strips_when_all_staff(self):
+        nd = _make_name_dict("游瑛媛", "王測乙")
+        self.assertEqual(_stripStaffParen("竊盜案(游瑛媛、王測乙)", nd), "竊盜案")
+
+    def test_keeps_when_not_staff(self):
+        nd = _make_name_dict("游瑛媛")
+        # 王小華非承辦 → 保留
+        self.assertEqual(_stripStaffParen("竊盜案(王小華)", nd), "竊盜案(王小華)")
 
 
 if __name__ == "__main__":
