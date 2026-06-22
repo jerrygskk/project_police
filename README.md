@@ -161,7 +161,7 @@ main.py
 │   ├── db_utils.py      路徑解析 / 通用彈窗 / nextDocId / 跨年度重置（performYearEndReset、listInactiveRefItems）（DEBUG_MODE 在第一行）
 │   ├── base_tab.py      BaseTab 基底
 │   ├── auth_manager.py  權限單例（`is_admin()` 便捷判斷）
-│   ├── archive_text.py  歸檔比對純文字/檔名工具（_tokenize/_parseDate/_pkOf/_sanitize/_trimName；自 tab_archive 抽出，可單測）
+│   ├── archive_text.py  歸檔比對純文字/檔名工具（_tokenize/_parseDate/_pkOf/_sanitize/_trimName/_resolveNames/_parseSubject；自 tab_archive 抽出，可單測。承辦人/主旨解析需餵 DB 人名字典）
 │   ├── theme.py         全域 QSS（Apple HIG 風格）
 │   ├── version.py       版本號單一來源（__version__；進版只改這裡，主選單顯示自動同步）
 │   └── loading_screen.py
@@ -500,6 +500,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 
 | 版本 | 摘要 |
 |------|------|
+| v1.0.6 | **歸檔頁**：修正承辦人解析會把案由詞（如「竊盜案」）與括號內報案人誤判成承辦人之 bug。承辦人界定改為「從檔名尾端往前、能對到 DB 人名字典（含去姓 2 字／別名）才收為承辦人，對不到即停」，不再用「3 字以內一律當人名」猜測；主旨剝承辦人改字典迴圈（修正多個 `-` 分隔承辦人只剝最後一段、前段人名殘留主旨之 bug）。承辦人／主旨解析純邏輯抽進 `lib/archive_text.py`（`_resolveNames`/`_parseSubject`），新增單元測試（含真實檔名語料去識別化案例）。 |
 | v1.0.5 | **歸檔頁**：確認歸檔／只歸紙本後不再清空 PK 編號搜尋（改為刷新待歸檔清單＋候選 PDF，保留搜尋狀態）；歸檔成功不再跳提示（僅失敗才提示）；確認彈窗改 Apple HIG 兩層式（主訊息＋灰字次要說明）、文字精修，確認歸檔加寬以容長檔名；修正「只歸紙本」確認框誤顯示承辦人而非主旨之 bug。**全頁**：所有捲動表格在資料新增／刪除／修改後保留捲動位置，不再跳回頂端（瀏覽 Tab4、歸檔 Tab5 待歸檔＋候選 PDF、設定 Tab6 參照表）；輸入暫存預覽表維持原本捲到底行為。**協作文件**：CLAUDE.md 補「開新對話先讀 README」。 |
 | v1.0.4 | **瀏覽／歸檔頁**：新增「重載」鈕（強制重掃資料夾＋整表重建）；設定改參照表名稱後自動就地反映（零重建成本）；重載與大量差異更新顯示「更新中」提示（`runWithBusy`）；歸檔頁關鍵字改為檔名過濾；搜尋 `setUpdatesEnabled` 改 try/finally 避免凍結；精簡／完整改單顆切換鈕（預設精簡）。**設定頁**：三表與修改彈窗改顯示序號（隱藏內部 PK，並修正修改誤用序號當 PK 之 bug）；歸檔資料夾設定白話化、子夾下拉提示；`toUncPath` 以 `WNetGetConnection` 解析網路磁碟機代號為 UNC；重置後首登提示歸檔未設定；ResetDialog 停用清單可捲動。**其他**：標題列＋exe 內容頁顯示版本號（`bump_version.py` 進版工具）；瀏覽頁空表浮水印 viewport size=0 修正；歸檔檔名解析強化（黏連日期、車牌連字號、承辦括號）；陳報子頁籤多餘基準線移除。 |
 | v1.0.3 | 公文陳報頁（Tab3）改版：刑案／一般陳報合併為單一表單版面，切換時欄位位置、寬度、高度一致不跳動；下方左右預覽表高度對齊；輸入欄與下拉欄高度統一；案件分類／查獲受理日期灰字不再影響下拉清單與月曆。 |
