@@ -235,6 +235,8 @@ class RowHoverDelegate(QStyledItemDelegate):
         if not is_selected and index.row() == self._hf.row:
             painter.fillRect(opt.rect, self._HOVER_COLOR)
             opt.state &= ~QStyle.State_MouseOver
+        # 移除目前格焦點虛框（黑框/藍線），只保留選取底色
+        opt.state &= ~QStyle.State_HasFocus
         super().paint(painter, opt, index)
 
 

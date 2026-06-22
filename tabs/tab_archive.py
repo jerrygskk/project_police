@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QTabWidget, QLineEdit, QPushButton, QLabel,
     QTableWidget, QTableWidgetItem, QFileDialog, QWidget,
     QHBoxLayout, QListWidget, QHeaderView,
-    QStackedWidget, QSizePolicy,
+    QStackedWidget, QSizePolicy, QStyledItemDelegate, QStyle,
 )
 
 from lib.base_tab import BaseTab
@@ -27,6 +27,25 @@ from ui_utils import (
 
 # 切 tab 自動差異更新時，變動列數達此值才跳「更新中」提示（少量重建無感、不閃提示）
 _BUSY_ROW_THRESHOLD = 100
+
+# 待歸檔清單選中列的左側指示 bar 顏色（搭配藍底深藍字辨識選定公文）
+_SEL_BAR_COLOR = "#3f6fb5"
+
+
+class _SelBarDelegate(QStyledItemDelegate):
+    """待歸檔清單選中列：在第一欄左緣畫一條乾淨的左側 bar。
+
+    純繪圖（不碰資料/選取邏輯）。只在 column 0 畫一條，避免 stylesheet
+    `border-left` 套到每一欄產生「每欄一條」的副作用。"""
+    def paint(self, painter, option, index):
+        # 移除目前格焦點虛框（黑框/藍線），只保留選取底色
+        option.state &= ~QStyle.State_HasFocus
+        super().paint(painter, option, index)
+        if index.column() == 0 and (option.state & QStyle.State_Selected):
+            painter.save()
+            painter.fillRect(option.rect.left(), option.rect.top(),
+                             5, option.rect.height(), QColor(_SEL_BAR_COLOR))
+            painter.restore()
 
 # ─────────────────────────────────────────────────────────────
 # 兩張表的設定：View、底層表、可比對欄位、組檔名用的欄位
@@ -374,15 +393,21 @@ class TabArchive(BaseTab):
         table.setEditTriggers(QTableWidget.NoEditTriggers)
         # 選中色用 palette 設定（避免被全域 stylesheet 蓋成預設深藍）
         pal = table.palette()
-        pal.setColor(QPalette.Highlight, QColor("#eaf1f8"))
-        pal.setColor(QPalette.HighlightedText, QColor("#1c1c1e"))
+        pal.setColor(QPalette.Highlight, QColor("#dce8f6"))
+        pal.setColor(QPalette.HighlightedText, QColor("#14365f"))
         table.setPalette(pal)
+        # 選中列左緣 bar（delegate 純繪圖；存參考防 GC）
+        table._sel_delegate = _SelBarDelegate(table)
+        table.setItemDelegate(table._sel_delegate)
+        # 滑過儲存格顯示一般箭頭，不顯示文字 I-beam 游標
+        table.viewport().setCursor(Qt.ArrowCursor)
         table.setStyleSheet("""
             QTableWidget {
                 background-color: #ffffff;
                 alternate-background-color: #f2f2f7;
                 border: none; border-top: 1px solid #c6c6c8;
                 font-size: 13pt;
+                outline: 0;
             }
             QHeaderView::section {
                 background-color: #f2f2f7; color: #3a3a3c;
@@ -393,8 +418,7 @@ class TabArchive(BaseTab):
             QTableWidget::item { padding: 2px 4px; }
             QTableWidget::item:hover { background-color: transparent; }
             QTableWidget::item:selected {
-                background-color: #eaf1f8; color: #1c1c1e;
-                border-left: 3px solid #8fa8c8;
+                background-color: #dce8f6; color: #14365f;
             }
         """)
         # 列選取訊號只接一次
@@ -739,6 +763,7 @@ class TabArchive(BaseTab):
                 border: none;
                 border-top: 1px solid #c6c6c8;
                 font-size: 13pt;
+                outline: 0;
             }
             QHeaderView::section {
                 background-color: #f2f2f7;
@@ -764,6 +789,8 @@ class TabArchive(BaseTab):
             }
             QTableWidget::item:hover { background-color: transparent; }
         """)
+        # 滑過儲存格顯示一般箭頭，不顯示文字 I-beam 游標
+        table.viewport().setCursor(Qt.ArrowCursor)
         # 整排 hover
         table.viewport().setMouseTracking(True)
         hf = RowHoverFilter(table)
@@ -1027,11 +1054,11 @@ class TabArchive(BaseTab):
             msgCritical("重新命名失敗", str(e))
             return
 
-        # 2) 寫回 is_electronic = 新檔名
+        # 2) 寫回 is_electronic = 新檔名；同時標記紙本已歸（電子檔已歸，紙本理當視為已歸）
         try:
             conn = self._getConn()
             conn.execute(
-                f"UPDATE {meta['base']} SET is_electronic=? WHERE doc_id=?",
+                f"UPDATE {meta['base']} SET is_electronic=?, is_reported=1 WHERE doc_id=?",
                 (new_name, pk))
             conn.commit()
             conn.close()
