@@ -6,6 +6,50 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QColor, QPainter, QTextLayout, QTextOption
 
 
+def runWithBusy(parent, func, text="更新中，請稍候…", min_ms=350):
+    """顯示無邊框「更新中」提示，同步執行 func（阻塞主執行緒）後自動關閉，回傳 func() 結果。
+
+    重載在 GUI 主執行緒同步執行，事件迴圈被佔住，故先 show + repaint
+    強制把提示畫出來，再跑 func；func 結束後於 finally 關閉提示。
+    min_ms：最短顯示毫秒數，避免工作太快時提示一閃即逝看不到。
+    """
+    import time
+    from PySide6.QtWidgets import QDialog, QVBoxLayout, QApplication
+    dlg = QDialog(parent)
+    dlg.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+    dlg.setWindowModality(Qt.ApplicationModal)
+    lay = QVBoxLayout(dlg)
+    lay.setContentsMargins(40, 30, 40, 30)
+    lbl = QLabel(text)
+    lbl.setAlignment(Qt.AlignCenter)
+    lay.addWidget(lbl)
+    dlg.setStyleSheet(
+        "QDialog { background:#ffffff; border:1px solid #c6c6c8; border-radius:12px; }"
+        "QLabel { color:#1c1c1e; font-size:15pt; font-weight:600; background:transparent; }"
+    )
+    dlg.adjustSize()
+    if parent is not None:
+        try:
+            pg = parent.window().geometry()
+            dlg.move(pg.center() - dlg.rect().center())
+        except Exception:
+            pass
+    dlg.show()
+    dlg.raise_()
+    dlg.repaint()                  # frameless 視窗：強制立刻畫出來
+    QApplication.processEvents()
+    start = time.perf_counter()
+    try:
+        return func()
+    finally:
+        # 保證最短顯示時間，工作太快也能看到提示
+        while (time.perf_counter() - start) * 1000 < min_ms:
+            QApplication.processEvents()
+            time.sleep(0.01)
+        dlg.close()
+        QApplication.processEvents()
+
+
 def setupDateEditToToday(date_edit):
     """QDateEdit 開啟月曆後自動捲到今天所在的月份"""
 

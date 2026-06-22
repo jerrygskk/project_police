@@ -13,7 +13,7 @@ from lib.db_utils import (
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, setDocIdLinkCell, makeDeleteBtn, refreshDeleteBtns,
-    TaskEditDialog, CriminalEditDialog, GeneralEditDialog,
+    TaskEditDialog, CriminalEditDialog, GeneralEditDialog, runWithBusy,
 )
 
 
@@ -37,6 +37,9 @@ class _WatermarkFitter(QObject):
 
 
 # ─────────────────────────────────────────────────────────────
+# 切 tab 自動差異更新時，變動列數達此值才跳「更新中」提示（少量重建無感、不閃提示）
+_BUSY_ROW_THRESHOLD = 100
+
 # 三張表的欄位定義
 #   header  : 表頭顯示文字
 #   view_col: View 中的欄位名（用於 SELECT / 搜尋）
@@ -45,35 +48,36 @@ class _WatermarkFitter(QObject):
 #   color   : True = 套用狀態顏色（僅交辦單狀態欄）
 #   search  : True = 可被關鍵字搜尋（布林欄如紙本/電子檔排除）
 #   stretch : True = 此欄自動撐滿剩餘寬度
+#   ref_col : True = 值由參照表(人員/部門/案類) join 取得；參照改名後就地刷此欄
 # 順序即為顯示由左至右的順序（重要欄在左）。
 # ─────────────────────────────────────────────────────────────
 TASK_COLS = [
     {"header": "", "delete": True, "slim": True, "w": 32},
     {"header": "編號",     "view_col": "編號",     "slim": True,  "link": True,  "search": True, "w": 64},
-    {"header": "承辦人",   "view_col": "所承辦人", "slim": True,  "search": True, "w": 80,  "trim_name": True},
+    {"header": "承辦人",   "view_col": "所承辦人", "slim": True,  "search": True, "w": 80,  "trim_name": True, "ref_col": True},
     {"header": "交辦事由", "view_col": "交辦事由", "slim": True,  "search": True, "stretch": True, "w": 240},
-    {"header": "業務組",   "view_col": "業務組",   "slim": True,  "search": True, "w": 80},
+    {"header": "業務組",   "view_col": "業務組",   "slim": True,  "search": True, "w": 80,  "ref_col": True},
     {"header": "狀態",     "view_col": "狀態",     "slim": True,  "color": True, "search": True, "w": 200},
     {"header": "限辦日期", "view_col": "限辦日期", "slim": True,  "search": True, "w": 140},
     {"header": "發文日期", "view_col": "發文日期", "slim": True,  "search": True, "w": 140},
     {"header": "收文日期", "view_col": "收文日期", "slim": False, "search": True, "w": 140},
-    {"header": "收文人員", "view_col": "收文人員", "slim": False, "search": True, "w": 120},
-    {"header": "送文人員", "view_col": "送文人員", "slim": False, "search": True, "w": 120},
+    {"header": "收文人員", "view_col": "收文人員", "slim": False, "search": True, "w": 120, "ref_col": True},
+    {"header": "送文人員", "view_col": "送文人員", "slim": False, "search": True, "w": 120, "ref_col": True},
     {"header": "紀錄時間", "view_col": "紀錄時間", "slim": False, "search": False, "w": 240, "trunc_sec": True},
 ]
 
 CRIM_COLS = [
     {"header": "", "delete": True, "slim": True, "w": 32},
     {"header": "編號",        "view_col": "送文編號",    "slim": True,  "link": True,  "search": True, "w": 64},
-    {"header": "主承辦人",    "view_col": "主承辦人",    "slim": True,  "search": True, "w": 80,  "trim_name": True},
-    {"header": "案類",        "view_col": "案類",        "slim": True,  "search": True, "w": 180},
+    {"header": "主承辦人",    "view_col": "主承辦人",    "slim": True,  "search": True, "w": 80,  "trim_name": True, "ref_col": True},
+    {"header": "案類",        "view_col": "案類",        "slim": True,  "search": True, "w": 180, "ref_col": True},
     {"header": "嫌疑人/案由", "view_col": "嫌疑人_案由", "slim": True,  "search": True, "stretch": True, "w": 240},
     {"header": "發文分類",    "view_col": "發文分類",    "slim": True,  "search": True, "w": 96, "map": "status"},
     {"header": "陳報日期",    "view_col": "陳報日期",    "slim": True,  "search": True, "w": 140},
     {"header": "受理日期",    "view_col": "受理日期",    "slim": True,  "search": True, "w": 140},
-    {"header": "送文人員",    "view_col": "送文人員",    "slim": False, "search": True, "w": 120},
+    {"header": "送文人員",    "view_col": "送文人員",    "slim": False, "search": True, "w": 120, "ref_col": True},
     {"header": "報案人",      "view_col": "報案人",      "slim": False, "search": True, "w": 130},
-    {"header": "受理人",      "view_col": "受理人",      "slim": False, "search": True, "w": 120, "trim_name": True},
+    {"header": "受理人",      "view_col": "受理人",      "slim": False, "search": True, "w": 120, "trim_name": True, "ref_col": True},
     {"header": "紙本",        "view_col": "紙本",        "slim": False, "search": False, "w": 56, "bool_col": True},
     {"header": "電子檔",      "view_col": "電子檔",      "slim": False, "search": False, "w": 64, "bool_col": True},
 ]
@@ -81,12 +85,12 @@ CRIM_COLS = [
 GEN_COLS = [
     {"header": "", "delete": True, "slim": True, "w": 32},
     {"header": "編號",     "view_col": "送文編號", "slim": True,  "link": True,  "search": True, "w": 64},
-    {"header": "陳報人",   "view_col": "陳報人",   "slim": True,  "search": True, "w": 80,  "trim_name": True},
+    {"header": "陳報人",   "view_col": "陳報人",   "slim": True,  "search": True, "w": 80,  "trim_name": True, "ref_col": True},
     {"header": "陳報主旨", "view_col": "陳報主旨", "slim": True,  "search": True, "stretch": True, "w": 240},
-    {"header": "業務單位", "view_col": "業務單位", "slim": True,  "search": True, "w": 96},
+    {"header": "業務單位", "view_col": "業務單位", "slim": True,  "search": True, "w": 96,  "ref_col": True},
     {"header": "分類",     "view_col": "分類",     "slim": True,  "search": True, "w": 96, "map": "cat"},
     {"header": "陳報日期", "view_col": "陳報日期", "slim": True,  "search": True, "w": 140},
-    {"header": "送文人員", "view_col": "送文人員", "slim": False, "search": True, "w": 120},
+    {"header": "送文人員", "view_col": "送文人員", "slim": False, "search": True, "w": 120, "ref_col": True},
     {"header": "紙本",     "view_col": "紙本",     "slim": False, "search": False, "w": 56, "bool_col": True},
     {"header": "電子檔",   "view_col": "電子檔",   "slim": False, "search": False, "w": 64, "bool_col": True},
 ]
@@ -177,7 +181,7 @@ class TabDBBrowse(BaseTab):
                 "kw":     inner.findChild(QLineEdit, f"{key}_kw"),
                 "search": inner.findChild(QPushButton, f"{key}_search"),
                 "full":   inner.findChild(QPushButton, f"{key}_seg_full"),
-                "slim":   inner.findChild(QPushButton, f"{key}_seg_slim"),
+                "reload": inner.findChild(QPushButton, f"{key}_reload"),
                 "table":  inner.findChild(QTableWidget, f"{key}_table"),
                 "count":  inner.findChild(QLabel, f"{key}_count"),
                 "hint":   inner.findChild(QLabel, f"{key}_hint"),
@@ -289,6 +293,9 @@ class TabDBBrowse(BaseTab):
         if u["full"]:
             u["full"].toggled.connect(lambda _, k=key: self._onToggleFull(k))
             self._styleSegmented(key)
+        if u.get("reload"):
+            u["reload"].clicked.connect(lambda _=False, k=key: self._forceReload(k))
+            self._styleReload(key)
         if u.get("overdue"):
             u["overdue"].toggled.connect(lambda _, k=key: self._applyOverdue(k))
             self._styleOverdue(key)
@@ -313,12 +320,28 @@ class TabDBBrowse(BaseTab):
     """
 
     def _styleSegmented(self, key):
-        slim = self._ui[key]["slim"]
         full = self._ui[key]["full"]
-        if slim:
-            slim.setStyleSheet(self._SEG_STYLE)
         if full:
             full.setStyleSheet(self._SEG_STYLE)
+
+    # 重載鈕：中性膠囊（與切換鈕同形，灰邊，hover 淡藍）。
+    _RELOAD_STYLE = """
+        QPushButton {
+            background-color: #ffffff;
+            border: 1px solid #c6c6c8;
+            border-radius: 17px;
+            padding: 6px 16px;
+            color: #636366;
+            font-weight: 500;
+        }
+        QPushButton:hover { background-color: #eaf1f8; }
+        QPushButton:pressed { background-color: #d8e4f0; }
+    """
+
+    def _styleReload(self, key):
+        btn = self._ui[key].get("reload")
+        if btn:
+            btn.setStyleSheet(self._RELOAD_STYLE)
 
     # 逾期未回篩選膠囊：選中紅底白字（警示語意）。
     _OVERDUE_STYLE = """
@@ -403,20 +426,22 @@ class TabDBBrowse(BaseTab):
 
         visible = 0
         table.setUpdatesEnabled(False)
-        for row_idx in range(table.rowCount()):
-            did = order[row_idx] if row_idx < len(order) else ""
-            matched = matched_map.get(did)
-            filter_ok = bool(matched) if kw else True
-            if overdue_on:
-                hi = table.verticalHeaderItem(row_idx)
-                overdue_ok = bool(hi and hi.data(Qt.UserRole))
-            else:
-                overdue_ok = True
-            show = filter_ok and overdue_ok
-            table.setRowHidden(row_idx, not show)
-            if show:
-                visible += 1
-        table.setUpdatesEnabled(True)
+        try:
+            for row_idx in range(table.rowCount()):
+                did = order[row_idx] if row_idx < len(order) else ""
+                matched = matched_map.get(did)
+                filter_ok = bool(matched) if kw else True
+                if overdue_on:
+                    hi = table.verticalHeaderItem(row_idx)
+                    overdue_ok = bool(hi and hi.data(Qt.UserRole))
+                else:
+                    overdue_ok = True
+                show = filter_ok and overdue_ok
+                table.setRowHidden(row_idx, not show)
+                if show:
+                    visible += 1
+        finally:
+            table.setUpdatesEnabled(True)
 
         # 更新 _lastSearch shown 並刷 footer
         self._lastSearch[key] = (kw, search_cols, visible)
@@ -436,6 +461,53 @@ class TabDBBrowse(BaseTab):
     def _onToggleFull(self, key):
         # 切換精簡/完整：資料不變，只改欄位可見性 + 重算欄寬，不重查/不重建
         self._applyMode(key)
+
+    def _forceReload(self, key):
+        """手動「重載」：強制整表重建（略過指紋），反映任何外部／跨頁變動。
+        使用者主動點擊，可接受一次性重建成本。"""
+        def _work():
+            self._reload(key)
+            if not hasattr(self, "_sigs"):
+                self._sigs = {}
+            try:
+                self._sigs[key] = self._tableSignature(key)
+            except Exception:
+                pass
+        runWithBusy(self._inner, _work)
+
+    def _refreshRefCells(self, key):
+        """參照表（人員／部門／案類）改名後就地刷新 ref_col 欄文字。
+        只 setText 既有儲存格，不重建列、不動 cellWidget → 700 列亦無感。"""
+        table = self._ui[key]["table"]
+        if not table:
+            return
+        order = getattr(self, "_docorder", {}).get(key)
+        if not order:
+            return
+        meta = TABLE_META[key]
+        ref_idx = [(i, c) for i, c in enumerate(meta["cols"]) if c.get("ref_col")]
+        if not ref_idx:
+            return
+        id_col = meta["id_col"]
+        try:
+            rows = {str(r.get(id_col) or ""): r for r in self._query(key)}
+        except Exception:
+            return
+        all_rows = getattr(self, "_allRows", {}).get(key, [])
+        for pos, did in enumerate(order):
+            r = rows.get(did)
+            if r is None:
+                continue
+            if pos < len(all_rows):
+                all_rows[pos] = r
+            for ci, c in ref_idx:
+                val = r.get(c["view_col"])
+                text = "" if val is None else str(val)
+                if c.get("trim_name") and text:
+                    text = self._trimName(text)
+                item = table.item(pos, ci)
+                if item is not None:
+                    item.setText(text)
 
     # ── 目前模式要顯示的欄位清單 ────────────────────────────
     def _isFull(self, key):
@@ -584,47 +656,54 @@ class TabDBBrowse(BaseTab):
             self._lastLoad[key] = self._dbNow()
             return
 
-        # 取這些 PK 的完整 View 列
-        rows_by_id = {}
-        for r in self._query(key):
-            did = str(r.get(id_col) or "")
-            if did in changed_ids:
-                rows_by_id[did] = r
+        def _rebuild():
+            # 取這些 PK 的完整 View 列
+            rows_by_id = {}
+            for r in self._query(key):
+                did = str(r.get(id_col) or "")
+                if did in changed_ids:
+                    rows_by_id[did] = r
 
-        order = self._docorder.setdefault(key, [])
-        matched_map = getattr(self, "_matchedCols", {}).get(key, {})
-        all_rows = self._allRows.setdefault(key, [])
+            order = self._docorder.setdefault(key, [])
+            matched_map = getattr(self, "_matchedCols", {}).get(key, {})
+            all_rows = self._allRows.setdefault(key, [])
 
-        for did in changed_ids:
-            r = rows_by_id.get(did)
-            in_table = did in order
-            emptied = r is not None and self._isEmptied(key, r)
-            exists = (r is not None) and (not emptied)
+            for did in changed_ids:
+                r = rows_by_id.get(did)
+                in_table = did in order
+                emptied = r is not None and self._isEmptied(key, r)
+                exists = (r is not None) and (not emptied)
 
-            if exists and not in_table:
-                # 新增：附加到表尾
-                pos = table.rowCount()
-                table.insertRow(pos)
-                order.append(did)
-                all_rows.append(r)
-                self._fillRow(key, table, cols, r, id_col, pos)
-            elif exists and in_table:
-                # 修改：就地更新該列與 _allRows
-                pos = order.index(did)
-                all_rows[pos] = r
-                self._fillRow(key, table, cols, r, id_col, pos)
-            elif (not exists) and in_table:
-                # 移除：刪該列
-                pos = order.index(did)
-                table.removeRow(pos)
-                order.pop(pos)
-                all_rows.pop(pos)
-                matched_map.pop(did, None)
+                if exists and not in_table:
+                    # 新增：附加到表尾
+                    pos = table.rowCount()
+                    table.insertRow(pos)
+                    order.append(did)
+                    all_rows.append(r)
+                    self._fillRow(key, table, cols, r, id_col, pos)
+                elif exists and in_table:
+                    # 修改：就地更新該列與 _allRows
+                    pos = order.index(did)
+                    all_rows[pos] = r
+                    self._fillRow(key, table, cols, r, id_col, pos)
+                elif (not exists) and in_table:
+                    # 移除：刪該列
+                    pos = order.index(did)
+                    table.removeRow(pos)
+                    order.pop(pos)
+                    all_rows.pop(pos)
+                    matched_map.pop(did, None)
 
-        self._lastLoad[key] = self._dbNow()
-        # 重算欄寬 + 可見性（含搜尋 filter 與逾期篩選）
-        self._applyMode(key)
-        self._applyFilter(key)
+            self._lastLoad[key] = self._dbNow()
+            # 重算欄寬 + 可見性（含搜尋 filter 與逾期篩選）
+            self._applyMode(key)
+            self._applyFilter(key)
+
+        # 變動列數達門檻才跳「更新中」提示（重建 cellWidget 才是成本所在）。
+        if len(changed_ids) >= _BUSY_ROW_THRESHOLD:
+            runWithBusy(self._inner, _rebuild)
+        else:
+            _rebuild()
 
     def _appendRow(self, key, table, cols, r, id_col):
         pos = table.rowCount()
@@ -881,6 +960,11 @@ class TabDBBrowse(BaseTab):
         # 指紋改變 → 只重載該表，反映其他頁的增/修/刪。
         if not hasattr(self, "_sigs"):
             self._sigs = {}
+        # 參照表改名（設定頁改過）→ 就地輕量刷新 ref_col 欄，不重建列（零頓）。
+        if getattr(self, "_ref_changed", False):
+            for key in ("task", "crim", "gen"):
+                self._refreshRefCells(key)
+            self._ref_changed = False
         for key in ("task", "crim", "gen"):
             if not self._ui.get(key, {}).get("table"):
                 continue

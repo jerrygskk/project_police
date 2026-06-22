@@ -17,7 +17,7 @@ from lib.archive_text import _trimName, _tokenize, _parseDate, _sanitize, _pkOf
 from ui_utils import (
     setupPreviewTable, autoResizeTable, setDocIdLinkCell,
     RowHoverFilter, RowHoverDelegate, TwoLineElideLabel,
-    CriminalEditDialog, GeneralEditDialog,
+    CriminalEditDialog, GeneralEditDialog, runWithBusy,
 )
 
 
@@ -41,6 +41,9 @@ def _maskPlateDash(text):
         return s
     return _PLATE_DASH_RE.sub(repl, text)
 
+
+# 切 tab 自動差異更新時，變動列數達此值才跳「更新中」提示（少量重建無感、不閃提示）
+_BUSY_ROW_THRESHOLD = 100
 
 # ─────────────────────────────────────────────────────────────
 # 兩張表的設定：View、底層表、可比對欄位、組檔名用的欄位
@@ -100,6 +103,20 @@ class TabArchive(BaseTab):
             font-weight: 600;
         }
         QPushButton:!checked:hover { background-color: #f2f2f7; }
+    """
+
+    # 重載鈕：中性膠囊（非 toggle），hover 淡藍。
+    _RELOAD_STYLE = """
+        QPushButton {
+            background-color: #ffffff;
+            border: 1px solid #c6c6c8;
+            border-radius: 17px;
+            padding: 6px 16px;
+            color: #636366;
+            font-weight: 500;
+        }
+        QPushButton:hover { background-color: #eaf1f8; }
+        QPushButton:pressed { background-color: #d8e4f0; }
     """
 
     def setup(self, tab_index):
@@ -181,12 +198,16 @@ class TabArchive(BaseTab):
                 # 單顆 toggle 鈕（layout 內，不浮貼，避免重複/定位問題）
                 "full":         inner.findChild(QPushButton, f"{key}_toggle_full"),
                 "pdf_all":      inner.findChild(QPushButton, f"{key}_toggle_archived"),
+                "reload":       inner.findChild(QPushButton, f"{key}_doc_reload"),
             }
             # 套 toggle 樣式
             for k in ("full", "pdf_all"):
                 btn = self._ui[key][k]
                 if btn:
                     btn.setStyleSheet(self._SEG_STYLE)
+            # 重載鈕：中性膠囊（非 toggle，hover 淡藍）
+            if self._ui[key].get("reload"):
+                self._ui[key]["reload"].setStyleSheet(self._RELOAD_STYLE)
             # 最終檔名：換成固定 2 行的省略標籤，避免長檔名破版／往下長到第 3 行
             fin = self._ui[key]["final"]
             actions = inner.findChild(QHBoxLayout, f"{key}_pv_actions")
@@ -260,6 +281,9 @@ class TabArchive(BaseTab):
         # 還原預設（回到選定 PDF 當下的初判值）
         if u["reset"]:
             u["reset"].clicked.connect(lambda _, k=key: self._resetDefault(k))
+        # 重載：重掃資料夾(撿外部新增/改名 PDF) + 重載待歸檔清單 + 重新比對
+        if u.get("reload"):
+            u["reload"].clicked.connect(lambda _=False, k=key: self._forceReload(k))
         # 精簡/完整切換（鈕已於 _makeSegButtons 建立、分組、套樣式）
         if u.get("full"):
             u["full"].toggled.connect(lambda _, k=key: self._applyDocMode(k))
@@ -487,41 +511,48 @@ class TabArchive(BaseTab):
             self._lastLoad[key] = self._dbNow()
             return
 
-        # 取變動筆的完整 View 列（僅未歸檔者會出現在查詢結果）
-        rows_by_id = {}
-        for r in self._queryUnarchived(key):
-            did = str(r.get(meta["id_col"]) or "")
-            if did in changed_ids:
-                rows_by_id[did] = r
+        def _rebuild():
+            # 取變動筆的完整 View 列（僅未歸檔者會出現在查詢結果）
+            rows_by_id = {}
+            for r in self._queryUnarchived(key):
+                did = str(r.get(meta["id_col"]) or "")
+                if did in changed_ids:
+                    rows_by_id[did] = r
 
-        cols = meta["cols"]
-        order = self._docorder.setdefault(key, [])
-        for did in changed_ids:
-            r = rows_by_id.get(did)
-            in_table = did in order
-            # 應顯示 = 在未歸檔查詢結果內、且非清空列
-            should_show = (r is not None) and (not self._isEmptiedDoc(key, r))
+            cols = meta["cols"]
+            order = self._docorder.setdefault(key, [])
+            for did in changed_ids:
+                r = rows_by_id.get(did)
+                in_table = did in order
+                # 應顯示 = 在未歸檔查詢結果內、且非清空列
+                should_show = (r is not None) and (not self._isEmptiedDoc(key, r))
 
-            if should_show and not in_table:
-                pos = table.rowCount()
-                table.insertRow(pos)
-                self._fillDocRow(key, table, cols, r, pos)
-                order.append(did)
-                self._docrows[key][did] = r
-            elif should_show and in_table:
-                pos = order.index(did)
-                self._fillDocRow(key, table, cols, r, pos)
-                self._docrows[key][did] = r
-            elif (not should_show) and in_table:
-                pos = order.index(did)
-                table.removeRow(pos)
-                order.pop(pos)
-                self._docrows[key].pop(did, None)
+                if should_show and not in_table:
+                    pos = table.rowCount()
+                    table.insertRow(pos)
+                    self._fillDocRow(key, table, cols, r, pos)
+                    order.append(did)
+                    self._docrows[key][did] = r
+                elif should_show and in_table:
+                    pos = order.index(did)
+                    self._fillDocRow(key, table, cols, r, pos)
+                    self._docrows[key][did] = r
+                elif (not should_show) and in_table:
+                    pos = order.index(did)
+                    table.removeRow(pos)
+                    order.pop(pos)
+                    self._docrows[key].pop(did, None)
 
-        self._lastLoad[key] = self._dbNow()
-        self._applyDocMode(key)
-        # 列集合可能變動 → 重新套用目前的編號搜尋過濾
-        self._applyDocSearch(key)
+            self._lastLoad[key] = self._dbNow()
+            self._applyDocMode(key)
+            # 列集合可能變動 → 重新套用目前的編號搜尋過濾
+            self._applyDocSearch(key)
+
+        # 變動列數達門檻才跳「更新中」提示
+        if len(changed_ids) >= _BUSY_ROW_THRESHOLD:
+            runWithBusy(self._inner, _rebuild)
+        else:
+            _rebuild()
 
     # ── 待歸檔編號搜尋（setRowHidden 過濾，不重建表格）──────────
     def _applyDocSearch(self, key):
@@ -648,6 +679,24 @@ class TabArchive(BaseTab):
         if d and os.path.isdir(d):
             self._loadFolder(key, d)
 
+    def _forceReload(self, key):
+        """手動「重載」：重載待歸檔清單（撈 DB 最新）＋重掃資料夾（撿外部新增／改名的
+        PDF）＋重新比對。使用者主動點擊，可接受一次性成本。"""
+        def _work():
+            self._loadDocs(key)
+            if not hasattr(self, "_sigs"):
+                self._sigs = {}
+            try:
+                self._sigs[key] = self._tableSignature(key)
+            except Exception:
+                pass
+            folder = self._folders.get(key)
+            if folder and os.path.isdir(folder):
+                self._loadFolder(key, folder)   # 內含 os.walk 重掃 + _rematch
+            else:
+                self._rematch(key)              # 尚無資料夾：仍刷新比對表
+        runWithBusy(self._inner, _work)
+
     # ── 模糊比對 ────────────────────────────────────────────
     def _pdfTokens(self, filepath):
         """PDF 檔名斷詞（快取，檔名不變則不重算）。"""
@@ -763,8 +812,10 @@ class TabArchive(BaseTab):
         doc = self._docrows.get(key, {}).get(doc_id, {}) if doc_id else {}
         doc_fields = {c: doc.get(c) for c in meta["match_cols"]} if doc_id else {}
 
-        # doc 斷詞只算一次（原本每個 PDF 重算，是頓的主因之一）
-        doc_toks = self._docTokens(doc_fields, keyword)
+        # doc 斷詞只算一次（原本每個 PDF 重算，是頓的主因之一）。
+        # 關鍵字改作「檔名過濾」用，不再混入比對 token。
+        doc_toks = self._docTokens(doc_fields, "")
+        kw_lower = keyword.lower()
         # 候選過濾：預設「未歸檔」模式時，排除檔名 PK 已歸檔的 PDF
         show_all = self._ui[key].get("pdf_all") and self._ui[key]["pdf_all"].isChecked()
         archived = set() if show_all else self._archivedPKs(key)
@@ -773,6 +824,9 @@ class TabArchive(BaseTab):
         for fp in self._pdfs.get(key, []):
             if archived and (pk := _pkOf(fp)) and pk in archived:
                 continue
+            # 自訂關鍵字 = 檔名過濾：只留檔名含該串者（不分大小寫）
+            if kw_lower and kw_lower not in os.path.basename(fp).lower():
+                continue
             common = {c for c in (doc_toks & self._pdfTokens(fp)) if len(c) >= 2}
             scored.append((len(common), fp))
         scored.sort(key=lambda x: -x[0])
@@ -780,48 +834,50 @@ class TabArchive(BaseTab):
         # 大量列時關閉即時排序/更新，建好再開，加速
         table.setUpdatesEnabled(False)
         table.setSortingEnabled(False)
-        for score, fp in scored:
-            pos = table.rowCount()
-            table.insertRow(pos)
-            # 0=操作
-            cont = QWidget()
-            hl = QHBoxLayout(cont)
-            hl.setContentsMargins(2, 2, 2, 2)
-            hl.setSpacing(4)
-            hl.setAlignment(Qt.AlignCenter)
-            b_open = QPushButton()
-            b_open.setIcon(QIcon(":/icon_pdf.svg"))
-            b_open.setIconSize(QSize(20, 20))
-            b_open.setFixedSize(28, 28)
-            b_open.setToolTip("開啟 PDF 檢視")
-            b_open.setStyleSheet("QPushButton{border:1px solid #c6c6c8;border-radius:6px;background:#fff;}"
-                                 "QPushButton:hover{background:#eaf1f8;}")
-            b_open.clicked.connect(lambda _, p=fp: self._openPdf(p))
-            b_pick = QPushButton()
-            b_pick.setIcon(QIcon(":/icon_archive.svg"))
-            b_pick.setIconSize(QSize(20, 20))
-            b_pick.setFixedSize(28, 28)
-            if doc_id:
-                b_pick.setToolTip("歸檔預覽")
-                b_pick.clicked.connect(lambda _, k=key, d=doc_id, p=fp: self._selectPdf(k, d, p))
-            else:
-                b_pick.setToolTip("請先於左側選擇待歸檔公文")
-                b_pick.setEnabled(False)
-            b_pick.setStyleSheet("QPushButton{border:1px solid #c6c6c8;border-radius:6px;background:#fff;}"
-                                 "QPushButton:hover{background:#eaf1f8;}"
-                                 "QPushButton:disabled{background:#f2f2f7;}")
-            hl.addWidget(b_open)
-            hl.addWidget(b_pick)
-            table.setCellWidget(pos, 0, cont)
-            # 1=符合
-            si = QTableWidgetItem(f"{score}字" if score > 0 else "無")
-            si.setTextAlignment(Qt.AlignCenter)
-            table.setItem(pos, 1, si)
-            # 2=檔名
-            ni = QTableWidgetItem(os.path.basename(fp))
-            ni.setToolTip(fp)
-            table.setItem(pos, 2, ni)
-        table.setUpdatesEnabled(True)
+        try:
+            for score, fp in scored:
+                pos = table.rowCount()
+                table.insertRow(pos)
+                # 0=操作
+                cont = QWidget()
+                hl = QHBoxLayout(cont)
+                hl.setContentsMargins(2, 2, 2, 2)
+                hl.setSpacing(4)
+                hl.setAlignment(Qt.AlignCenter)
+                b_open = QPushButton()
+                b_open.setIcon(QIcon(":/icon_pdf.svg"))
+                b_open.setIconSize(QSize(20, 20))
+                b_open.setFixedSize(28, 28)
+                b_open.setToolTip("開啟 PDF 檢視")
+                b_open.setStyleSheet("QPushButton{border:1px solid #c6c6c8;border-radius:6px;background:#fff;}"
+                                     "QPushButton:hover{background:#eaf1f8;}")
+                b_open.clicked.connect(lambda _, p=fp: self._openPdf(p))
+                b_pick = QPushButton()
+                b_pick.setIcon(QIcon(":/icon_archive.svg"))
+                b_pick.setIconSize(QSize(20, 20))
+                b_pick.setFixedSize(28, 28)
+                if doc_id:
+                    b_pick.setToolTip("歸檔預覽")
+                    b_pick.clicked.connect(lambda _, k=key, d=doc_id, p=fp: self._selectPdf(k, d, p))
+                else:
+                    b_pick.setToolTip("請先於左側選擇待歸檔公文")
+                    b_pick.setEnabled(False)
+                b_pick.setStyleSheet("QPushButton{border:1px solid #c6c6c8;border-radius:6px;background:#fff;}"
+                                     "QPushButton:hover{background:#eaf1f8;}"
+                                     "QPushButton:disabled{background:#f2f2f7;}")
+                hl.addWidget(b_open)
+                hl.addWidget(b_pick)
+                table.setCellWidget(pos, 0, cont)
+                # 1=符合
+                si = QTableWidgetItem(f"{score}字" if score > 0 else "無")
+                si.setTextAlignment(Qt.AlignCenter)
+                table.setItem(pos, 1, si)
+                # 2=檔名
+                ni = QTableWidgetItem(os.path.basename(fp))
+                ni.setToolTip(fp)
+                table.setItem(pos, 2, ni)
+        finally:
+            table.setUpdatesEnabled(True)
 
     def _parseSubject(self, old_path):
         """從舊檔名拆主旨。支援兩種格式：
@@ -1171,6 +1227,16 @@ class TabArchive(BaseTab):
         # 切換進來時，比對未歸檔資料指紋；變了才做「差異更新」（只動變動列，不重建整表）。
         if not hasattr(self, "_sigs"):
             self._sigs = {}
+        # 參照表改名（設定頁改過）→ 重載待歸檔清單反映新名稱（清單筆數少，全載即可）。
+        if getattr(self, "_ref_changed", False):
+            for key in ("crim", "gen"):
+                if self._ui.get(key, {}).get("doc"):
+                    self._loadDocs(key)
+                    try:
+                        self._sigs[key] = self._tableSignature(key)
+                    except Exception:
+                        pass
+            self._ref_changed = False
         for key in ("crim", "gen"):
             if not self._ui.get(key, {}).get("doc"):
                 continue

@@ -50,7 +50,8 @@
               <layout class="QHBoxLayout" name="crim_doc_hdr">
                <item><widget class="QLabel" name="crim_doc_lbl"><property name="text"><string>待歸檔</string></property><property name="styleSheet"><string>font-weight:600;color:#3a3a3c;</string></property></widget></item>
                <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>20</height></size></property></spacer></item>
-               <item><widget class="QPushButton" name="crim_toggle_full"><property name="text"><string>完整模式</string></property><property name="checkable"><bool>true</bool></property><property name="maximumWidth"><number>188</number></property></widget></item>
+               <item><widget class="QPushButton" name="crim_doc_reload"><property name="text"><string>重載</string></property><property name="maximumWidth"><number>120</number></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property><property name="toolTip"><string>重掃資料夾並重新載入待歸檔清單</string></property></widget></item>
+               <item><widget class="QPushButton" name="crim_toggle_full"><property name="text"><string>完整</string></property><property name="checkable"><bool>true</bool></property><property name="maximumWidth"><number>188</number></property></widget></item>
               </layout>
              </item>
              <item><widget class="QTableWidget" name="crim_doc_table"/></item>
@@ -78,8 +79,8 @@
              <item><widget class="QTableWidget" name="crim_pdf_table"/></item>
              <item>
               <layout class="QHBoxLayout" name="crim_kw_row">
-               <item><widget class="QLabel" name="crim_kw_lbl"><property name="text"><string>自訂關鍵字</string></property><property name="minimumWidth"><number>72</number></property></widget></item>
-               <item><widget class="QLineEdit" name="crim_kw"><property name="placeholderText"><string>例：嫌疑人、案由…</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+               <item><widget class="QLabel" name="crim_kw_lbl"><property name="text"><string>檔名過濾</string></property><property name="minimumWidth"><number>72</number></property></widget></item>
+               <item><widget class="QLineEdit" name="crim_kw"><property name="placeholderText"><string>輸入檔名片段，只留符合的 PDF</string></property><property name="minimumHeight"><number>32</number></property><property name="clearButtonEnabled"><bool>true</bool></property></widget></item>
                <item><widget class="QPushButton" name="crim_match"><property name="text"><string>比對</string></property><property name="minimumHeight"><number>32</number></property><property name="minimumWidth"><number>56</number></property></widget></item>
               </layout>
              </item>
@@ -144,7 +145,8 @@
               <layout class="QHBoxLayout" name="gen_doc_hdr">
                <item><widget class="QLabel" name="gen_doc_lbl"><property name="text"><string>待歸檔</string></property><property name="styleSheet"><string>font-weight:600;color:#3a3a3c;</string></property></widget></item>
                <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>20</height></size></property></spacer></item>
-               <item><widget class="QPushButton" name="gen_toggle_full"><property name="text"><string>完整模式</string></property><property name="checkable"><bool>true</bool></property><property name="maximumWidth"><number>188</number></property></widget></item>
+               <item><widget class="QPushButton" name="gen_doc_reload"><property name="text"><string>重載</string></property><property name="maximumWidth"><number>120</number></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property><property name="toolTip"><string>重掃資料夾並重新載入待歸檔清單</string></property></widget></item>
+               <item><widget class="QPushButton" name="gen_toggle_full"><property name="text"><string>完整</string></property><property name="checkable"><bool>true</bool></property><property name="maximumWidth"><number>188</number></property></widget></item>
               </layout>
              </item>
              <item><widget class="QTableWidget" name="gen_doc_table"/></item>
@@ -172,8 +174,8 @@
              <item><widget class="QTableWidget" name="gen_pdf_table"/></item>
              <item>
               <layout class="QHBoxLayout" name="gen_kw_row">
-               <item><widget class="QLabel" name="gen_kw_lbl"><property name="text"><string>自訂關鍵字</string></property><property name="minimumWidth"><number>72</number></property></widget></item>
-               <item><widget class="QLineEdit" name="gen_kw"><property name="placeholderText"><string>例：主旨、承辦人…</string></property><property name="minimumHeight"><number>32</number></property></widget></item>
+               <item><widget class="QLabel" name="gen_kw_lbl"><property name="text"><string>檔名過濾</string></property><property name="minimumWidth"><number>72</number></property></widget></item>
+               <item><widget class="QLineEdit" name="gen_kw"><property name="placeholderText"><string>輸入檔名片段，只留符合的 PDF</string></property><property name="minimumHeight"><number>32</number></property><property name="clearButtonEnabled"><bool>true</bool></property></widget></item>
                <item><widget class="QPushButton" name="gen_match"><property name="text"><string>比對</string></property><property name="minimumHeight"><number>32</number></property><property name="minimumWidth"><number>56</number></property></widget></item>
               </layout>
              </item>

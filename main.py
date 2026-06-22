@@ -178,6 +178,8 @@ class DocumentManager:
                 and getattr(settings_tab, '_ref_dirty', False)):
             for idx, t in self.tabs.items():
                 if idx != self._IDX_SETTINGS:
+                    # 通知瀏覽/歸檔頁：參照表改過 → on_activated 內就地輕量刷 ref 欄
+                    setattr(t, "_ref_changed", True)
                     t.on_activated()
             settings_tab._ref_dirty = False
 

@@ -49,20 +49,19 @@
            <layout class="QHBoxLayout" name="task_seg_layout">
             <property name="spacing"><number>6</number></property>
             <item>
-             <widget class="QPushButton" name="task_seg_slim">
-              <property name="minimumSize"><size><width>64</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
-              <property name="text"><string>精簡</string></property>
-              <property name="checkable"><bool>true</bool></property>
-              <property name="checked"><bool>true</bool></property>
-              <property name="autoExclusive"><bool>true</bool></property>
-             </widget>
-            </item>
-            <item>
              <widget class="QPushButton" name="task_seg_full">
               <property name="minimumSize"><size><width>64</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
               <property name="text"><string>完整</string></property>
               <property name="checkable"><bool>true</bool></property>
-              <property name="autoExclusive"><bool>true</bool></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="task_reload">
+              <property name="minimumSize"><size><width>64</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
+              <property name="text"><string>重載</string></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+              <property name="toolTip"><string>強制重新載入此表全部資料</string></property>
              </widget>
             </item>
            </layout>
@@ -132,20 +131,19 @@
            <layout class="QHBoxLayout" name="crim_seg_layout">
             <property name="spacing"><number>6</number></property>
             <item>
-             <widget class="QPushButton" name="crim_seg_slim">
-              <property name="minimumSize"><size><width>64</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
-              <property name="text"><string>精簡</string></property>
-              <property name="checkable"><bool>true</bool></property>
-              <property name="checked"><bool>true</bool></property>
-              <property name="autoExclusive"><bool>true</bool></property>
-             </widget>
-            </item>
-            <item>
              <widget class="QPushButton" name="crim_seg_full">
               <property name="minimumSize"><size><width>64</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
               <property name="text"><string>完整</string></property>
               <property name="checkable"><bool>true</bool></property>
-              <property name="autoExclusive"><bool>true</bool></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="crim_reload">
+              <property name="minimumSize"><size><width>64</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
+              <property name="text"><string>重載</string></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+              <property name="toolTip"><string>強制重新載入此表全部資料</string></property>
              </widget>
             </item>
            </layout>
@@ -206,20 +204,19 @@
            <layout class="QHBoxLayout" name="gen_seg_layout">
             <property name="spacing"><number>6</number></property>
             <item>
-             <widget class="QPushButton" name="gen_seg_slim">
-              <property name="minimumSize"><size><width>64</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
-              <property name="text"><string>精簡</string></property>
-              <property name="checkable"><bool>true</bool></property>
-              <property name="checked"><bool>true</bool></property>
-              <property name="autoExclusive"><bool>true</bool></property>
-             </widget>
-            </item>
-            <item>
              <widget class="QPushButton" name="gen_seg_full">
               <property name="minimumSize"><size><width>64</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
               <property name="text"><string>完整</string></property>
               <property name="checkable"><bool>true</bool></property>
-              <property name="autoExclusive"><bool>true</bool></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="gen_reload">
+              <property name="minimumSize"><size><width>64</width><height>34</height></size></property><property name="maximumSize"><size><width>16777215</width><height>34</height></size></property>
+              <property name="text"><string>重載</string></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+              <property name="toolTip"><string>強制重新載入此表全部資料</string></property>
              </widget>
             </item>
            </layout>

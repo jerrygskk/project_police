@@ -6,7 +6,7 @@ from .status  import calcOverdue, colorForStatus
 from .sticky_scroll import attachStickyScroll
 from .widgets import (
     setupFilterCombo, setupDateEditToToday, setupDateEditCalendarOnly,
-    refreshFilterCombo,
+    refreshFilterCombo, runWithBusy,
     RowHoverFilter, RowHoverDelegate, TwoLineElideLabel,
 )
 from .table   import (
@@ -34,6 +34,7 @@ __all__ = [
     "refreshFilterCombo",
     "setupDateEditToToday",
     "setupDateEditCalendarOnly",
+    "runWithBusy",
     "RowHoverFilter",
     "RowHoverDelegate",
     "TwoLineElideLabel",
