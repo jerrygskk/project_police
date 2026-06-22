@@ -576,6 +576,10 @@ class TabPrint(BaseTab):
             return
         printer = QPrinter(QPrinter.HighResolution)
         printer.setPageSize(QPageSize(QPageSize.A4))
+        # 預設彩色＋長邊雙面（簽收表已為雙面設計，各類別奇數頁補空白頁）。
+        # 僅設定預設值，使用者仍可於列印視窗改回單面／黑白；實際支援取決於印表機。
+        printer.setColorMode(QPrinter.Color)
+        printer.setDuplex(QPrinter.DuplexLongSide)
         dlg = QPrintPreviewDialog(printer, self.tab_widget)
         dlg.setWindowTitle('列印預覽')
         dlg.resize(900, 1000)
