@@ -1,6 +1,9 @@
 ﻿HANDOVER.md
 fix_views.py
 dbfile_backup_*.db
+dbfile.db-journal
+*.xlsm
+*.crdownload
 __pycache__/
 *.pyc
 build/
