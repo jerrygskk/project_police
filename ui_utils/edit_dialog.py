@@ -172,6 +172,10 @@ def _set_combo_value(combo, value):
     三個 EditDialog 共用。
     """
     if not value:
+        # 空值：若下拉首項為空白哨兵（data=None）則停在該項，忠實顯示「未設定」；
+        # 無空白項的必填下拉維持原樣（不動游標），由 _on_save 必填檢查擋下。
+        if combo.count() and combo.itemData(0) is None:
+            combo.setCurrentIndex(0)
         return
     for i in range(combo.count()):
         if combo.itemData(i) == value:
@@ -204,6 +208,9 @@ class _BaseEditDialog(QDialog):
     _LABEL_W = 120   # label 區寬度
     _FIELD_W = 340   # 輸入元件總寬度
     _MARGIN  = 40    # 左右 margin
+
+    def _set_combo(self, combo, value):
+        _set_combo_value(combo, value)
 
 
 class TaskEditDialog(_BaseEditDialog):
@@ -407,9 +414,6 @@ class TaskEditDialog(_BaseEditDialog):
             self.w_no_deadline.setChecked(True)
             self._deadline_stack.setCurrentIndex(1)
 
-    def _set_combo(self, combo, value):
-        _set_combo_value(combo, value)
-
     def _on_save(self):
         from lib.db_utils import msgWarning, msgCritical
         recv_date = self.w_recv_date.date().toString("yyyy-MM-dd")
@@ -577,6 +581,7 @@ QRadioButton:checked {
 
         # 受理人
         self.w_receiver = QComboBox()
+        self.w_receiver.addItem("", None)   # 受理人非必填，保留空白項忠實顯示「未設定」
         for sid, sname in self._personnel:
             self.w_receiver.addItem(sname, sid)
         form.addRow("受理人：", self.w_receiver)
@@ -675,9 +680,6 @@ QRadioButton:checked {
         self.w_reporter.setText(str(reporter) if reporter else "")
 
         _load_arch_status(self, is_reported, is_electronic)
-
-    def _set_combo(self, combo, value):
-        _set_combo_value(combo, value)
 
     def _on_save(self):
         from lib.db_utils import msgWarning, msgCritical
@@ -804,6 +806,7 @@ class GeneralEditDialog(_BaseEditDialog):
 
         # 業務單位
         self.w_dept = QComboBox()
+        self.w_dept.addItem("", None)   # 業務單位非必填，保留空白項忠實顯示「未設定」
         for did, dname in self._depts:
             self.w_dept.addItem(dname, did)
         form.addRow("業務單位：", self.w_dept)
@@ -896,9 +899,6 @@ class GeneralEditDialog(_BaseEditDialog):
         self.w_subject.setText(str(subject) if subject else "")
 
         _load_arch_status(self, is_reported, is_electronic)
-
-    def _set_combo(self, combo, value):
-        _set_combo_value(combo, value)
 
     def _on_save(self):
         from lib.db_utils import msgWarning, msgCritical

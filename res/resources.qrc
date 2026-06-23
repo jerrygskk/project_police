@@ -2,10 +2,6 @@
 <RCC version="1.0">
   <qresource>
     <file>arrow.svg</file>
-    <file>sort_top.svg</file>
-    <file>sort_up.svg</file>
-    <file>sort_down.svg</file>
-    <file>sort_bottom.svg</file>
     <file>icon_pdf.svg</file>
     <file>icon_archive.svg</file>
     <file>icon_paper.svg</file>

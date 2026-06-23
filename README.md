@@ -168,21 +168,21 @@ main.py
 ├── layouts/             所有 .ui 檔（Layout1~7、main_menu）
 ├── res/                 圖片 / SVG / qrc（含 __init__.py，是 package）
 │   ├── resources.qrc / resources_rc.py
-│   ├── arrow.svg / sort_*.svg / banner.png / police_badge.*
+│   ├── arrow.svg / banner.png / police_badge.*
 │   ├── icon_pdf.svg / icon_archive.svg    ← 歸檔頁操作鈕 Material Icons（灰 #636366）
 ├── tabs/                各 Tab
 ├── ui_utils/            共用 UI 工具（table/widgets/status/sticky_scroll/edit_dialog/settings_dialogs）
 └── tests/               純邏輯單元測試（unittest，見下「單元測試」節）
 ```
 
-> 核心模組（db_utils、base_tab、auth_manager、theme、loading_screen）在 `lib/`，本文其餘章節為精簡仍以簡稱（如「db_utils」）指稱，實際 import 路徑為 `from lib.db_utils import ...`。`main.py`、`data_sync_tool.py`、`sql.py` 留根目錄（入口與獨立工具，互不 import 核心模組）。
+> 核心模組（db_utils、base_tab、auth_manager、theme、loading_screen）在 `lib/`，本文其餘章節為精簡仍以簡稱（如「db_utils」）指稱，實際 import 路徑為 `from lib.db_utils import ...`。`main.py`（入口）、`fix_views.py`／`bump_version.py`（獨立工具）留根目錄，互不 import 核心模組。
 
 ### 路徑解析（getResourcePath，打包相容）
 
 - `db_utils.getResourcePath(rel)`：開發時從當前目錄找，打包後從 `sys._MEIPASS` 找
 - `dbfile.db` 特殊：永遠從 exe 所在目錄讀（真實資料，不打包進 exe）
 - `.ui` 用 `getResourcePath("layouts/Layout1.ui")`、圖片用 `getResourcePath("res/banner.png")`
-- `arrow.svg` / `sort_*.svg` 走 qrc 虛擬路徑 `:/sort_top.svg`，**不經過 getResourcePath**
+- `arrow.svg` 走 qrc 虛擬路徑 `:/arrow.svg`，**不經過 getResourcePath**
 - ⚠️ `res/` 是 package（有 `__init__.py`），`resources_rc` 用 `from res import resources_rc`
 - ⚠️ `lib/` 是 package（有 `__init__.py`），核心模組用 `from lib.db_utils import ...` 等
 - ⚠️ `getResourcePath` 用「當前工作目錄」（`os.path.abspath('.')`）找 dbfile.db，**不是** `__file__`，所以 **程式務必從專案根目錄啟動**（`python main.py`），打包後則是 exe 所在目錄
@@ -484,7 +484,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 ### 注意事項
 
 - `dbfile.db` 不打包，與 exe 同資料夾（真實資料）
-- `arrow.svg` / `sort_*.svg` / `icon_pdf.svg` / `icon_archive.svg` 已透過 `resources_rc.py` 內嵌，不需 `--add-data`；改了要重編 qrc
+- `arrow.svg` / `icon_pdf.svg` / `icon_archive.svg` / `icon_paper.svg` 已透過 `resources_rc.py` 內嵌，不需 `--add-data`；改了要重編 qrc（`pyside6-rcc res/resources.qrc -o res/resources_rc.py`）
 - 列印用 `QtPrintSupport`，加 `--hidden-import PySide6.QtPrintSupport` 保險
 - matplotlib 只用 `backend_agg`（PNG）+ `backend_pdf`（存 PDF），其餘 backend 全排除
 - 結構重組後 `.ui` 進 `layouts/`、圖片進 `res/`，`--add-data` 路徑要對應第二參數（解壓目標目錄）

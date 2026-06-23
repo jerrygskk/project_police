@@ -1032,6 +1032,13 @@ class TabArchive(BaseTab):
         date = _sanitize((u["h_date"].text() or "").strip()) if u["h_date"] else ""
         subj = _sanitize((u["h_subj"].text() or "").strip()) if u["h_subj"] else ""
         proc = _sanitize((u["h_proc"].text() or "").strip()) if u["h_proc"] else ""
+        # 主旨／承辦人／日期任一為空即擋下：避免歸出只剩系統號碼、無識別度的檔名
+        missing = [n for n, v in (("日期", date), ("主旨", subj), ("承辦人", proc)) if not v]
+        if missing:
+            msgCritical(
+                "資料不完整",
+                f"{'、'.join(missing)}為空，無法歸檔，請補齊後再試。")
+            return
         parts = [p for p in [pk, date, subj, proc] if p]
         new_name = "-".join(parts) + ".pdf"
         new_path = os.path.join(os.path.dirname(old_path), new_name)
