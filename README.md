@@ -170,8 +170,9 @@ main.py
 │   ├── resources.qrc / resources_rc.py
 │   ├── arrow.svg / banner.png / police_badge.*
 │   ├── icon_pdf.svg / icon_archive.svg    ← 歸檔頁操作鈕 Material Icons（灰 #636366）
+│   ├── icon_help.svg    ← 各頁說明鈕 Material Icons（鋼藍 #4977b1）
 ├── tabs/                各 Tab
-├── ui_utils/            共用 UI 工具（table/widgets/status/sticky_scroll/edit_dialog/settings_dialogs）
+├── ui_utils/            共用 UI 工具（table/widgets/status/sticky_scroll/edit_dialog/settings_dialogs/help_dialog/help_content）
 └── tests/               純邏輯單元測試（unittest，見下「單元測試」節）
 ```
 
@@ -302,6 +303,15 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 - **歸檔狀態區塊（僅 admin）**：`CriminalEditDialog`/`GeneralEditDialog` 表單末端、儲存鈕上方有「歸檔狀態」分組框（`_build_archive_group`；dbbrowse 與 archive 兩頁共用同一 dialog，一改兩頁生效）。紙本 `is_reported` 用 checkbox 雙向可勾消；電子檔 `is_electronic` 只能「清除」（popup 產不出 PDF，故僅提供退回未歸，清空後該筆自動回歸檔頁待歸清單），不動實體 PDF（留孤兒檔，重歸時 rename 覆蓋）。長檔名用 `_ElidingLabel`（`ElideMiddle` 隨寬度中段省略）不撐破版面。清除為標記 pending，按「儲存」才真寫 `is_electronic=''`、取消（reject）則還原；儲存同時寫回 `is_reported`。非 admin 不建立區塊（`self.w_arch_reported=None`，save 跳過這兩欄）
 
 > ⚠️ 歸檔頁 `_doArchive` 寫入 PDF 檔名時**一併設 `is_reported=1`**（`SET is_electronic=?, is_reported=1`）：電子檔歸了，紙本必然也已歸，故連帶標記，免使用者再手動補勾（v1.0.7 修正，原本只寫 `is_electronic`）。
+
+### 程式內 HELP（各頁說明鈕，v1.0.8）
+
+每個大 Tab 右上角一顆 help 線圖示鈕，點開該頁「使用說明」彈窗；各欄位／按鈕另附 tooltip。
+
+- **內容單一來源** `ui_utils/help_content.py`：七頁說明以**結構化區塊** `HELP_PAGES` 描述（block 型別：`lead`/`muted`/`label`/`hint`/`warn`/`sec`，`sec` 內含 `p`/`ol`/`ul`/`map`/`table`/`cols`/`note`），由 `_render_html()` 產出彈窗 HTML、`render_review_text()` 產出純文字校稿（`docs/help_text_review.txt`，未入庫）。改說明文字只動 `HELP_PAGES`，兩種輸出自動同步。tooltip 候選存 `HELP_TIPS`。
+- **彈窗元件** `ui_utils/help_dialog.py`：`helpDialog(parent, tab_index)` 以 `QTextBrowser` 顯示（白底、Enter/Esc 關、右上警徽 LOGO + 全寬鋼藍橫線）；`attachHelpButton(tab_widget, window)` 於 `main.py` tabs 建完後呼叫一次，掛上分頁列右上角 `setCornerWidget` 說明鈕（依 `currentIndex()` 開對應頁）並套 tooltip。
+- **版面**：Apple HIG 留白編排，段落標題用鋼藍色帶（`#DCE5EF`）+ 黑字，內文深黑 `#1c1c1e`。⚠️ `QTextBrowser` 是 Qt rich-text 子集，**不支援圓角／陰影／flex／懸掛縮排**：色塊用單格表格 `bgcolor`、清單懸掛縮排用兩欄表格（標號欄 + 文字欄）達成。
+- 圖示 `res/icon_help.svg`（鋼藍 #4977b1）走 qrc 內嵌（`:/icon_help.svg`），改了要重編 qrc。
 
 ### tab_report.py 特殊架構
 
@@ -503,6 +513,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 
 | 版本 | 摘要 |
 |------|------|
+| v1.0.8 | **程式內 HELP**：每個大 Tab 右上角新增 help 說明鈕（線圖示），點開該頁「使用說明」彈窗（七頁內容，Apple HIG 留白編排、鋼藍色帶標題、右上警徽 LOGO）；各欄位／按鈕加 tooltip。內容單一來源 `ui_utils/help_content.py`（結構化 `HELP_PAGES`，同時產彈窗 HTML 與純文字校稿）；彈窗元件 `ui_utils/help_dialog.py`。新增圖示 `res/icon_help.svg`（qrc 內嵌）。**協作文件**：CLAUDE.md 補「一律台灣用語」。 |
 | v1.0.7 | **歸檔頁**：PDF 電子檔歸檔成功時連帶標記紙本已歸（`_doArchive` 一併寫 `is_reported=1`，原本只寫 `is_electronic`）；「待歸檔公文」清單選取列改藍底深藍字＋列首單條藍 bar，消焦點黑框，候選 PDF 表游標維持箭頭（不顯示 I-beam）。**簽收單列印**：開列印預覽前預設彩色（`setColorMode(Color)`）＋長邊雙面（`setDuplex(DuplexLongSide)`），使用者仍可改。 |
 | v1.0.6 | **歸檔頁**：修正承辦人解析會把案由詞（如「竊盜案」）與括號內報案人誤判成承辦人之 bug。承辦人界定改為「從檔名尾端往前、能對到 DB 人名字典（含去姓 2 字／別名）才收為承辦人，對不到即停」，不再用「3 字以內一律當人名」猜測；主旨剝承辦人改字典迴圈（修正多個 `-` 分隔承辦人只剝最後一段、前段人名殘留主旨之 bug）。承辦人／主旨解析純邏輯抽進 `lib/archive_text.py`（`_resolveNames`/`_parseSubject`），新增單元測試（含真實檔名語料去識別化案例）。 |
 | v1.0.5 | **歸檔頁**：確認歸檔／只歸紙本後不再清空 PK 編號搜尋（改為刷新待歸檔清單＋候選 PDF，保留搜尋狀態）；歸檔成功不再跳提示（僅失敗才提示）；確認彈窗改 Apple HIG 兩層式（主訊息＋灰字次要說明）、文字精修，確認歸檔加寬以容長檔名；修正「只歸紙本」確認框誤顯示承辦人而非主旨之 bug。**全頁**：所有捲動表格在資料新增／刪除／修改後保留捲動位置，不再跳回頂端（瀏覽 Tab4、歸檔 Tab5 待歸檔＋候選 PDF、設定 Tab6 參照表）；輸入暫存預覽表維持原本捲到底行為。**協作文件**：CLAUDE.md 補「開新對話先讀 README」。 |

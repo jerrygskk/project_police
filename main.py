@@ -108,6 +108,9 @@ class DocumentManager:
             self.tab_widget.setCurrentIndex(tab_index)
             self.tab_widget.currentChanged.connect(self._onTabChanged)
             self._prev_tab_index = tab_index
+            # 分頁列右上角 ? 鈕（依當前頁開說明）＋ 各欄位 tooltip
+            from ui_utils import attachHelpButton
+            attachHelpButton(self.tab_widget, self.window)
 
         # 標題隨身份切換
         self._base_title = "公文管理系統"

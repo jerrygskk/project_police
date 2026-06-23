@@ -18,6 +18,7 @@ from .table   import (
     FIXED_COL_WIDTHS,
 )
 
+from .help_dialog import helpDialog, attachHelpButton
 from .edit_dialog import TaskEditDialog, CriminalEditDialog, GeneralEditDialog
 from .settings_dialogs import (
     PersonnelAddDialog, PersonnelEditDialog,
@@ -44,6 +45,8 @@ __all__ = [
     "makeDeleteBtn",
     "refreshDeleteBtns",
     "setDocIdLinkCell",
+    "helpDialog",
+    "attachHelpButton",
     "TaskEditDialog",
     "CriminalEditDialog",
     "GeneralEditDialog",
