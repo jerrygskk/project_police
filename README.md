@@ -301,6 +301,8 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 - 刪除列後需重新綁定刪除鈕與編號 QLabel 的 row index（參考 `_rebindDocIdCell`）
 - **歸檔狀態區塊（僅 admin）**：`CriminalEditDialog`/`GeneralEditDialog` 表單末端、儲存鈕上方有「歸檔狀態」分組框（`_build_archive_group`；dbbrowse 與 archive 兩頁共用同一 dialog，一改兩頁生效）。紙本 `is_reported` 用 checkbox 雙向可勾消；電子檔 `is_electronic` 只能「清除」（popup 產不出 PDF，故僅提供退回未歸，清空後該筆自動回歸檔頁待歸清單），不動實體 PDF（留孤兒檔，重歸時 rename 覆蓋）。長檔名用 `_ElidingLabel`（`ElideMiddle` 隨寬度中段省略）不撐破版面。清除為標記 pending，按「儲存」才真寫 `is_electronic=''`、取消（reject）則還原；儲存同時寫回 `is_reported`。非 admin 不建立區塊（`self.w_arch_reported=None`，save 跳過這兩欄）
 
+> ⚠️ 歸檔頁 `_doArchive` 寫入 PDF 檔名時**一併設 `is_reported=1`**（`SET is_electronic=?, is_reported=1`）：電子檔歸了，紙本必然也已歸，故連帶標記，免使用者再手動補勾（v1.0.7 修正，原本只寫 `is_electronic`）。
+
 ### tab_report.py 特殊架構
 
 - `Layout3.ui` 用 `QStackedWidget`（`formStack`）切換：index 0 刑案、index 1 一般
@@ -322,6 +324,7 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 - 不碰 PDF 檔案關聯（避免 WinError 1155），頁面以 **300 DPI 點陣化**送印（`_paint_pages` 把 PNG 畫到 QPrinter）
 - 「儲存 PDF」按鈕仍走 matplotlib `backend_pdf`（向量），與列印獨立
 - 跨版本相容：`setPageSize` 用 `QPageSize` 物件、頁面範圍用 `painter.viewport()`（避開 6.x enum 命名空間差異）
+- **預設彩色＋長邊雙面**（v1.0.7）：開列印預覽前對 `QPrinter` 設 `setColorMode(QPrinter.Color)` + `setDuplex(QPrinter.DuplexLongSide)`，使用者仍可於預覽視窗改；實際支援取決於印表機
 
 ### 跨年度重置（Reset，tab_settings.py）
 
@@ -500,6 +503,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 
 | 版本 | 摘要 |
 |------|------|
+| v1.0.7 | **歸檔頁**：PDF 電子檔歸檔成功時連帶標記紙本已歸（`_doArchive` 一併寫 `is_reported=1`，原本只寫 `is_electronic`）；「待歸檔公文」清單選取列改藍底深藍字＋列首單條藍 bar，消焦點黑框，候選 PDF 表游標維持箭頭（不顯示 I-beam）。**簽收單列印**：開列印預覽前預設彩色（`setColorMode(Color)`）＋長邊雙面（`setDuplex(DuplexLongSide)`），使用者仍可改。 |
 | v1.0.6 | **歸檔頁**：修正承辦人解析會把案由詞（如「竊盜案」）與括號內報案人誤判成承辦人之 bug。承辦人界定改為「從檔名尾端往前、能對到 DB 人名字典（含去姓 2 字／別名）才收為承辦人，對不到即停」，不再用「3 字以內一律當人名」猜測；主旨剝承辦人改字典迴圈（修正多個 `-` 分隔承辦人只剝最後一段、前段人名殘留主旨之 bug）。承辦人／主旨解析純邏輯抽進 `lib/archive_text.py`（`_resolveNames`/`_parseSubject`），新增單元測試（含真實檔名語料去識別化案例）。 |
 | v1.0.5 | **歸檔頁**：確認歸檔／只歸紙本後不再清空 PK 編號搜尋（改為刷新待歸檔清單＋候選 PDF，保留搜尋狀態）；歸檔成功不再跳提示（僅失敗才提示）；確認彈窗改 Apple HIG 兩層式（主訊息＋灰字次要說明）、文字精修，確認歸檔加寬以容長檔名；修正「只歸紙本」確認框誤顯示承辦人而非主旨之 bug。**全頁**：所有捲動表格在資料新增／刪除／修改後保留捲動位置，不再跳回頂端（瀏覽 Tab4、歸檔 Tab5 待歸檔＋候選 PDF、設定 Tab6 參照表）；輸入暫存預覽表維持原本捲到底行為。**協作文件**：CLAUDE.md 補「開新對話先讀 README」。 |
 | v1.0.4 | **瀏覽／歸檔頁**：新增「重載」鈕（強制重掃資料夾＋整表重建）；設定改參照表名稱後自動就地反映（零重建成本）；重載與大量差異更新顯示「更新中」提示（`runWithBusy`）；歸檔頁關鍵字改為檔名過濾；搜尋 `setUpdatesEnabled` 改 try/finally 避免凍結；精簡／完整改單顆切換鈕（預設精簡）。**設定頁**：三表與修改彈窗改顯示序號（隱藏內部 PK，並修正修改誤用序號當 PK 之 bug）；歸檔資料夾設定白話化、子夾下拉提示；`toUncPath` 以 `WNetGetConnection` 解析網路磁碟機代號為 UNC；重置後首登提示歸檔未設定；ResetDialog 停用清單可捲動。**其他**：標題列＋exe 內容頁顯示版本號（`bump_version.py` 進版工具）；瀏覽頁空表浮水印 viewport size=0 修正；歸檔檔名解析強化（黏連日期、車牌連字號、承辦括號）；陳報子頁籤多餘基準線移除。 |
