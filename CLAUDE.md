@@ -88,6 +88,20 @@
 4. **進版**（README §8 版本記錄列在這步補）
 5. **推上去** + 打 tag `v{版號}` + push tag
 6. **build**：onefile 全新 build（見 README §7），回報成功 / 失敗
+7. **發 GitHub Release**（三個 asset，比照歷版 v1.0.6）：
+   - **要上傳的檔案（共 3 個）**：
+     1. `Police-Document-Manager.exe`（本次 build 的 onefile，在 `dist/`）
+     2. `dbfile.db`（**乾淨空殼**——⚠️ 一律從 git HEAD 取，**不要用工作區那份**，工作區常被測試蓋掉。導出：`git show HEAD:dbfile.db > 暫存/dbfile.db`，二進位用 Bash 導出才安全；可 `git hash-object` 對 `git rev-parse HEAD:dbfile.db` 驗證一致）
+     3. `PACKED.zip`（= 上面 exe + dbfile.db **兩檔扁平放根目錄**，無子資料夾）
+   - **打包 zip（PowerShell）**：`Compress-Archive -Path 暫存\dbfile.db,暫存\Police-Document-Manager.exe -DestinationPath 暫存\PACKED.zip -Force`
+   - **建 Release + 一次傳三檔**：
+     ```
+     gh release create v{版號} --title "v{版號}" --notes-file release_note_v{版號}.md \
+       "dist/Police-Document-Manager.exe" "暫存/dbfile.db" "暫存/PACKED.zip"
+     ```
+     （asset 多於一個時直接列在 create 後；或先 create 再 `gh release upload v{版號} <檔> --clobber`）
+   - 收尾刪暫存資料夾。
+   - **gh 環境**：已裝（本機 `C:\Program Files\GitHub CLI\gh.exe`，新 shell PATH 沒帶到就用全路徑），帳號 `jerrygskk` 已登入（token 存 keyring）。`gh auth login` 是互動式、非互動 shell driver 不了——若日後登出需重登，由維護者本機自己跑
 
 > ⚠️ **順序鐵則**：README / release note 要在「進版 commit」**之前**寫好，tag 才會直接指向含完整文件的 commit。別先進版打 tag、事後才補 README——那樣得退版重做。
 > ⚠️ tag 已 push 後要移動：本地 `git tag -f` 後，遠端**先刪再推**（`git push origin :refs/tags/v{版號}` 再 `git push origin v{版號}`），否則遠端 tag 仍指舊 commit。
