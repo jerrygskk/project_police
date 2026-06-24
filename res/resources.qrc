@@ -6,5 +6,27 @@
     <file>icon_archive.svg</file>
     <file>icon_paper.svg</file>
     <file>icon_help.svg</file>
+    <file alias="btn/confirm_send.svg">buttons/confirm_send.svg</file>
+    <file alias="btn/confirm_recv.svg">buttons/confirm_recv.svg</file>
+    <file alias="btn/confirm_report.svg">buttons/confirm_report.svg</file>
+    <file alias="btn/do_archive.svg">buttons/do_archive.svg</file>
+    <file alias="btn/paper_only.svg">buttons/paper_only.svg</file>
+    <file alias="btn/remove.svg">buttons/remove.svg</file>
+    <file alias="btn/gen_preview.svg">buttons/gen_preview.svg</file>
+    <file alias="btn/print_form.svg">buttons/print_form.svg</file>
+    <file alias="btn/download_pdf.svg">buttons/download_pdf.svg</file>
+    <file alias="btn/full.svg">buttons/full.svg</file>
+    <file alias="btn/reload.svg">buttons/reload.svg</file>
+    <file alias="btn/reset.svg">buttons/reset.svg</file>
+    <file alias="btn/archive_folder.svg">buttons/archive_folder.svg</file>
+    <file alias="btn/add.svg">buttons/add.svg</file>
+    <file alias="btn/edit.svg">buttons/edit.svg</file>
+    <file alias="btn/save_order.svg">buttons/save_order.svg</file>
+    <file alias="btn/overdue.svg">buttons/overdue.svg</file>
+    <file alias="btn/sub_task.svg">buttons/sub_task.svg</file>
+    <file alias="btn/sub_crim_report.svg">buttons/sub_crim_report.svg</file>
+    <file alias="btn/sub_gen_report.svg">buttons/sub_gen_report.svg</file>
+    <file alias="btn/sub_crim_arch.svg">buttons/sub_crim_arch.svg</file>
+    <file alias="btn/sub_gen_arch.svg">buttons/sub_gen_arch.svg</file>
   </qresource>
 </RCC>
