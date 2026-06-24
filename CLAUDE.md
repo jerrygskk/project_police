@@ -119,32 +119,48 @@
 
 ## 踩雷速查表（動手前必掃）
 
-| 症狀 | 原因 | 解法 |
-|------|------|------|
-| `.ui` 載入報 `Unable to open/read ui device` | `.ui` 用了 `contentsMargins` + `<rect>` 寫 margin | 改用 `leftMargin`/`topMargin`/`rightMargin`/`bottomMargin` 四個獨立 property |
-| `widget.centralWidget()` 回傳 None | central widget 物件名稱不是全小寫 | 名稱必須是 `centralwidget`（全小寫） |
-| 狀態色（紅/橘/綠）失效、停用列灰字不出現 | stylesheet 寫死 `QTableWidget::item { color }`，優先級蓋過 `setForeground()` | `::item` 只設 padding/border，文字色一律交給 `setForeground()`。`:selected` 的 color 可留。**這個雷開發時踩過不只一次，動表格樣式前先檢查** |
-| 顏色被 stylesheet 蓋掉 | 用了 `Qt.red` 等列舉 | 用 `QColor("#hex")` |
-| 新 Dialog/Widget 文字看不見（深色底） | 沒明確設背景色與文字色，繼承到全域深色 | 每個新 `QDialog`/`QWidget` 都要明確設背景 + 文字色（見 README 第 5 節範例） |
-| 按鈕 `clicked` 連接的 callback 第一個參數變成 `False` | Qt 的 `clicked` signal 會自動多塞一個 `checked` 布林 | lambda 要吃掉它：`lambda _=False, k=key: ...`，否則像 `_REF_CFG[False]` 會 KeyError。**這個雷踩過多次** |
-| `setEnabled(False)` 了按鈕但外觀沒變灰 | 套用的 stylesheet（如 `BTN_CONFIRM`）沒定義 `:disabled` 狀態 | 需要灰掉的按鈕用含 `QPushButton:disabled { ... }` 的自訂 stylesheet |
-| `QTableWidget` / `QAbstractScrollArea` 滾輪事件攔不到 | 滾輪事件由 `viewport()` 接收，覆寫 `table.wheelEvent` 不會被觸發 | 在 `table.viewport()` 上 `installEventFilter` 攔 `QEvent.Wheel`；filter 要存成屬性防 GC |
-| `ORDER BY sort_order` 時新項目跑到最前面 | 新列 `sort_order` 是 NULL，SQLite 把 NULL 排最前 | 新增時務必給 `sort_order` 值（本專案規則：新項目放最前 = `MIN(sort_order)-1`，空表 fallback 1） |
-| 從設定 Tab 切走想攔截「未存」攔不住 | `currentChanged` 切換後才觸發 | 大 Tab 只能切過去後補跳提示；子頁切換（按鈕）才能攔住回原狀 |
-| 重置後自動重啟，打包版跳 `Failed to load Python DLL` 或 `unicodedata` 缺失 | PyInstaller 6.x 新程序沿用舊 `_MEI` 環境，到已刪除目錄找 DLL | 啟動新程序前設 **`PYINSTALLER_RESET_ENVIRONMENT=1`**。別用 cmd ping 延遲歪招。見 `tab_settings.py` 的 `_restartApp()` |
-| `setupPreviewTable` 的 200ms 延遲 autoResize 覆蓋欄寬 | 內建 `QTimer` 重算欄寬，把手動設的拉回 | 需自行控制欄寬的表格不要用 `setupPreviewTable`；彈性欄用 `QHeaderView.Stretch`，固定欄用 `Fixed` + `setColumnWidth` |
-| 浮貼按鈕（絕對定位）在非當前分頁重複/錯位 | 非可見頁 widget layout 寬=0，不同頁浮貼鈕可能渲染到當前頁 | 改在 GroupBox 內 HBox 標題列放鈕，走正規 layout 管理 |
-| confirmBox 確認/取消鈕被 Qt 重排左右 | `AcceptRole`/`RejectRole` 依 OS 慣例調換 | 兩顆鈕都用 **`ActionRole`**，`addButton` 順序即視覺順序；手動設 `setDefaultButton` + `setEscapeButton` |
-| Material Icons SVG 白邊太多 | viewBox `0 -960 960 960` 圖案只佔中央 70% | 裁切 viewBox 到圖案實際 bounding box，width/height 統一 512px |
-| SVG icon 在按鈕裡偏一邊 | path 含非對稱裝飾把視覺重心推偏；或 viewBox 留白不對稱 | 移除非對稱裝飾，viewBox 以主圖 bounding box 置中 |
-| 斷詞比對漏字（日期黏主旨檔名如 `1150101匿名竊盜案`） | `_tokenize` 含數字的片段不符純中文判斷，中文全部漏切 | 改用 `re.findall([^一-鿿]+)` 抽中文段再 2 字滑動切詞 |
-| 軟刪除公文仍出現在歸檔待歸檔清單 | 歸檔判定只看 `is_electronic` 空，空殼也符合 | `_queryUnarchived` / `_tableSignature` 排除底層案由欄為 NULL 者；**任何「待處理」查詢都要排除軟刪除空殼** |
-| 編號欄同格出現超連結＋純文字重疊 | `item` 與 `cellWidget` 兩套獨立儲存，切換時只寫新未清舊 | `setDocIdLinkCell` 切換前互清：連結分支先 `takeItem`、純文字分支先 `removeCellWidget` |
-| `QDateEdit` 月曆打開停在最小年（1752）而非今天 | 空白哨兵 = minimumDate，QDateEdit 開月曆時導到 1752 | 事件過濾器裝在 `dateedit.calendarWidget()`，空白狀態時用 `QTimer.singleShot(0,…) setCurrentPage(今年,今月)`；封裝為 `setupDateEditCalendarOnly` |
-| 歸檔候選 PK 為 1xx 時日期解析空白 | `_parseDate` 舊正則把 PK「103」當民國年 | 日期 token 改 `(?<!\d)(1\d{2})(\d{2})(\d{2})(?!\d)` 完整 7 碼前後不接數字 |
-| 歸檔預覽主旨退回 DB 主旨（檔名無 `-`） | `_parseSubject` 只用 `-` 分段，無 `-` 整串成單段被剝空 | 補「無 `-`」分支：去開頭日期＋從尾端剝人名，中間即主旨 |
-| 多區塊合併進單一 QGridLayout 後，隱藏列出現幽靈間距、兩模式下方表格高度不一 | `verticalSpacing` 對隱藏（高 0）列仍保留間距；form 區高度隨模式列數變動，Expanding 表格吃剩餘空間 | `verticalSpacing=0`，列距全用 `setRowMinimumHeight` 控制；兩模式 form 總高設成**相同固定值**（如刑案 4×45、一般 3×60＝180），下方表格高度才一致（見 `tab_report._switchFormType`） |
-| show/hide 切換欄位時整排左右跳動／同一欄位兩模式寬度不同 | QGridLayout 欄寬只按「當前可見」widget 計算；col0 最寬標籤或右欄寬度錨點若是某模式專屬，另一模式該欄縮水 | 用 `setColumnMinimumWidth` 鎖死結構性欄寬；col0 取最寬標籤 `sizeHint().width()`（自適應字體/縮放，勿寫死） |
-| 切 tab 時共用列上的按鈕上下跳動 | 共用列（含按鈕）在兩模式 row min height 不同，按鈕垂直置中跟著變 | 共用列兩模式設**相同** row min height |
-| `QDateEdit`/`QComboBox` 設灰字結果月曆／下拉清單文字也變灰 | 裸 `color:` stylesheet 會繼承到子元件（月曆 QCalendarWidget、下拉 QAbstractItemView） | 用型別選擇器 `QDateEdit { color: ... }` / `QComboBox { color: ... }`，只染欄位本體 |
-| 可空欄位的編輯下拉，NULL 舊資料被靜默改成清單第一項（如業務單位/受理人變「交通組」/第一個人） | 下拉沒有空白哨兵時，`_set_combo_value(None)` 不動游標→停在第一項（有效 id）；存檔 `currentData()` 是真 id，連必填檢查都騙得過 | **任何建檔可為 NULL 的下拉，建時與編輯時都要 `addItem("", None)` 空白哨兵**；`_set_combo_value` 對 NULL 會停在哨兵、忠實寫回 NULL（見 `edit_dialog.py` 業務單位／受理人） |
+依主題分組；每條為「**症狀** → 解法（必要時括註原因）」。寫過的雷再踩會被點名。
+
+#### 1. `.ui` 載入
+- **`Unable to open/read ui device`** → margin 改用 `leftMargin`/`topMargin`/`rightMargin`/`bottomMargin` 四獨立 property，勿用 `contentsMargins`+`<rect>`。
+- **`centralWidget()` 回 None** → central widget 物件名必須全小寫 `centralwidget`。
+
+#### 2. Qt 樣式／顏色
+- **狀態色（紅/橘/綠）、停用灰字失效** → `QTableWidget::item` 只設 padding/border，文字色一律交 `setForeground()`（`::item{color}` 優先級會蓋過它；`:selected` 的 color 可留）。⚠ 動表格樣式前先查這條。
+- **顏色被 stylesheet 蓋掉** → 用 `QColor("#hex")`，勿用 `Qt.red` 等列舉。
+- **新 Dialog/Widget 文字看不見（深色底）** → 每個新 `QDialog`/`QWidget` 明設背景+文字色（繼承全域深色所致，範例見 README §5）。
+- **`setEnabled(False)` 按鈕沒變灰** → 該按鈕的 stylesheet 要含 `QPushButton:disabled { ... }`。
+- **設灰字連月曆／下拉清單也變灰** → 用型別選擇器 `QDateEdit { color: ... }` / `QComboBox { color: ... }`，避免裸 `color:` 繼承到子元件。
+
+#### 3. Qt 元件行為
+- **`clicked` callback 首參變成 `False`** → lambda 吃掉 Qt 多塞的 `checked`：`lambda _=False, k=key: ...`（否則 `dict[False]` KeyError）。
+- **`QTableWidget`/`QAbstractScrollArea` 滾輪攔不到** → 滾輪事件在 `viewport()`：於 `table.viewport()` `installEventFilter` 攔 `QEvent.Wheel`，filter 存成屬性防 GC（覆寫 `wheelEvent` 無效）。
+- **confirmBox 確認/取消鈕被左右調換** → 兩鈕都用 `ActionRole`（`AcceptRole`/`RejectRole` 會依 OS 慣例調換），手動 `setDefaultButton`+`setEscapeButton`。
+- **`QDateEdit` 月曆打開停在 1752** → 空白哨兵=minimumDate 所致：事件過濾器裝 `dateedit.calendarWidget()`，空白時 `QTimer.singleShot(0,…) setCurrentPage(今年,今月)`；用 `setupDateEditCalendarOnly`。
+
+#### 4. 版面／模式切換抖動（多見於 `tab_report._switchFormType`）
+- **隱藏列幽靈間距、兩模式下方表格高度不一** → `verticalSpacing=0`、列距改 `setRowMinimumHeight`；兩模式 form 總高設成相同固定值（如刑案 4×45、一般 3×60＝180）。
+- **show/hide 時整排左右跳、同欄兩模式寬度不同** → `setColumnMinimumWidth` 鎖結構性欄寬；col0 寬取最寬標籤 `sizeHint().width()`（勿寫死）。QGridLayout 欄寬只按當前可見 widget 算。
+- **切 tab 共用列上的按鈕上下跳** → 共用列兩模式設相同 row min height。
+- **`setupPreviewTable` 的 200ms autoResize 覆蓋手設欄寬** → 要自控欄寬就別用它；彈性欄 `QHeaderView.Stretch`、固定欄 `Fixed`+`setColumnWidth`。
+- **浮貼按鈕（絕對定位）在非當前頁重複/錯位** → 改放 GroupBox 內 HBox 標題列走正規 layout（非可見頁 layout 寬=0 所致）。
+
+#### 5. Tab 切換攔截
+- **從設定 Tab 切走時攔不住「未存」** → `currentChanged` 是切換後才觸發：大 Tab 只能切過去後補跳提示；子頁切換（按鈕觸發）才攔得住、可「取消＝回原狀」。
+
+#### 6. SVG／icon
+- **Material icon 白邊太多／在按鈕裡偏一邊** → 裁 viewBox 到圖案實際 bounding box 並置中、移除非對稱裝飾，width/height 統一 512px（`0 -960 960 960` 圖案只佔中央 70%）。
+
+#### 7. 資料／SQL
+- **`ORDER BY sort_order` 新項跑到最前** → 新增時給 `sort_order = MIN(sort_order)-1`（空表 fallback 1）；NULL 會被 SQLite 排最前。
+- **軟刪除空殼出現在待歸檔清單** → `_queryUnarchived`/`_tableSignature` 排除底層案由欄為 NULL 者；**任何「待處理」查詢都要排除軟刪除空殼**。
+- **可空下拉的 NULL 舊資料被靜默改成清單第一項** → 建檔可為 NULL 的下拉，建時與編輯時都 `addItem("", None)` 空白哨兵（見 `edit_dialog.py`）；否則 `_set_combo_value(None)` 停在第一項、存回真 id 連必填都騙過。
+- **編號欄超連結＋純文字重疊** → `setDocIdLinkCell` 切換前互清：連結分支先 `takeItem`、純文字分支先 `removeCellWidget`（item 與 cellWidget 兩套獨立儲存）。
+
+#### 8. 歸檔檔名解析（`lib/archive_text.py`）
+- **斷詞漏字（日期黏主旨如 `1150101匿名竊盜案`）** → 用 `re.findall([^一-鿿]+)` 抽中文段再 2 字滑動切詞（`_tokenize` 含數字片段不符純中文判斷會整段漏切）。
+- **PK 為 1xx 時日期解析空白** → 日期 token 用 `(?<!\d)(1\d{2})(\d{2})(\d{2})(?!\d)`（舊正則把 PK「103」當民國年）。
+- **歸檔預覽主旨退回 DB 主旨（檔名無 `-`）** → `_parseSubject` 補「無 `-`」分支：去開頭日期＋從尾端剝人名，中間即主旨。
+
+#### 9. 打包／重啟
+- **重置後重啟、打包版跳 `Failed to load Python DLL`／`unicodedata` 缺** → 啟動新程序前設 `PYINSTALLER_RESET_ENVIRONMENT=1`（新程序沿用舊 `_MEI` 所致；見 `tab_settings._restartApp()`，別用 cmd ping 延遲歪招）。

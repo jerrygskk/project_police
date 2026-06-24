@@ -114,7 +114,7 @@ main.py
 - 別名是「人的屬性」，存在 `Ref_Personnel.alias` 欄，分隔符為**半形逗號**，多別名同欄（如 `王佐,所長,副座`）
 - 否決新表 `Ref_Alias`：別名跟著人走，跨年度重編 id 時 alias 自動保留，無需額外關聯
 - 歸檔比對（`lib/archive_text.py`）從 DB 讀別名後與正名一同納入 `_loadNameDict`；移除舊 `tab_archive._ALIAS` hardcode dict
-- 欄位由 `fix_views.py` 補丁新增（見 §5「新增 DB 欄位」,v1.0.2）；讀寫前呼叫 `_has_alias_col(conn)` 做 PRAGMA 缺欄退路，避免舊 DB 報錯
+- 欄位以一次性 `ALTER TABLE ADD COLUMN` 新增（見 §5「新增 DB 欄位」,v1.0.2 起內建於 `dbfile.db`）；讀寫前呼叫 `_has_alias_col(conn)` 做 PRAGMA 缺欄退路，避免舊 DB 報錯
 
 
 ### 資料庫瀏覽（Tab4）搜尋設計
@@ -172,11 +172,13 @@ main.py
 │   │                    及走 getResourcePath 的 banner.png / police_badge.*）
 │   ├── tabs/            HELP 子頁籤圖（qrc 別名 :/tab/，gen_buttons.py 產出）
 ├── tabs/                各 Tab
-├── ui_utils/            共用 UI 工具（table/widgets/status/sticky_scroll/edit_dialog/settings_dialogs/help_dialog/help_content）
+├── ui_utils/            共用 UI 工具（table/widgets/status/sticky_scroll/edit_dialog/settings_dialogs/help_dialog/help_content；button_imgs 為 gen_buttons 產出對照表）
 └── tests/               純邏輯單元測試（unittest，見下「單元測試」節）
 ```
 
-> 核心模組（db_utils、base_tab、auth_manager、theme、loading_screen）在 `lib/`，本文其餘章節為精簡仍以簡稱（如「db_utils」）指稱，實際 import 路徑為 `from lib.db_utils import ...`。`main.py`（入口）、`fix_views.py`／`bump_version.py`（獨立工具）留根目錄，互不 import 核心模組。
+> 根目錄獨立工具：`bump_version.py`（進版）、`gen_buttons.py`（產 HELP 按鈕／子頁籤 SVG，見 §5）、`gen_quickstart.py`（產速查卡 PDF，見 §5）。皆不 import 核心模組。
+
+> 核心模組（db_utils、base_tab、auth_manager、theme、loading_screen）在 `lib/`，本文其餘章節為精簡仍以簡稱（如「db_utils」）指稱，實際 import 路徑為 `from lib.db_utils import ...`。`main.py`（入口）與上述獨立工具留根目錄，互不 import 核心模組。
 
 ### 路徑解析（getResourcePath，打包相容）
 
@@ -205,21 +207,16 @@ main.py
 
 ### 新增 DB 欄位
 
-本專案**不做啟動 migration**（單機、版本由維護者自管，migration 的價值皆不成立）。DB 結構變更走**一次性手打補丁 `fix_views.py`**（不進 git）：
+本專案**不做啟動 migration**（單機、版本由維護者自管，migration 的價值皆不成立）。DB 結構變更走**一次性手動 `ALTER TABLE ... ADD COLUMN`**（直接對 `dbfile.db` 執行，不寫進程式、不在啟動時跑 DDL；View 有更動就 `DROP VIEW IF EXISTS … CREATE VIEW …`）：
 
-1. 在 `fix_views.py` 的 `_NEW_COLUMNS` dict 登記要新增的欄位，腳本執行後自動 `ALTER TABLE ... ADD COLUMN`
-2. 程式碼讀寫新欄位前用 **PRAGMA 缺欄退路**保護，確保套補丁前的舊 DB 不會報錯：
+- 程式碼讀寫可能尚未存在的欄位前，用 **PRAGMA 缺欄退路**保護，確保未套用變更的舊 DB 不會報錯（現行 alias 欄即如此，見 `ui_utils/settings_dialogs.py`）：
 
 ```python
 def _has_alias_col(conn):
-    """欄位是否存在（fix_views 套用後才有）。未套補丁時跳過讀寫。"""
+    """欄位是否存在。未加欄的舊 DB 跳過讀寫。"""
     return any(r[1] == "alias"
                for r in conn.execute("PRAGMA table_info(Ref_Personnel)"))
 ```
-
-3. `fix_views.py` 同時負責重建 View（`DROP VIEW IF EXISTS … CREATE VIEW …`）；View 定義若有更動，一律更新此檔而非在啟動時跑 DDL
-
-> **上線流程**：維護者在本機執行 `python fix_views.py` 一次即可；打包 exe 無需感知此補丁存在。
 
 ### 新增 Tab 的標準流程
 
@@ -310,8 +307,10 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 
 - **內容單一來源** `ui_utils/help_content.py`：七頁說明以**結構化區塊** `HELP_PAGES` 描述（block 型別：`lead`/`muted`/`label`/`hint`/`warn`/`sec`，`sec` 內含 `p`/`ol`/`ul`/`map`/`table`/`cols`/`note`），由 `_render_html()` 產出彈窗 HTML、`render_review_text()` 產出純文字校稿（`docs/help_text_review.txt`，未入庫）。改說明文字只動 `HELP_PAGES`，兩種輸出自動同步。tooltip 候選存 `HELP_TIPS`。
 - **彈窗元件** `ui_utils/help_dialog.py`：`helpDialog(parent, tab_index)` 以 `QTextBrowser` 顯示（白底、Enter/Esc 關、右上警徽 LOGO + 全寬鋼藍橫線）；`attachHelpButton(tab_widget, window)` 於 `main.py` tabs 建完後呼叫一次，掛上分頁列右上角 `setCornerWidget` 說明鈕（依 `currentIndex()` 開對應頁）並套 tooltip。
-- **版面**：Apple HIG 留白編排，段落標題用鋼藍色帶（`#DCE5EF`）+ 黑字，內文深黑 `#1c1c1e`。⚠️ `QTextBrowser` 是 Qt rich-text 子集，**不支援圓角／陰影／flex／懸掛縮排**：色塊用單格表格 `bgcolor`、清單懸掛縮排用兩欄表格（標號欄 + 文字欄）達成。
-- 圖示 `res/icon_help.svg`（鋼藍 #4977b1）走 qrc 內嵌（`:/icon_help.svg`），改了要重編 qrc。
+- **版面**：Apple HIG 留白編排，段落標題用**鋼藍細豎條＋下細分隔線**（`_h_header`，非滿版色帶），步驟序號用**實心鋼藍方塊白字**（`ol`），內文深黑 `#1c1c1e`。內文字距 `_LETTER_SPACING=92`（`help_dialog.py`）——⚠️ `QTextBrowser` 不吃 CSS `letter-spacing`，設在 `QFont` 上。⚠️ `QTextBrowser` 是 Qt rich-text 子集，**不支援圓角／陰影／flex／懸掛縮排**：色塊用單格表格 `bgcolor`、清單懸掛縮排用兩欄表格（標號欄 + 文字欄）達成。
+- **按鈕／子頁籤示意圖**：說明文字裡的按鈕（如「確認發文」）與子頁籤（如「❐ 刑案陳報」）用**預烤圓角 SVG**（`<img>` 內嵌），因 `QTextBrowser` inline 樣式做不出圓角。SVG 由 `python gen_buttons.py` 依 `BUTTONS`／`TABS` 清單批次產出至 `res/buttons/`（別名 `:/btn/`）與 `res/tabs/`（`:/tab/`），配色比照 `lib/theme.py` 烤進圖；對照表 `ui_utils/button_imgs.py`（label→路徑/寬高，入庫）供 `help_content` 查表。改標籤／配色改該腳本重跑、重編 qrc。⚠️ `QTextBrowser` 圖片點陣化解析度有上限（intrinsic 取 2× 已封頂），圖片**不會跟內文一樣銳利**；`font-family` 須用裸字型名（逗號清單會被 QtSvg 當成不存在字型 fallback）。
+- **速查卡**：母本 `QUICKSTART`（`help_content.py`，七 Tab 濃縮，與 `HELP_PAGES` 同檔各自合身）；`python gen_quickstart.py`（reportlab 嵌微軟正黑體，含 `_check_glyphs` 字形覆蓋率檢查）產 `docs/Quick_Start.pdf`（A4 直式 2 頁，`docs/` 未入庫）。改說明同時動到速查卡時，`QUICKSTART` 要一併同步。
+- 圖示 `res/buttons/icon_help.svg`（鋼藍 #4977b1）走 qrc 內嵌（`:/icon_help.svg`），改了要重編 qrc。
 
 ### tab_report.py 特殊架構
 
