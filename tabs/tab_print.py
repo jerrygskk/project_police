@@ -233,7 +233,7 @@ def _draw_page(side_label, table_title, print_date, disp_date,
         if ridx < len(rows):
             row = rows[ridx]
             if is_crim:
-                is_current = str(row[-1]) == 'A_現行犯'
+                is_current = str(row[-1]) == 'CS01'   # CS01 = 現行犯（用 ID 判斷，與顯示名脫鉤）
                 display = list(row[:-1]) + ['']
             else:
                 is_current = False
@@ -340,9 +340,11 @@ def generate_pages(db_path, date_str):
         "FROM View_Task_Full WHERE 發文日期=? "
         "ORDER BY 紀錄時間 IS NULL, 紀錄時間, CAST(編號 AS INT)",
         (date_str,)).fetchall()
+    # 末欄取 case_status ID（非顯示名）供現行犯判斷，與顯示名脫鉤；該欄不顯示（取 row[:-1]）
     crim = conn.execute(
-        "SELECT 送文編號, 陳報日期, 案類, 主承辦人, 嫌疑人_案由, 發文分類 "
-        "FROM View_Criminal_Full WHERE 陳報日期=? ORDER BY CAST(送文編號 AS INT)",
+        "SELECT v.送文編號, v.陳報日期, v.案類, v.主承辦人, v.嫌疑人_案由, d.case_status "
+        "FROM View_Criminal_Full v JOIN Document_Criminal d ON v.送文編號 = d.doc_id "
+        "WHERE v.陳報日期=? ORDER BY CAST(v.送文編號 AS INT)",
         (date_str,)).fetchall()
     gen  = conn.execute(
         "SELECT 送文編號, 陳報日期, 業務單位, 陳報人, 陳報主旨 "

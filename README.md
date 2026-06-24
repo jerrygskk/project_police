@@ -223,7 +223,7 @@ def _has_alias_col(conn):
 1. 新增 `tabs/tab_xxx.py`，`class TabXxx(BaseTab)` 實作 `setup(tab_index)`
 2. `tabs/__init__.py` 加 `from .tab_xxx import TabXxx`
 3. `main.py` 的 `TAB_CLASSES` 登記一行（其餘不動）
-4. 新增對應 `layouts/LayoutN.ui`（**每個大 Tab 都必須有 .ui，無例外**；彈窗 / Dialog 才用 code 動態建。註：TabSettings 目前違反此規則、待修，見第 8 節）
+4. 新增對應 `layouts/LayoutN.ui`（**每個大 Tab 都必須有 .ui，無例外**；彈窗 / Dialog 才用 code 動態建）
 5. 若有人員/部門/案類下拉，override `on_activated()` 刷新（範例見下）
 
 ```python
@@ -316,16 +316,15 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 
 - `Layout3.ui` 用 `QStackedWidget`（`formStack`）切換：index 0 刑案、index 1 一般
 - 發文分類 radio 對應：刑案 `radio_status_a/b/c` → CS01/CS02/CS03；一般 `radio_gen_cat_a/b/c` → GC01/GC03/GC02
-- ⚠️ **預覽顯示 ≠ DB 值**（明年大修資料庫要一起改）：
+- ⚠️ **部分預覽顯示 ≠ DB 值**（現行行為，刷新時務必轉換，見下）：
 
 | 項目 | 預覽 | DB |
 |------|------|-----|
-| 刑案狀態 | 現行/到案/未到 | A_現行犯/B_到案/B_未到案 |
-| 一般分類 | 業務/其他/相驗 | D_業務陳報/J_其他/F_司法相驗 |
 | 人名 | 王小明 | 王小明-19.06（去 `-` 後綴） |
 | 日期 | MM-DD-YYYY | YYYY-MM-DD |
 
-> EditDialog 刷新時 `get_updated()` 回的是 DB 原始值，刷新表格前要轉換：刑案經 `_STATUS_MAP`（`_onEditCrimRow`）、一般經 `_CAT_MAP`（`_onEditGenRow`）。
+> 刑案發文分類／一般分類**已正規化**：`Ref_Case_Status.status_name`／`Ref_General_Category.gen_cat_name` 直接存兩字顯示名（現行/到案/未到、業務/其他/相驗），View 撈出即可顯示，不再經對照表轉換（舊 `_STATUS_MAP`／`_CAT_MAP` 已移除）。EditDialog `get_updated()` 回的分類欄即顯示名，直接套用。
+> 現行犯判斷（簽收單列印「免簽收」註記）改以 `case_status` ID（`CS01`）比對，與顯示名脫鉤（見 `tab_print._build_*`）。
 
 ### 列印（tab_print.py）
 
@@ -513,6 +512,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 
 | 版本 | 摘要 |
 |------|------|
+| v1.0.9 | **發文分類／案件狀態正規化**：`Ref_Case_Status`／`Ref_General_Category` 的顯示名去除歷史字母前綴、縮為兩字（A_現行犯→現行、D_業務陳報→業務…），View 撈出即顯示，移除程式端 `_STATUS_MAP`／`_CAT_MAP` 兩層轉換；簽收單列印「現行犯免簽收」判斷改以 `case_status` ID（`CS01`）比對、與顯示名脫鉤。收編 5 筆未正規化的 `H_核銷` 孤兒分類（併入「業務」GC01、業務單位補「行政組」）。一次性資料修補 `fix_cat_status.py`（執行前自動備份、不入庫）。**HELP 視覺優化**：說明內按鈕／子頁籤改用預烤圓角 SVG（`gen_buttons.py` 產出、對照表 `ui_utils/button_imgs.py`）、文字校正；`res/` 圖片資產集中到 `res/buttons/`＋`res/tabs/`。 |
 | v1.0.8 | **程式內 HELP**：每個大 Tab 右上角新增 help 說明鈕（線圖示），點開該頁「使用說明」彈窗（七頁內容，Apple HIG 留白編排、鋼藍色帶標題、右上警徽 LOGO）；各欄位／按鈕加 tooltip。內容單一來源 `ui_utils/help_content.py`（結構化 `HELP_PAGES`，同時產彈窗 HTML 與純文字校稿）；彈窗元件 `ui_utils/help_dialog.py`。新增圖示 `res/icon_help.svg`（qrc 內嵌）。**協作文件**：CLAUDE.md 補「一律台灣用語」。 |
 | v1.0.7 | **歸檔頁**：PDF 電子檔歸檔成功時連帶標記紙本已歸（`_doArchive` 一併寫 `is_reported=1`，原本只寫 `is_electronic`）；「待歸檔公文」清單選取列改藍底深藍字＋列首單條藍 bar，消焦點黑框，候選 PDF 表游標維持箭頭（不顯示 I-beam）。**簽收單列印**：開列印預覽前預設彩色（`setColorMode(Color)`）＋長邊雙面（`setDuplex(DuplexLongSide)`），使用者仍可改。 |
 | v1.0.6 | **歸檔頁**：修正承辦人解析會把案由詞（如「竊盜案」）與括號內報案人誤判成承辦人之 bug。承辦人界定改為「從檔名尾端往前、能對到 DB 人名字典（含去姓 2 字／別名）才收為承辦人，對不到即停」，不再用「3 字以內一律當人名」猜測；主旨剝承辦人改字典迴圈（修正多個 `-` 分隔承辦人只剝最後一段、前段人名殘留主旨之 bug）。承辦人／主旨解析純邏輯抽進 `lib/archive_text.py`（`_resolveNames`/`_parseSubject`），新增單元測試（含真實檔名語料去識別化案例）。 |

@@ -45,8 +45,6 @@ QRadioButton:checked {
 class TabReport(BaseTab):
     """公文陳報：刑案 / 一般陳報，左右並列預覽"""
 
-    # _STATUS_MAP / _CAT_MAP 已上移至 BaseTab，供陳報頁與瀏覽頁共用。
-
     def setup(self, tab_index):
         tab = self.tab_widget.widget(tab_index)
         if not tab:
@@ -434,13 +432,13 @@ class TabReport(BaseTab):
             self._submitGeneral(report_date, sender_id)
 
     def _submitCriminal(self, report_date, sender_id):
-        # ⚠️ 顯示名稱與 DB 不同，若修改 Ref_Case_Status 需一起更新
+        # status_name 為預覽顯示用，與 Ref_Case_Status.status_name 一致（皆兩字）
         if self.radio_status_a and self.radio_status_a.isChecked():
-            status_id, status_name = 'CS01', '現行'   # DB: A_現行犯
+            status_id, status_name = 'CS01', '現行'
         elif self.radio_status_b and self.radio_status_b.isChecked():
-            status_id, status_name = 'CS02', '到案'   # DB: B_到案
+            status_id, status_name = 'CS02', '到案'
         else:
-            status_id, status_name = 'CS03', '未到'   # DB: B_未到案
+            status_id, status_name = 'CS03', '未到'
         casetype_id  = self.crim_casetype.currentData()
         processor_id = self.crim_processor.currentData()
         receiver_id  = self.crim_receiver.currentData()
@@ -490,13 +488,13 @@ class TabReport(BaseTab):
             msgCritical("寫入失敗", str(e))
 
     def _submitGeneral(self, report_date, sender_id):
-        # ⚠️ 顯示名稱與 DB 不同，若修改 Ref_General_Category 需一起更新
+        # cat_name 為預覽顯示用，與 Ref_General_Category.gen_cat_name 一致（皆兩字）
         if self.radio_gen_cat_a and self.radio_gen_cat_a.isChecked():
-            cat_id, cat_name = 'GC01', '業務'   # DB: D_業務陳報
+            cat_id, cat_name = 'GC01', '業務'
         elif self.radio_gen_cat_b and self.radio_gen_cat_b.isChecked():
-            cat_id, cat_name = 'GC03', '其他'   # DB: J_其他
+            cat_id, cat_name = 'GC03', '其他'
         else:
-            cat_id, cat_name = 'GC02', '相驗'   # DB: F_司法相驗
+            cat_id, cat_name = 'GC02', '相驗'
         dept_id      = self.gen_dept.currentData()
         processor_id = self.gen_processor.currentData()
         subject      = self.gen_subject.text().strip() if self.gen_subject else ""
@@ -586,10 +584,8 @@ class TabReport(BaseTab):
             updated = dlg.get_updated()
             if updated:
                 # updated = (送文編號, 發文分類, 案類, 嫌疑人_案由, 主承辦人, 受理人, 受理日期, 報案人)
-                _, status_raw, casetype, subject, processor, receiver, occ_date, reporter = updated
-                # 第4點：使用類別常數轉換
-                status = self._STATUS_MAP.get(str(status_raw) if status_raw else '',
-                                              str(status_raw) if status_raw else '')
+                _, status, casetype, subject, processor, receiver, occ_date, reporter = updated
+                # 發文分類顯示名已正規化為兩字（參照表 status_name 即「現行/到案/未到」），直接用
                 for col, val in enumerate([
                     status, casetype, subject,
                     self._trimName(processor), self._trimName(receiver),
@@ -606,10 +602,8 @@ class TabReport(BaseTab):
             updated = dlg.get_updated()
             if updated:
                 # updated = (送文編號, 業務單位, 陳報主旨, 陳報人, 分類)
-                _, dept, subject, processor, cat_raw = updated
-                # 第4點：使用類別常數轉換
-                cat = self._CAT_MAP.get(str(cat_raw) if cat_raw else '',
-                                        str(cat_raw) if cat_raw else '')
+                _, dept, subject, processor, cat = updated
+                # 一般分類顯示名已正規化為兩字（參照表 gen_cat_name 即「業務/其他/相驗」），直接用
                 for col, val in enumerate([dept, subject, self._trimName(processor), cat], start=2):
                     item = QTableWidgetItem(str(val) if val else "")
                     item.setTextAlignment(Qt.AlignCenter)

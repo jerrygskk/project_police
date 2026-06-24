@@ -72,7 +72,7 @@ CRIM_COLS = [
     {"header": "主承辦人",    "view_col": "主承辦人",    "slim": True,  "search": True, "w": 80,  "trim_name": True, "ref_col": True},
     {"header": "案類",        "view_col": "案類",        "slim": True,  "search": True, "w": 180, "ref_col": True},
     {"header": "嫌疑人/案由", "view_col": "嫌疑人_案由", "slim": True,  "search": True, "stretch": True, "w": 240},
-    {"header": "發文分類",    "view_col": "發文分類",    "slim": True,  "search": True, "w": 96, "map": "status"},
+    {"header": "發文分類",    "view_col": "發文分類",    "slim": True,  "search": True, "w": 96},
     {"header": "陳報日期",    "view_col": "陳報日期",    "slim": True,  "search": True, "w": 140},
     {"header": "受理日期",    "view_col": "受理日期",    "slim": True,  "search": True, "w": 140},
     {"header": "送文人員",    "view_col": "送文人員",    "slim": False, "search": True, "w": 120, "ref_col": True},
@@ -88,7 +88,7 @@ GEN_COLS = [
     {"header": "陳報人",   "view_col": "陳報人",   "slim": True,  "search": True, "w": 80,  "trim_name": True, "ref_col": True},
     {"header": "陳報主旨", "view_col": "陳報主旨", "slim": True,  "search": True, "stretch": True, "w": 240},
     {"header": "業務單位", "view_col": "業務單位", "slim": True,  "search": True, "w": 96,  "ref_col": True},
-    {"header": "分類",     "view_col": "分類",     "slim": True,  "search": True, "w": 96, "map": "cat"},
+    {"header": "分類",     "view_col": "分類",     "slim": True,  "search": True, "w": 96},
     {"header": "陳報日期", "view_col": "陳報日期", "slim": True,  "search": True, "w": 140},
     {"header": "送文人員", "view_col": "送文人員", "slim": False, "search": True, "w": 120, "ref_col": True},
     {"header": "紙本",     "view_col": "紙本",     "slim": False, "search": False, "w": 56, "bool_col": True},
@@ -740,13 +740,6 @@ class TabDBBrowse(BaseTab):
             # 承辦/協辦欄：顯示去 - 後綴（王小明-19.06 → 王小明），比照預覽頁
             if c.get("trim_name") and text:
                 text = self._trimName(text)
-
-            # 套用顯示對照（發文分類 / 分類）：DB 原始值 → 短詞，
-            # 與陳報頁共用 BaseTab 的 _STATUS_MAP / _CAT_MAP。
-            mkey = c.get("map")
-            if mkey and text:
-                table_map = self._STATUS_MAP if mkey == "status" else self._CAT_MAP
-                text = table_map.get(text, text)
 
             # 紀錄時間：去掉秒以下小數（排序用的微秒不顯示），只留到秒
             if c.get("trunc_sec") and "." in text:
