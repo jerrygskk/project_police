@@ -1,11 +1,11 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
   <qresource>
-    <file>arrow.svg</file>
-    <file>icon_pdf.svg</file>
-    <file>icon_archive.svg</file>
-    <file>icon_paper.svg</file>
-    <file>icon_help.svg</file>
+    <file alias="arrow.svg">buttons/arrow.svg</file>
+    <file alias="icon_pdf.svg">buttons/icon_pdf.svg</file>
+    <file alias="icon_archive.svg">buttons/icon_archive.svg</file>
+    <file alias="icon_paper.svg">buttons/icon_paper.svg</file>
+    <file alias="icon_help.svg">buttons/icon_help.svg</file>
     <file alias="btn/confirm_send.svg">buttons/confirm_send.svg</file>
     <file alias="btn/confirm_recv.svg">buttons/confirm_recv.svg</file>
     <file alias="btn/confirm_report.svg">buttons/confirm_report.svg</file>

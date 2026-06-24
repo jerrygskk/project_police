@@ -267,7 +267,7 @@ if __name__ == "__main__":
     app.setStyleSheet(APPLE_STYLE)
 
     from PySide6.QtGui import QIcon
-    icon_path = getResourcePath("res/police_badge.svg")
+    icon_path = getResourcePath("res/buttons/police_badge.svg")
     app.setWindowIcon(QIcon(icon_path))
 
     db_path = getResourcePath("dbfile.db")

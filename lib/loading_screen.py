@@ -155,7 +155,7 @@ class LoadingScreen(QWidget):
         self.banner_label.setAlignment(Qt.AlignCenter)
         self.banner_label.setStyleSheet("background-color: #dde7f7;")
 
-        banner_path = getResourcePath("res/banner.png")
+        banner_path = getResourcePath("res/buttons/banner.png")
         if os.path.exists(banner_path):
             pix = QPixmap(banner_path).scaled(
                 self.WIN_W, 279,

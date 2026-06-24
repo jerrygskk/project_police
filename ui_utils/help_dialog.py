@@ -55,7 +55,7 @@ def helpDialog(parent, tab_index):
     head_row.addWidget(header)
     head_row.addStretch(1)
     logo = QLabel()
-    logo.setPixmap(QIcon(getResourcePath("res/police_badge.svg")).pixmap(QSize(36, 36)))
+    logo.setPixmap(QIcon(getResourcePath("res/buttons/police_badge.svg")).pixmap(QSize(36, 36)))
     logo.setStyleSheet("QLabel { background: transparent; }")
     head_row.addWidget(logo, 0, Qt.AlignVCenter)
     lay.addLayout(head_row)

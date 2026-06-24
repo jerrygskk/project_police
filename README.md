@@ -168,9 +168,9 @@ main.py
 ├── layouts/             所有 .ui 檔（Layout1~7、main_menu）
 ├── res/                 圖片 / SVG / qrc（含 __init__.py，是 package）
 │   ├── resources.qrc / resources_rc.py
-│   ├── arrow.svg / banner.png / police_badge.*
-│   ├── icon_pdf.svg / icon_archive.svg    ← 歸檔頁操作鈕 Material Icons（灰 #636366）
-│   ├── icon_help.svg    ← 各頁說明鈕 Material Icons（鋼藍 #4977b1）
+│   ├── buttons/         所有圖片資產（qrc 內嵌：arrow/icon_*；HELP 真按鈕圖；
+│   │                    及走 getResourcePath 的 banner.png / police_badge.*）
+│   ├── tabs/            HELP 子頁籤圖（qrc 別名 :/tab/，gen_buttons.py 產出）
 ├── tabs/                各 Tab
 ├── ui_utils/            共用 UI 工具（table/widgets/status/sticky_scroll/edit_dialog/settings_dialogs/help_dialog/help_content）
 └── tests/               純邏輯單元測試（unittest，見下「單元測試」節）
@@ -182,7 +182,7 @@ main.py
 
 - `db_utils.getResourcePath(rel)`：開發時從當前目錄找，打包後從 `sys._MEIPASS` 找
 - `dbfile.db` 特殊：永遠從 exe 所在目錄讀（真實資料，不打包進 exe）
-- `.ui` 用 `getResourcePath("layouts/Layout1.ui")`、圖片用 `getResourcePath("res/banner.png")`
+- `.ui` 用 `getResourcePath("layouts/Layout1.ui")`、圖片用 `getResourcePath("res/buttons/banner.png")`
 - `arrow.svg` 走 qrc 虛擬路徑 `:/arrow.svg`，**不經過 getResourcePath**
 - ⚠️ `res/` 是 package（有 `__init__.py`），`resources_rc` 用 `from res import resources_rc`
 - ⚠️ `lib/` 是 package（有 `__init__.py`），核心模組用 `from lib.db_utils import ...` 等
@@ -447,11 +447,11 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 ### 主程式
 
 ```cmd
-del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyinstaller --clean --onefile --windowed --icon=res/police_badge.ico ^
+del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyinstaller --clean --onefile --windowed --icon=res/buttons/police_badge.ico ^
   --version-file version_info.txt ^
   --add-data "layouts/*.ui;layouts" ^
-  --add-data "res/police_badge.svg;res" ^
-  --add-data "res/banner.png;res" ^
+  --add-data "res/buttons/police_badge.svg;res/buttons" ^
+  --add-data "res/buttons/banner.png;res/buttons" ^
   --hidden-import PySide6.QtPrintSupport ^
   --hidden-import lib.db_utils ^
   --hidden-import lib.base_tab ^
