@@ -2,11 +2,12 @@
 """產生程式內 HELP 用的「按鈕示意」SVG（圓角＋實際配色＋文字）。
 
 為什麼用產生器：HELP 彈窗的 QTextBrowser 不支援 border-radius，inline span 做不出
-圓角按鈕；改用 <img> 嵌 SVG 才有真圓角。按鈕約 17 種，手刻難維護，故以本腳本依
-BUTTONS 清單批次產出，新增/改標籤改清單重跑即可。
+圓角按鈕；改用 <img> 嵌 SVG 才有真圓角。手刻難維護，故以本腳本依 BUTTONS／TABS
+清單批次產出，新增/改標籤改清單重跑即可。
 
-產出：
-  res/buttons/<key>.svg          各按鈕圖（入庫、進 qrc）
+產出（真按鈕與子頁籤分流到兩個資料夾，共用 icon 不歸此處管）：
+  res/buttons/<key>.svg          真按鈕圖（qrc 別名 :/btn/）
+  res/tabs/<key>.svg             子頁籤圖（qrc 別名 :/tab/）
   ui_utils/button_imgs.py        label → (qrc 路徑, 顯示寬, 顯示高) 對照（入庫）
 
 配色比照 lib/theme.py 實際按鈕：
@@ -39,12 +40,16 @@ BUTTONS = [
     ("edit",           "✎ 修改",      "default"),
     ("save_order",     "💾 儲存排序", "default"),
     ("overdue",        "逾期未回",   "overdue"),
-    # 子頁籤（瀏覽 Tab4／歸檔 Tab5 的小 Tab）：透明底＋選中色字＋底線，比照實際樣式
-    ("sub_task",        "▤ 交辦單",   "tab"),
-    ("sub_crim_report", "❐ 刑案陳報", "tab"),
-    ("sub_gen_report",  "❏ 一般陳報", "tab"),
-    ("sub_crim_arch",   "❐ 刑案歸檔", "tab"),
-    ("sub_gen_arch",    "❏ 一般歸檔", "tab"),
+]
+
+# 子頁籤（瀏覽 Tab4／歸檔 Tab5／陳報 Tab2 的小 Tab）：透明底＋選中色字＋底線。
+# 與「真按鈕」分流：輸出到 res/tabs/、qrc 別名 :/tab/。
+TABS = [
+    ("task",        "▤ 交辦單",   "tab"),
+    ("crim_report", "❐ 刑案陳報", "tab"),
+    ("gen_report",  "❏ 一般陳報", "tab"),
+    ("crim_arch",   "❐ 刑案歸檔", "tab"),
+    ("gen_arch",    "❏ 一般歸檔", "tab"),
 ]
 
 STYLES = {
@@ -108,14 +113,17 @@ def _svg(label, style):
 
 def main():
     root = os.path.dirname(os.path.abspath(__file__))
-    out_dir = os.path.join(root, "res", "buttons")
-    os.makedirs(out_dir, exist_ok=True)
     mapping = {}   # label -> (src, w, h)
-    for key, label, style in BUTTONS:
-        svg, w = _svg(label, style)
-        with open(os.path.join(out_dir, f"{key}.svg"), "w", encoding="utf-8") as f:
-            f.write(svg)
-        mapping[label] = (f":/btn/{key}.svg", w, H)
+    # (清單, 子資料夾, qrc 別名前綴)
+    for items, subdir, prefix in ((BUTTONS, "buttons", "btn"),
+                                  (TABS, "tabs", "tab")):
+        out_dir = os.path.join(root, "res", subdir)
+        os.makedirs(out_dir, exist_ok=True)
+        for key, label, style in items:
+            svg, w = _svg(label, style)
+            with open(os.path.join(out_dir, f"{key}.svg"), "w", encoding="utf-8") as f:
+                f.write(svg)
+            mapping[label] = (f":/{prefix}/{key}.svg", w, H)
     # 產對照模組
     lines = ['# -*- coding: utf-8 -*-',
              '"""自動產生，請勿手改。由 gen_buttons.py 產出。',
@@ -127,7 +135,8 @@ def main():
     with open(os.path.join(root, "ui_utils", "button_imgs.py"), "w",
               encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
-    print(f"產出 {len(BUTTONS)} 顆按鈕 SVG → res/buttons/，對照 → ui_utils/button_imgs.py")
+    print(f"產出 {len(BUTTONS)} 按鈕 → res/buttons/、{len(TABS)} 子頁籤 → res/tabs/，"
+          "對照 → ui_utils/button_imgs.py")
     print("記得重編 qrc：pyside6-rcc res/resources.qrc -o res/resources_rc.py")
 
 if __name__ == "__main__":

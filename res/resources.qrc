@@ -23,10 +23,10 @@
     <file alias="btn/edit.svg">buttons/edit.svg</file>
     <file alias="btn/save_order.svg">buttons/save_order.svg</file>
     <file alias="btn/overdue.svg">buttons/overdue.svg</file>
-    <file alias="btn/sub_task.svg">buttons/sub_task.svg</file>
-    <file alias="btn/sub_crim_report.svg">buttons/sub_crim_report.svg</file>
-    <file alias="btn/sub_gen_report.svg">buttons/sub_gen_report.svg</file>
-    <file alias="btn/sub_crim_arch.svg">buttons/sub_crim_arch.svg</file>
-    <file alias="btn/sub_gen_arch.svg">buttons/sub_gen_arch.svg</file>
+    <file alias="tab/task.svg">tabs/task.svg</file>
+    <file alias="tab/crim_report.svg">tabs/crim_report.svg</file>
+    <file alias="tab/gen_report.svg">tabs/gen_report.svg</file>
+    <file alias="tab/crim_arch.svg">tabs/crim_arch.svg</file>
+    <file alias="tab/gen_arch.svg">tabs/gen_arch.svg</file>
   </qresource>
 </RCC>

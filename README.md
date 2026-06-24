@@ -494,8 +494,8 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 ### 注意事項
 
 - `dbfile.db` 不打包，與 exe 同資料夾（真實資料）
-- `arrow.svg` / `icon_pdf.svg` / `icon_archive.svg` / `icon_paper.svg` / `icon_help.svg` 及 `res/buttons/*.svg`（HELP 按鈕示意圖）已透過 `resources_rc.py` 內嵌，不需 `--add-data`；改了要重編 qrc（`pyside6-rcc res/resources.qrc -o res/resources_rc.py`）
-- `res/buttons/*.svg` 由 `python gen_buttons.py` 依按鈕清單批次產出（同時更新對照表 `ui_utils/button_imgs.py`）；改了按鈕標籤／配色改該腳本重跑，再重編 qrc
+- `arrow.svg` / `icon_pdf.svg` / `icon_archive.svg` / `icon_paper.svg` / `icon_help.svg`（共用 icon）及 `res/buttons/*.svg`（HELP 真按鈕圖，別名 `:/btn/`）、`res/tabs/*.svg`（HELP 子頁籤圖，別名 `:/tab/`）已透過 `resources_rc.py` 內嵌，不需 `--add-data`；改了要重編 qrc（`pyside6-rcc res/resources.qrc -o res/resources_rc.py`）
+- `res/buttons/*.svg`（真按鈕）與 `res/tabs/*.svg`（子頁籤）由 `python gen_buttons.py` 依 `BUTTONS`／`TABS` 清單批次產出（同時更新對照表 `ui_utils/button_imgs.py`）；改了標籤／配色改該腳本重跑，再重編 qrc
 - 列印用 `QtPrintSupport`，加 `--hidden-import PySide6.QtPrintSupport` 保險
 - matplotlib 只用 `backend_agg`（PNG）+ `backend_pdf`（存 PDF），其餘 backend 全排除
 - 結構重組後 `.ui` 進 `layouts/`、圖片進 `res/`，`--add-data` 路徑要對應第二參數（解壓目標目錄）
