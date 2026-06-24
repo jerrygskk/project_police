@@ -1,4 +1,6 @@
 ﻿HANDOVER.md
+docs/
+release_note_*.md
 fix_views.py
 dbfile_backup_*.db
 tests/pii_denylist.local.txt

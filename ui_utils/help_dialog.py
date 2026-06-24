@@ -10,7 +10,11 @@ from PySide6.QtWidgets import (
     QToolButton, QWidget, QTabWidget, QFrame,
 )
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QFont
+
+# 內文字距（百分比，100=預設）。QTextBrowser 不吃 CSS letter-spacing，
+# 只能在字型物件上設；CJK 內文加一點點字距較好讀。要調鬆／緊改這裡。
+_LETTER_SPACING = 92
 
 from lib.db_utils import BTN_CONFIRM, getResourcePath
 from .help_content import HELP_HTML, HELP_TITLES, HELP_TIPS
@@ -65,6 +69,9 @@ def helpDialog(parent, tab_index):
     browser = QTextBrowser()
     browser.setOpenExternalLinks(False)
     browser.setFrameShape(QFrame.NoFrame)
+    f = browser.font()
+    f.setLetterSpacing(QFont.PercentageSpacing, _LETTER_SPACING)
+    browser.setFont(f)
     browser.setHtml(f'<div style="font-size:13pt; color:#1c1c1e;">{html}</div>')
     lay.addWidget(browser, 1)
 

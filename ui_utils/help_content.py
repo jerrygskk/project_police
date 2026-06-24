@@ -158,7 +158,7 @@ HELP_PAGES = {
         ]),
         ("sec", "關鍵字搜尋", [
             ("ul", [
-                "搜尋框輸入關鍵字，比對該頁所有資料欄位，<b>邊打邊自動比對，不必按搜尋鈕</b>。",
+                "搜尋框輸入關鍵字，比對該頁所有資料欄位，<b>邊打邊自動比對</b>。",
                 "想只比對某一欄，用旁邊的<b>範圍下拉</b>指定欄位。",
             ]),
         ]),
@@ -175,7 +175,7 @@ HELP_PAGES = {
                  "設定本年度歸檔資料夾，再回來歸檔。"),
         ("sec", "歸檔流程（請依序操作）", [
             ("ol", [
-                "左側清單<b>點選一筆</b>待歸公文（整列選定、顯示藍邊）。",
+                "左側清單<b>點選一筆</b>待歸檔公文（整列選定、顯示藍邊）。",
                 "中間候選 PDF 依<b>命中字數</b>排序，確認正確檔案（可點圖示開啟）。",
                 "點<b>「歸檔預覽」</b>，系統解析檔名填入下方欄位。",
                 "<b>逐格核對</b> 日期／主旨／承辦人，有錯直接改，按「還原預設」可復原。",
@@ -212,9 +212,14 @@ HELP_PAGES = {
         ]),
         ("sec", "跨年度重置（最高風險操作）", [
             ("p", "<b>這是把整個系統歸零、迎接新年度的操作，一旦執行不可復原。</b>"),
-            ("p", "位於左側下方紅字鈕。執行後會：清空全部公文資料；刪除所有已停用的人員／部門／案類"
-                  "（要保留請先「啟用」）；流水號歸零；清空歸檔資料夾設定。執行前須手動輸入「RESET」，"
-                  "並會自動備份一份到資料庫目錄，完成後自動重啟。"),
+            ("p", "位於左側下方紅字鈕。執行後會："),
+            ("ul", [
+                "清空全部公文資料。",
+                "刪除所有已停用的人員／部門／案類（要保留請先「啟用」）。",
+                "流水號歸零。",
+                "清空歸檔資料夾設定。",
+            ]),
+            ("p", "執行前須手動輸入「RESET」，並會自動備份一份到資料庫目錄，完成後自動重啟。"),
         ]),
         ("warn", "重置前務必先把當年度的程式（exe）＋ dbfile.db 一起複製到獨立資料夾保留舊年度，"
                  "重置一旦執行就回不去。"),
@@ -228,7 +233,7 @@ HELP_PAGES = {
 # 條列縮排用 &nbsp;（換行續行不會懸掛對齊，影響甚微）。
 
 def _h_lead(t):
-    return f'<p style="font-size:13pt; color:#1c1c1e; line-height:150%; margin:4px 2px 12px;">{t}</p>'
+    return f'<p style="font-size:13pt; color:#1c1c1e; line-height:138%; margin:4px 2px 12px;">{t}</p>'
 
 def _h_muted(t):
     return f'<p style="font-size:12pt; color:#8e8e93; line-height:145%; margin:4px 2px 10px;">{t}</p>'
@@ -237,17 +242,25 @@ def _h_hint(t):
     return f'<p style="font-size:11pt; color:#8e8e93; margin:8px 2px 2px;">{t}</p>'
 
 def _h_header(t):
-    # 鋼藍底色帶（對齊主題霧面鋼藍）：鋼藍豎條 ▍ + 黑色半粗標題，框住標題
+    # 鋼藍細豎條 + 標題，下方細分隔線（取代滿版色帶，留白更清爽，對齊速查卡）
     return ('<p style="margin:0; font-size:6pt; line-height:6pt;">&#160;</p>'   # 段落上方留白
-            '<table width="100%" cellspacing="0" cellpadding="7"><tr>'
-            f'<td bgcolor="#DCE5EF" style="font-size:13pt;">'
-            f'<font color="#4977b1"><b>▍</b></font> <b><font color="#1c1c1e">{t}</font></b>'
-            '</td></tr></table>'
+            '<table cellspacing="0" cellpadding="0"><tr>'
+            '<td bgcolor="#4977b1" width="4" style="font-size:13pt; line-height:140%;">&#160;</td>'
+            '<td width="9" style="font-size:13pt;">&#160;</td>'
+            f'<td style="font-size:13pt;"><b><font color="#1c1c1e">{t}</font></b></td>'
+            '</tr></table>'
+            # 細分隔線（1pt 高鋼藍淺色橫條）
+            '<table width="100%" cellspacing="0" cellpadding="0"><tr>'
+            '<td bgcolor="#DCE5EF" style="font-size:1pt; line-height:1pt;">&#160;</td>'
+            '</tr></table>'
             '<p style="margin:0; font-size:5pt; line-height:5pt;">&#160;</p>')
 
 def _h_warn(t):
-    return ('<table width="100%" cellspacing="0" cellpadding="11"><tr>'
-            f'<td bgcolor="#FBF1DC" style="font-size:13pt; color:#7a5b16; line-height:150%;">⚠&nbsp; {t}</td>'
+    # 單格琥珀框：cellpadding 給均勻內距。QTextBrowser 對巢狀表格／rowspan 背景
+    # 渲染不穩（會多塞留白、版面跑掉），故警示框維持最單純的單格。
+    return ('<table width="100%" cellspacing="0" cellpadding="10"><tr>'
+            f'<td bgcolor="#FBF1DC" style="font-size:13pt; color:#7a5b16; '
+            f'line-height:142%;"><b>⚠</b>&nbsp; {t}</td>'
             '</tr></table>'
             '<p style="margin:0; font-size:5pt; line-height:5pt;">&#160;</p>')
 
@@ -256,29 +269,35 @@ def _h_body(items):
     for it in items:
         kind = it[0]
         if kind == "p":
-            parts.append(f'<p style="font-size:13pt; color:#1c1c1e; line-height:150%; margin:0 2px 6px;">{it[1]}</p>')
+            parts.append(f'<p style="font-size:13pt; color:#1c1c1e; line-height:138%; margin:0 2px 6px;">{it[1]}</p>')
         elif kind == "note":
             parts.append(f'<p style="font-size:11pt; color:#8e8e93; line-height:150%; margin:2px 2px 6px;">{it[1]}</p>')
         elif kind == "ol":
-            # 兩欄表格＝懸掛縮排：標號一欄、文字一欄，續行對齊文字欄
-            rows = "".join(
-                f'<tr><td width="26" valign="top" style="font-size:13pt; color:#1c1c1e; '
-                f'font-weight:600;">{i+1}.</td>'
-                f'<td valign="top" style="font-size:13pt; color:#1c1c1e; line-height:155%;">{t}</td></tr>'
-                for i, t in enumerate(it[1]))
+            # 兩欄表格＝懸掛縮排：序號用實心鋼藍方塊（內嵌單格表格、置頂不撐高），
+            # 文字一欄、續行對齊文字欄
+            rows = ""
+            for i, t in enumerate(it[1]):
+                badge = ('<table cellspacing="0" cellpadding="0"><tr>'
+                         '<td bgcolor="#4977b1" width="20" height="20" align="center" '
+                         'valign="middle" style="font-size:11pt; color:#FFFFFF; '
+                         f'font-weight:600; line-height:100%;">{i+1}</td>'
+                         '</tr></table>')
+                rows += (f'<tr><td width="27" valign="top">{badge}</td>'
+                         f'<td valign="top" style="font-size:13pt; color:#1c1c1e; '
+                         f'line-height:142%;">{t}</td></tr>')
             parts.append(f'<table width="100%" cellspacing="0" cellpadding="4">{rows}</table>'
                          '<p style="margin:0; font-size:3pt; line-height:3pt;">&#160;</p>')
         elif kind == "ul":
             rows = "".join(
                 '<tr><td width="18" valign="top" style="font-size:13pt; color:#1c1c1e;">·</td>'
-                f'<td valign="top" style="font-size:13pt; color:#1c1c1e; line-height:155%;">{t}</td></tr>'
+                f'<td valign="top" style="font-size:13pt; color:#1c1c1e; line-height:142%;">{t}</td></tr>'
                 for t in it[1])
             parts.append(f'<table width="100%" cellspacing="0" cellpadding="4">{rows}</table>'
                          '<p style="margin:0; font-size:3pt; line-height:3pt;">&#160;</p>')
         elif kind == "map":
             inner = "<br>".join(
                 f'<span style="font-weight:600;">{k}</span>&nbsp;&nbsp;{v}' for k, v in it[1])
-            parts.append(f'<p style="font-size:13pt; color:#1c1c1e; line-height:152%; margin:0 12px 6px;">{inner}</p>')
+            parts.append(f'<p style="font-size:13pt; color:#1c1c1e; line-height:140%; margin:0 12px 6px;">{inner}</p>')
         elif kind == "table":
             heads, rows = it[1], it[2]
             hcells = "".join(
@@ -397,4 +416,47 @@ HELP_TIPS = {
         "gen_paper_only":  "僅標記紙本歸檔，不需電子檔",
     },
     6: {},
+}
+
+
+# ── 速查卡濃縮母本（gen_quickstart.py 產 PDF 用）────────────────
+# 與 HELP_PAGES 同檔但各自合身：HELP 是完整說明，速查卡只留「用途一句＋
+# 關鍵步驟」，供新進承辦快速上手，細節仍回程式內 HELP。改速查卡只動這裡。
+# 結構：idx -> (用途一句, [步驟…], 提示 or None)
+QUICKSTART = {
+    0: ("批次把交辦單發文，並寫入發文日期與發文人員。",
+        ["文號輸入框輸入文號後按 Enter 加入清單，連續輸入下一筆。",
+         "選發文日期（預設今天）與發文人員。",
+         "按「確認發文」，確認筆數後一次寫入。"],
+        "發文日期顯示橘字＝該筆先前已發過，這次會覆蓋舊日期。"),
+    1: ("登錄一張新交辦單，由系統自動配發文號。",
+        ["填交辦事由、業務組、承辦人，設定收文日期與限辦日期（免覆則勾「免覆」）。",
+         "按「確認收文」取得文號，接著輸入下一張。"],
+        "主旨寫具體些，牽涉人名建議寫入，日後在「資料庫瀏覽」較好查。"),
+    2: ("登錄刑案陳報或一般案件陳報。",
+        ["上方頁籤切換「刑案／一般」表單。",
+         "填妥必填欄（刑案：發文分類、案類、承辦人、主旨、查獲受理日期；一般：分類、業務單位、承辦人、主旨）。",
+         "按「確認陳報」取得文號。"],
+        "刑案若有報案人強烈建議填寫，可減輕歸檔人員負擔。"),
+    3: ("依發文日期彙整當天所有發文，整理成簽收表。",
+        ["選發文日期（預設今天）。",
+         "按「產生」顯示簽收表預覽。",
+         "按「下載 PDF」存檔，或按「列印」送印（預設彩色＋長邊雙面）。"],
+        None),
+    4: ("查詢資料。上方分交辦單／刑案／一般三個子頁。",
+        ["搜尋框輸入關鍵字，邊打邊自動比對。",
+         "用範圍下拉可限定只比某一欄。",
+         "按「完整」顯示全部欄位（預設精簡只顯示重要欄位）。"],
+        "交辦單頁左下篩選鈕＝只看逾期未回；主旨欄左側 PDF 圖示可直接開檔。"),
+    5: ("把電子檔 PDF 歸檔並改名。本頁僅管理者可用。",
+        ["左側清單點選一筆待歸檔公文。",
+         "中間候選 PDF 依命中字數排序，確認正確檔案。",
+         "按「歸檔預覽」解析檔名，逐格核對日期／主旨／承辦人。",
+         "按「檔案歸檔」完成。"],
+        "開始前先確認歸檔資料夾已設定；只有紙本按「只歸紙本」。"),
+    6: ("維護人員／部門／案類等基礎資料、歸檔資料夾與跨年度重置。本頁僅管理者可用。",
+        ["新增或編輯清單項目（雙擊整列可編輯，含停用／啟用、別名）。",
+         "拖拉整列調整顯示順序，務必按「儲存排序」才會寫入。",
+         "按「歸檔資料夾」設定本年度歸檔根目錄。"],
+        "跨年度重置會清空全部資料且不可復原，執行前務必另存當年度程式與資料庫。"),
 }
