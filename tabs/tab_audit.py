@@ -20,7 +20,7 @@ from PySide6.QtGui import QColor
 from lib.base_tab import BaseTab
 from lib.db_utils import getResourcePath, loadUi, msgInfo, msgWarning
 from lib.auth_manager import AuthManager
-from ui_utils import setupDateEditCalendarOnly, runWithBusy
+from ui_utils import setupDateEditCalendarOnly, runWithBusy, preserveScroll
 
 
 # 身分碼 → 中文
@@ -83,8 +83,9 @@ class TabAudit(BaseTab):
         self._initCombos()
         self._initTable()
 
-        # 全量資料快取（list of dict）
+        # 全量資料快取（list of dict）＋資料指紋（沒變不重載）
         self._rows = []
+        self._fp = None
 
         # 事件
         self._from.dateChanged.connect(lambda *_: self._applyFilter())
@@ -171,7 +172,24 @@ class TabAudit(BaseTab):
         self._applyGate()
 
     # ── 載入 ──────────────────────────────────────────────────
+    def _fingerprint(self):
+        """資料指紋：(筆數, MAX(log_id))。append-only＋Reset 清空皆能偵測變動。"""
+        try:
+            conn = self._getConn()
+            row = conn.execute(
+                "SELECT COUNT(*), COALESCE(MAX(log_id), 0) FROM Audit_Log").fetchone()
+            conn.close()
+            return (row[0], row[1])
+        except Exception:
+            return None
+
     def _load(self):
+        # 指紋未變且已載入過 → 免重建（比照資料庫瀏覽頁，避免每次切入整表重建）
+        fp = self._fingerprint()
+        if fp is not None and fp == self._fp and self._table.rowCount():
+            return
+        self._fp = fp
+
         def _do():
             rows = []
             try:
@@ -196,7 +214,7 @@ class TabAudit(BaseTab):
             return rows
 
         self._rows = runWithBusy(self._inner, _do, text="載入中，請稍候…")
-        self._populate()
+        preserveScroll(self._table, self._populate)   # 重建時保留捲動位置
         self._applyFilter()
 
     def _populate(self):
