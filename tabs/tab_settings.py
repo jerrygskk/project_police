@@ -28,6 +28,7 @@ from lib.db_utils import (
     BTN_CONFIRM, BTN_CANCEL,
     loadUi, getResourcePath,
     performYearEndReset, getSetting, ARCHIVE_ROOT_KEY,
+    getConn, writeAudit, buildDetail,
 )
 from ui_utils import (
     PersonnelAddDialog, PersonnelEditDialog,
@@ -60,6 +61,7 @@ _NAV_DANGER = (
     "border: none; border-radius: 8px; padding: 10px 14px; "
     "font-weight: 500; font-size: 14pt; text-align: left; }"
     "QPushButton:hover { background-color: #f8e4e1; }"
+    "QPushButton:disabled { color: #c5c5c9; background-color: transparent; }"
 )
 
 class _RowDragFilter(QObject):
@@ -177,6 +179,7 @@ class TabSettings(BaseTab):
         ]
         btn_change_pwd = inner.findChild(QPushButton, "btn_change_pwd")
         btn_year_reset = inner.findChild(QPushButton, "btn_year_reset")
+        self._btn_year_reset = btn_year_reset
         btn_logout     = inner.findChild(QPushButton, "btn_logout")
         btn_archive_root = inner.findChild(QPushButton, "btn_archive_root")
         self._btn_archive_root = btn_archive_root
@@ -242,8 +245,9 @@ class TabSettings(BaseTab):
 
         # 監聽身份變化：登出時自動回到密碼驗證畫面
         AuthManager.instance().role_changed.connect(self._onRoleChanged)
-        # 啟動時若已是 admin（理論上不會），直接顯示主畫面
-        if AuthManager.instance().is_admin():
+        # 啟動時若已登入（理論上不會），直接顯示主畫面
+        if AuthManager.instance().is_manager():
+            self._applyRolePermissions()
             self._outer_stack.setCurrentIndex(1)
             self._switchPage(self._PAGE_PERSONNEL)
 
@@ -370,18 +374,60 @@ class TabSettings(BaseTab):
         if ok:
             self.lbl_login_err.setText("")
             self.w_password.clear()
+            self._applyRolePermissions()
             self._outer_stack.setCurrentIndex(1)
             self._switchPage(self._PAGE_PERSONNEL)
             # 登入成功即檢查（登入不走 on_activated，否則重置後首次登入不會提示）
             self._maybeWarnArchiveRoot()
         else:
+            # 登入失敗稽核（不記輸入內容）
+            try:
+                conn = getConn(self.db_path)
+                writeAudit(conn, role=AuthManager.instance().current_role,
+                           action="LOGIN_FAIL", operator=None,
+                           detail=buildDetail("系統", "登入失敗", ""))
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
             self.lbl_login_err.setText("密碼錯誤，請再試一次")
             self.w_password.clear()
             self.w_password.setFocus()
 
+    # ── 參照表維護權限：僅最高權限管理者（歸檔管理唯讀，含雙擊） ──
+    def _refEditable(self):
+        return AuthManager.instance().is_admin()
+
+    # ── 依登入身分套用功能可用性 ────────────────────────────────
+    def _applyRolePermissions(self):
+        """歸檔管理：參照表維護（新增／修改／儲存排序＋拖拉）與跨年度重置停用；
+        變更密碼／歸檔資料夾／登出／子頁查看仍可用。管理者全開。"""
+        from PySide6.QtWidgets import QAbstractItemView
+        is_admin = AuthManager.instance().is_admin()
+
+        # 參照表動作鈕（新增／修改／儲存排序）
+        for btn in (self.btn_add_personnel, self.btn_edit_personnel,
+                    self.btn_add_dept, self.btn_edit_dept,
+                    self.btn_add_casetype, self.btn_edit_casetype):
+            if btn:
+                btn.setEnabled(is_admin)
+        # 儲存排序鈕：管理者由 dirty 狀態決定，歸檔管理一律停用
+        for st in self._sort_state.values():
+            if not is_admin:
+                st["save_btn"].setEnabled(False)
+            # 拖拉排序：歸檔管理關閉，管理者開啟
+            st["table"].setDragDropMode(
+                QAbstractItemView.InternalMove if is_admin
+                else QAbstractItemView.NoDragDrop)
+
+        # 跨年度重置（破壞性，僅管理者）
+        if self._btn_year_reset:
+            self._btn_year_reset.setEnabled(is_admin)
+
     # ── 身份切換監聽：登出時回到密碼驗證畫面 ─────────────────────
     def _onRoleChanged(self, role):
-        if role == 'admin':
+        if role in ('admin', 'archive'):
+            self._applyRolePermissions()
             self._outer_stack.setCurrentIndex(1)
             self._switchPage(self._PAGE_PERSONNEL)
         else:
@@ -422,6 +468,25 @@ class TabSettings(BaseTab):
         dlg = ResetDialog(self.db_path, self.tab_widget)
         if not dlg.exec():
             return
+
+        # 1.5 先寫稽核紀錄（在備份之前，使歷史 log 隨備份保存；
+        #     performYearEndReset 會清空當前庫的 Audit_Log）
+        try:
+            conn = getConn(self.db_path)
+            n_main = sum(conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+                         for t in ("Document_Task", "Document_Criminal", "Document_General"))
+            m_off = sum(conn.execute(
+                          f"SELECT COUNT(*) FROM {t} WHERE is_active=0").fetchone()[0]
+                        for t in ("Ref_Personnel", "Ref_Departments", "Ref_CaseTypes"))
+            writeAudit(conn, role=AuthManager.instance().current_role,
+                       action="RESET", operator=AuthManager.instance().actor_name(),
+                       detail=buildDetail("系統", "重置",
+                                          f"清空主表 {n_main} 筆、刪除停用項 {m_off} 筆、"
+                                          f"重編參照表 id、歸零文號、清空歸檔路徑"))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
 
         # 2. 自動備份至 dbfile 同目錄
         try:
@@ -659,12 +724,16 @@ class TabSettings(BaseTab):
         self._loadRefGeneric("personnel")
 
     def _addPersonnel(self):
+        if not self._refEditable():
+            return
         dlg = PersonnelAddDialog(self.db_path, self.tab_widget)
         if dlg.exec():
             self._ref_dirty = True
             self._loadPersonnel()
 
     def _editPersonnel(self, row=None):
+        if not self._refEditable():
+            return
         if row is None:
             row = self._selected_row(self.tbl_personnel)
         if row < 0:
@@ -689,12 +758,16 @@ class TabSettings(BaseTab):
         self._loadRefGeneric("dept")
 
     def _addDept(self):
+        if not self._refEditable():
+            return
         dlg = DeptAddDialog(self.db_path, self.tab_widget)
         if dlg.exec():
             self._ref_dirty = True
             self._loadDept()
 
     def _editDept(self, row=None):
+        if not self._refEditable():
+            return
         if row is None:
             row = self._selected_row(self.tbl_dept)
         if row < 0:
@@ -719,12 +792,16 @@ class TabSettings(BaseTab):
         self._loadRefGeneric("casetype")
 
     def _addCaseType(self):
+        if not self._refEditable():
+            return
         dlg = CaseTypeAddDialog(self.db_path, self.tab_widget)
         if dlg.exec():
             self._ref_dirty = True
             self._loadCaseType()
 
     def _editCaseType(self, row=None):
+        if not self._refEditable():
+            return
         if row is None:
             row = self._selected_row(self.tbl_casetype)
         if row < 0:

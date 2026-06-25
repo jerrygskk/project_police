@@ -60,8 +60,21 @@ class AuthManager(QObject):
         return self._role
 
     def is_admin(self) -> bool:
-        """便捷判斷：當前是否為管理者。等同 current_role == 'admin'。"""
+        """便捷判斷：當前是否為最高權限管理者。等同 current_role == 'admin'。"""
         return self._role == 'admin'
+
+    def is_archive(self) -> bool:
+        """便捷判斷：當前是否為歸檔管理身分。"""
+        return self._role == 'archive'
+
+    def is_manager(self) -> bool:
+        """便捷判斷：當前是否具管理身分（歸檔管理或最高權限管理者）。
+        給「歸檔管理也能做」的功能判斷用（歸檔頁、瀏覽頁編輯、歸檔狀態區塊等）。"""
+        return self._role in ('admin', 'archive')
+
+    def actor_name(self) -> str:
+        """回傳當前身分的中文名（稽核 log 的 operator 用）。"""
+        return {'admin': '管理者', 'archive': '歸檔管理'}.get(self._role, '一般使用者')
 
     def can(self, action: str) -> bool:
         """
@@ -76,18 +89,23 @@ class AuthManager(QObject):
     # ── 登入 / 登出（由設定 Tab 呼叫）────────────────────
     def login(self, password: str, db_path: str) -> bool:
         """
-        驗證密碼並提升為 admin。
-        從 App_Settings 讀取 admin_password_hash，與 SHA-256(password) 比對。
+        驗證密碼並提升身分。先比對 admin_password_hash（最高權限管理者），
+        再比對 archive_password_hash（歸檔管理）；都不中則登入失敗。
         """
         try:
             h    = hashlib.sha256(password.encode()).hexdigest()
             conn = sqlite3.connect(db_path)
-            row  = conn.execute(
-                "SELECT value FROM App_Settings WHERE key='admin_password_hash'"
-            ).fetchone()
+            rows = dict(conn.execute(
+                "SELECT key, value FROM App_Settings "
+                "WHERE key IN ('admin_password_hash','archive_password_hash')"
+            ).fetchall())
             conn.close()
-            if row and row[0] == h:
+            if rows.get('admin_password_hash') == h:
                 self._role = 'admin'
+                self.role_changed.emit(self._role)
+                return True
+            if rows.get('archive_password_hash') == h:
+                self._role = 'archive'
                 self.role_changed.emit(self._role)
                 return True
         except Exception:
@@ -102,22 +120,27 @@ class AuthManager(QObject):
 
     def change_password(self, old_password: str, new_password: str, db_path: str) -> bool:
         """
-        變更管理者密碼。
+        變更「當前登入身分」那組密碼。
+        admin → admin_password_hash、archive → archive_password_hash。
         需先通過舊密碼驗證，再將新密碼 hash 寫入 App_Settings。
         """
+        key = {'admin': 'admin_password_hash',
+               'archive': 'archive_password_hash'}.get(self._role)
+        if not key:
+            return False
         try:
             old_h = hashlib.sha256(old_password.encode()).hexdigest()
             conn  = sqlite3.connect(db_path)
             row   = conn.execute(
-                "SELECT value FROM App_Settings WHERE key='admin_password_hash'"
+                "SELECT value FROM App_Settings WHERE key=?", (key,)
             ).fetchone()
             if not row or row[0] != old_h:
                 conn.close()
                 return False
             new_h = hashlib.sha256(new_password.encode()).hexdigest()
             conn.execute(
-                "UPDATE App_Settings SET value=? WHERE key='admin_password_hash'",
-                (new_h,)
+                "UPDATE App_Settings SET value=? WHERE key=?",
+                (new_h, key)
             )
             conn.commit()
             conn.close()

@@ -219,7 +219,8 @@ class TabDispatch(BaseTab):
     def _onEditRow(self, row, doc_id):
         """點擊超連結 → 開啟 EditDialog（一般使用者只可改承辦人）"""
         restricted = not AuthManager.instance().is_admin()
-        dlg = TaskEditDialog(self.db_path, doc_id, self.table, restricted=restricted)
+        dlg = TaskEditDialog(self.db_path, doc_id, self.table,
+                             restricted=restricted, source='dispatch')
         if dlg.exec():
             updated = dlg.get_updated()
             if updated:

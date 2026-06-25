@@ -241,7 +241,7 @@ class TabArchive(BaseTab):
             pass
         # 若一進來就停在本頁且已是管理者，立即帶入一次
         if self.tab_widget.currentIndex() == tab_index \
-                and AuthManager.instance().is_admin():
+                and AuthManager.instance().is_manager():
             for key in ("crim", "gen"):
                 self._autoloadDefault(key)
 
@@ -250,7 +250,7 @@ class TabArchive(BaseTab):
         if idx != getattr(self, "_tab_index", -1):
             return
         self._updateArchWarn()
-        if AuthManager.instance().is_admin():
+        if AuthManager.instance().is_manager():
             for key in ("crim", "gen"):
                 self._autoloadDefault(key)
 
@@ -1124,13 +1124,13 @@ class TabArchive(BaseTab):
         return (row[0], row[1])
 
     def _applyGate(self, _role=None):
-        """依身分切換權限牆：admin → 內容頁，其餘 → 提示頁。"""
+        """依身分切換權限牆：管理者／歸檔管理 → 內容頁，其餘 → 提示頁。"""
         stack = getattr(self, "_outer_stack", None)
         if stack:
-            is_admin = AuthManager.instance().is_admin()
-            stack.setCurrentIndex(1 if is_admin else 0)
-            # 登入成為管理者（即使正停在本頁）也自動帶入歸檔根
-            if is_admin and hasattr(self, "_folders"):
+            is_mgr = AuthManager.instance().is_manager()
+            stack.setCurrentIndex(1 if is_mgr else 0)
+            # 登入後（即使正停在本頁）也自動帶入歸檔根
+            if is_mgr and hasattr(self, "_folders"):
                 for key in ("crim", "gen"):
                     self._autoloadDefault(key)
 
@@ -1163,6 +1163,6 @@ class TabArchive(BaseTab):
                 self._sigs[key] = sig
 
         # 自動帶入歸檔根資料夾（尚未選擇時顯示名稱並掃描），手動選仍可覆蓋
-        if AuthManager.instance().is_admin():
+        if AuthManager.instance().is_manager():
             for key in ("crim", "gen"):
                 self._autoloadDefault(key)

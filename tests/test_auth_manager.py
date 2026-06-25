@@ -35,6 +35,9 @@ class _AuthBase(unittest.TestCase):
             "CREATE TABLE App_Settings (key TEXT PRIMARY KEY, value TEXT)")
         conn.execute(
             "INSERT INTO App_Settings VALUES('admin_password_hash', ?)",
+            (_hash("admin"),))
+        conn.execute(
+            "INSERT INTO App_Settings VALUES('archive_password_hash', ?)",
             (_hash("0000"),))
         conn.commit()
         conn.close()
@@ -55,39 +58,62 @@ class TestPermissions(_AuthBase):
         self.assertFalse(self.auth.can("ref"))
 
     def test_admin_can_everything(self):
-        self.auth.login("0000", self.db_path)
+        self.auth.login("admin", self.db_path)
         self.assertTrue(self.auth.is_admin())
         for action in ("edit", "delete", "ref", "anything"):
             self.assertTrue(self.auth.can(action))
 
 
 class TestLogin(_AuthBase):
-    def test_correct_password(self):
-        self.assertTrue(self.auth.login("0000", self.db_path))
+    def test_admin_password(self):
+        self.assertTrue(self.auth.login("admin", self.db_path))
         self.assertEqual(self.auth.current_role, "admin")
+        self.assertTrue(self.auth.is_admin())
+        self.assertTrue(self.auth.is_manager())
+        self.assertFalse(self.auth.is_archive())
+
+    def test_archive_password(self):
+        self.assertTrue(self.auth.login("0000", self.db_path))
+        self.assertEqual(self.auth.current_role, "archive")
+        self.assertTrue(self.auth.is_archive())
+        self.assertTrue(self.auth.is_manager())     # 歸檔管理也算管理身分
+        self.assertFalse(self.auth.is_admin())      # 但不是最高權限
+
+    def test_actor_name(self):
+        self.assertEqual(self.auth.actor_name(), "一般使用者")
+        self.auth.login("0000", self.db_path)
+        self.assertEqual(self.auth.actor_name(), "歸檔管理")
+        self.auth.login("admin", self.db_path)
+        self.assertEqual(self.auth.actor_name(), "管理者")
 
     def test_wrong_password(self):
         self.assertFalse(self.auth.login("9999", self.db_path))
         self.assertEqual(self.auth.current_role, "user")
 
     def test_logout(self):
-        self.auth.login("0000", self.db_path)
+        self.auth.login("admin", self.db_path)
         self.auth.logout()
         self.assertEqual(self.auth.current_role, "user")
-        self.assertFalse(self.auth.is_admin())
+        self.assertFalse(self.auth.is_manager())
 
     def test_bad_db_path(self):
-        self.assertFalse(self.auth.login("0000", "Z:/does/not/exist.db"))
+        self.assertFalse(self.auth.login("admin", "Z:/does/not/exist.db"))
 
 
 class TestChangePassword(_AuthBase):
-    def test_change_then_login_with_new(self):
+    def test_user_role_cannot_change(self):
+        # 未登入（user）不得變更密碼
+        self.assertFalse(
+            self.auth.change_password("admin", "1234", self.db_path))
+
+    def test_admin_change_then_login_with_new(self):
+        self.auth.login("admin", self.db_path)
         self.assertTrue(
-            self.auth.change_password("0000", "1234", self.db_path))
-        # 舊密碼失效、新密碼可登入
-        self.assertFalse(self.auth.login("0000", self.db_path))
+            self.auth.change_password("admin", "1234", self.db_path))
+        self.auth.logout()
+        self.assertFalse(self.auth.login("admin", self.db_path))
         self.assertTrue(self.auth.login("1234", self.db_path))
-        # DB 內確實存的是新密碼的 hash
+        self.assertTrue(self.auth.is_admin())
         conn = sqlite3.connect(self.db_path)
         val = conn.execute(
             "SELECT value FROM App_Settings WHERE key='admin_password_hash'"
@@ -95,11 +121,24 @@ class TestChangePassword(_AuthBase):
         conn.close()
         self.assertEqual(val, _hash("1234"))
 
+    def test_archive_change_only_affects_archive_group(self):
+        self.auth.login("0000", self.db_path)
+        self.assertTrue(
+            self.auth.change_password("0000", "5678", self.db_path))
+        self.auth.logout()
+        # 歸檔密碼換新；管理者密碼不受影響
+        self.assertTrue(self.auth.login("5678", self.db_path))
+        self.assertEqual(self.auth.current_role, "archive")
+        self.auth.logout()
+        self.assertTrue(self.auth.login("admin", self.db_path))
+        self.assertEqual(self.auth.current_role, "admin")
+
     def test_wrong_old_password_rejected(self):
+        self.auth.login("admin", self.db_path)
         self.assertFalse(
             self.auth.change_password("xxxx", "1234", self.db_path))
-        # 密碼未變
-        self.assertTrue(self.auth.login("0000", self.db_path))
+        self.auth.logout()
+        self.assertTrue(self.auth.login("admin", self.db_path))
 
 
 if __name__ == "__main__":

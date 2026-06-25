@@ -7,7 +7,10 @@ from PySide6.QtWidgets import (
 )
 
 from lib.base_tab import BaseTab
-from lib.db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgWarning, msgCritical, confirmBox
+from lib.db_utils import (getResourcePath, loadUi, nextDocId, DEBUG_MODE,
+                          msgWarning, msgCritical, confirmBox,
+                          writeAudit, buildDetail, auditStaffName)
+from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
     setupFilterCombo, setupDateEditToToday, setupDateEditCalendarOnly, refreshFilterCombo,
@@ -620,6 +623,14 @@ class TabReport(BaseTab):
             return
         try:
             conn = self._getConn()
+            # 清空前先取 operator（陳報人）與主旨快照
+            row = conn.execute(
+                "SELECT sender_id, subject_summary FROM Document_Criminal WHERE doc_id=?",
+                (doc_id,)).fetchone()
+            # admin 跨庫操作與資料列的人脫鉤 → 留空；一般／歸檔管理記陳報人
+            operator = (None if AuthManager.instance().is_admin()
+                        else (auditStaffName(conn, row[0]) if row else ""))
+            subject  = (row[1] if row else "") or ""
             conn.execute("""
                 UPDATE Document_Criminal SET
                     report_date=NULL, sender_id=NULL, case_type=NULL, case_status=NULL,
@@ -627,6 +638,11 @@ class TabReport(BaseTab):
                     reporter_name=NULL, receiver_id=NULL, is_reported=0, is_electronic=''
                 WHERE doc_id=?
             """, (doc_id,))
+            writeAudit(conn,
+                       role=AuthManager.instance().current_role,
+                       action="DELETE", target_table="Document_Criminal",
+                       target_id=doc_id, operator=operator,
+                       detail=buildDetail("刑案", "刪除", f"主旨：{subject}"))
             conn.commit()
             conn.close()
         except Exception as e:
@@ -647,12 +663,25 @@ class TabReport(BaseTab):
             return
         try:
             conn = self._getConn()
+            # 清空前先取 operator（陳報人）與主旨快照
+            row = conn.execute(
+                "SELECT sender_id, subject FROM Document_General WHERE doc_id=?",
+                (doc_id,)).fetchone()
+            # admin 跨庫操作與資料列的人脫鉤 → 留空；一般／歸檔管理記陳報人
+            operator = (None if AuthManager.instance().is_admin()
+                        else (auditStaffName(conn, row[0]) if row else ""))
+            subject  = (row[1] if row else "") or ""
             conn.execute("""
                 UPDATE Document_General SET
                     report_date=NULL, sender_id=NULL, dept_id=NULL, gen_cat_id=NULL,
                     subject=NULL, processor_id=NULL, is_reported=0, is_electronic=''
                 WHERE doc_id=?
             """, (doc_id,))
+            writeAudit(conn,
+                       role=AuthManager.instance().current_role,
+                       action="DELETE", target_table="Document_General",
+                       target_id=doc_id, operator=operator,
+                       detail=buildDetail("一般", "刪除", f"主旨：{subject}"))
             conn.commit()
             conn.close()
         except Exception as e:

@@ -15,11 +15,48 @@ def getConn(db_path):
     return sqlite3.connect(db_path)
 
 
+# ── 稽核紀錄（Audit_Log）─────────────────────────────────────────
+def buildDetail(category, action, content=""):
+    """組稽核 detail 字串：`[類別][動作]內容`。
+    例：buildDetail("交辦","刪除","主旨：協尋失蹤人口")
+        → "[交辦][刪除]主旨：協尋失蹤人口" """
+    return f"[{category}][{action}]{content}"
+
+
+def auditStaffName(conn, staff_id):
+    """以 staff_id 解析當下姓名快照（operator 用）。查無回原 id 字串。"""
+    if not staff_id:
+        return ""
+    try:
+        r = conn.execute(
+            "SELECT staff_name FROM Ref_Personnel WHERE staff_id=?",
+            (staff_id,)).fetchone()
+        return r[0] if r and r[0] else str(staff_id)
+    except Exception:
+        return str(staff_id)
+
+
+def writeAudit(conn, *, role, action, detail,
+               target_table=None, target_id=None, operator=None):
+    """寫入一筆稽核紀錄。使用呼叫端傳入的同一個 conn（與業務操作同一
+    transaction，由呼叫端統一 commit）。ts 由 SQLite 取本機時間。
+    缺 Audit_Log 表的舊 DB 不致中斷業務操作（靜默跳過）。"""
+    try:
+        conn.execute(
+            "INSERT INTO Audit_Log"
+            "(ts, role, action, target_table, target_id, operator, detail) "
+            "VALUES (datetime('now','localtime'), ?, ?, ?, ?, ?, ?)",
+            (role, action, target_table, target_id, operator, detail))
+    except Exception:
+        pass
+
+
 # ── Dialog 按鈕樣式常數 ───────────────────────────────────────
-_BTN_BASE    = "border-radius: 6px; padding: 4px 16px; min-width: 80px; font-weight: bold;"
-BTN_CONFIRM  = f"QPushButton {{ background-color: #D0ECF5; color: #000000; {_BTN_BASE} }} QPushButton:hover {{ background-color: #B8D8E8; }}"
-BTN_DANGER   = f"QPushButton {{ background-color: #F5D4D0; color: #000000; {_BTN_BASE} }} QPushButton:hover {{ background-color: #E0BDB8; }}"
-BTN_CANCEL   = f"QPushButton {{ background-color: #F2F2F7; color: #000000; {_BTN_BASE} }} QPushButton:hover {{ background-color: #E5E5EA; }}"
+_BTN_BASE     = "border-radius: 6px; padding: 4px 16px; min-width: 80px; font-weight: bold;"
+_BTN_DISABLED = "QPushButton:disabled { background-color: #e5e5ea; color: #b0b0b5; }"
+BTN_CONFIRM  = f"QPushButton {{ background-color: #D0ECF5; color: #000000; {_BTN_BASE} }} QPushButton:hover {{ background-color: #B8D8E8; }} {_BTN_DISABLED}"
+BTN_DANGER   = f"QPushButton {{ background-color: #F5D4D0; color: #000000; {_BTN_BASE} }} QPushButton:hover {{ background-color: #E0BDB8; }} {_BTN_DISABLED}"
+BTN_CANCEL   = f"QPushButton {{ background-color: #F2F2F7; color: #000000; {_BTN_BASE} }} QPushButton:hover {{ background-color: #E5E5EA; }} {_BTN_DISABLED}"
 
 
 # ── 通用訊息彈窗（確定按鈕中文，統一樣式）────────────────────
@@ -243,6 +280,12 @@ def performYearEndReset(db_path):
             conn.execute(
                 "INSERT INTO App_Settings(key, value) VALUES(?,'')"
                 " ON CONFLICT(key) DO UPDATE SET value=''", (_k,))
+
+        # 7. 清空稽核紀錄（重置前已整庫備份，歷史 log 留在備份檔；當前庫歸零）
+        try:
+            conn.execute("DELETE FROM Audit_Log")
+        except Exception:
+            pass  # 缺表的舊 DB 跳過
 
         conn.commit()
     except Exception:

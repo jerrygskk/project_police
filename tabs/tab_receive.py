@@ -6,7 +6,10 @@ from PySide6.QtWidgets import (
 )
 
 from lib.base_tab import BaseTab
-from lib.db_utils import getResourcePath, loadUi, nextDocId, DEBUG_MODE, msgWarning, msgCritical, confirmBox
+from lib.db_utils import (getResourcePath, loadUi, nextDocId, DEBUG_MODE,
+                          msgWarning, msgCritical, confirmBox,
+                          writeAudit, buildDetail, auditStaffName)
+from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
     TaskEditDialog,
@@ -255,6 +258,14 @@ class TabReceive(BaseTab):
 
         try:
             conn = self._getConn()
+            # 清空前先取 operator（收文者）與主旨快照，供稽核紀錄
+            row = conn.execute(
+                "SELECT receive_id, subject FROM Document_Task WHERE doc_id=?",
+                (doc_id,)).fetchone()
+            # admin 跨庫操作與資料列的人脫鉤 → 留空；一般／歸檔管理記收文者
+            operator = (None if AuthManager.instance().is_admin()
+                        else (auditStaffName(conn, row[0]) if row else ""))
+            subject  = (row[1] if row else "") or ""
             conn.execute("""
                 UPDATE Document_Task SET
                     receive_date=NULL, receive_id=NULL, dept_id=NULL,
@@ -262,6 +273,11 @@ class TabReceive(BaseTab):
                     dispatch_date=NULL, sender_id=NULL, timestamp=NULL
                 WHERE doc_id=?
             """, (doc_id,))
+            writeAudit(conn,
+                       role=AuthManager.instance().current_role,
+                       action="DELETE", target_table="Document_Task",
+                       target_id=doc_id, operator=operator,
+                       detail=buildDetail("交辦", "刪除", f"主旨：{subject}"))
             conn.commit()
             conn.close()
         except Exception as e:

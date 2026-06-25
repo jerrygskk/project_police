@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFontMetrics
 
-from lib.db_utils import BTN_CONFIRM, BTN_CANCEL, confirmBox, getConn
+from lib.db_utils import (BTN_CONFIRM, BTN_CANCEL, confirmBox, getConn,
+                          writeAudit, buildDetail, auditStaffName)
 from lib.auth_manager import AuthManager
 from ui_utils.widgets import setupFilterCombo, setupDateEditCalendarOnly
 
@@ -157,6 +158,23 @@ def _load_arch_status(dlg, reported, electronic):
     _refresh_arch_name(dlg)
 
 
+def _audit_arch_cancel(dlg, conn, category, table, subject):
+    """歸檔取消稽核：電子＝退回未歸、紙本＝取消勾選。用同一 conn，呼叫端 commit。"""
+    am = AuthManager.instance()
+    subject = subject or ""
+    if getattr(dlg, "_arch_clear_pending", False):
+        writeAudit(conn, role=am.current_role, action="ARCHIVE",
+                   target_table=table, target_id=dlg.doc_id,
+                   operator=am.actor_name(),
+                   detail=buildDetail("歸檔", "取消", f"[電子]主旨：{subject}"))
+    if getattr(dlg, "_arch_reported_orig", False) \
+            and not dlg.w_arch_reported.isChecked():
+        writeAudit(conn, role=am.current_role, action="ARCHIVE",
+                   target_table=table, target_id=dlg.doc_id,
+                   operator=am.actor_name(),
+                   detail=buildDetail("歸檔", "取消", f"[紙本]主旨：{subject}"))
+
+
 def _get_conn(db_path):
     return getConn(db_path)
 
@@ -216,11 +234,12 @@ class _BaseEditDialog(QDialog):
 class TaskEditDialog(_BaseEditDialog):
     """交辦單修改彈窗（Tab 0 / Tab 1 共用）"""
 
-    def __init__(self, db_path, doc_id, parent=None, restricted=False):
+    def __init__(self, db_path, doc_id, parent=None, restricted=False, source=None):
         super().__init__(parent)
         self.db_path = db_path
         self.doc_id  = doc_id
         self.restricted = restricted   # True：一般使用者，只可改承辦人
+        self.source  = source          # 'dispatch'＝發文頁觸發（僅此來源記「修改承辦」稽核）
         self.setWindowTitle('交辦單修改')
 
         # ── 版面常數 ──────────────────────────────────────────
@@ -451,12 +470,30 @@ class TaskEditDialog(_BaseEditDialog):
 
         try:
             conn = _get_conn(self.db_path)
+            # 發文頁觸發且承辦人有變動時，記稽核（operator＝送文者）
+            old_proc = old_sender = None
+            if self.source == 'dispatch':
+                r = conn.execute(
+                    "SELECT processor_id, sender_id FROM Document_Task WHERE doc_id=?",
+                    (self.doc_id,)).fetchone()
+                if r:
+                    old_proc, old_sender = r[0], r[1]
             conn.execute("""
                 UPDATE Document_Task
                 SET receive_date=?, receive_id=?, dept_id=?,
                     subject=?, processor_id=?, deadline=?
                 WHERE doc_id=?
             """, (recv_date, recv_id, dept_id, subject, proc_id, deadline, self.doc_id))
+            if self.source == 'dispatch' and old_proc != proc_id:
+                writeAudit(conn,
+                           role=AuthManager.instance().current_role,
+                           action="UPDATE", target_table="Document_Task",
+                           target_id=self.doc_id,
+                           operator=auditStaffName(conn, old_sender),
+                           detail=buildDetail(
+                               "交辦", "修改",
+                               f"{auditStaffName(conn, old_proc)} → "
+                               f"{auditStaffName(conn, proc_id)}"))
             conn.commit()
             conn.close()
         except Exception as e:
@@ -621,9 +658,9 @@ QRadioButton:checked {
         root.addLayout(form)
         root.addSpacing(8)
 
-        # 歸檔狀態區塊（僅 admin）
+        # 歸檔狀態區塊（管理者／歸檔管理）
         self.w_arch_reported = None
-        if AuthManager.instance().is_admin():
+        if AuthManager.instance().is_manager():
             root.addWidget(_build_archive_group(self))
             root.addSpacing(4)
 
@@ -730,6 +767,7 @@ QRadioButton:checked {
                     conn.execute(
                         "UPDATE Document_Criminal SET is_electronic='' WHERE doc_id=?",
                         (self.doc_id,))
+                _audit_arch_cancel(self, conn, "刑案", "Document_Criminal", subject)
             conn.commit()
             conn.close()
         except Exception as e:
@@ -853,9 +891,9 @@ class GeneralEditDialog(_BaseEditDialog):
         root.addLayout(form)
         root.addSpacing(8)
 
-        # 歸檔狀態區塊（僅 admin）
+        # 歸檔狀態區塊（管理者／歸檔管理）
         self.w_arch_reported = None
-        if AuthManager.instance().is_admin():
+        if AuthManager.instance().is_manager():
             root.addWidget(_build_archive_group(self))
             root.addSpacing(4)
 
@@ -941,6 +979,7 @@ class GeneralEditDialog(_BaseEditDialog):
                     conn.execute(
                         "UPDATE Document_General SET is_electronic='' WHERE doc_id=?",
                         (self.doc_id,))
+                _audit_arch_cancel(self, conn, "一般", "Document_General", subject)
             conn.commit()
             conn.close()
         except Exception as e:

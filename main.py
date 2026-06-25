@@ -125,11 +125,11 @@ class DocumentManager:
         self._installIdleFilter()
 
     def _updateTitle(self, role):
-        suffix = "管理者模式" if role == 'admin' else "一般使用者"
+        suffix = {'admin': '管理者模式', 'archive': '歸檔管理'}.get(role, '一般使用者')
         self.window.setWindowTitle(f"{self._base_title}  [{suffix}]  - v{__version__}")
-        # 登入時啟動計時，登出時停掉
+        # 登入時啟動計時，登出時停掉（管理者與歸檔管理皆計時）
         if hasattr(self, '_idle_timer'):
-            if role == 'admin':
+            if role in ('admin', 'archive'):
                 self._idle_timer.start(self._IDLE_TIMEOUT_MS)
             else:
                 self._idle_timer.stop()
@@ -144,7 +144,7 @@ class DocumentManager:
                 t = ev.type()
                 if t in (QEvent.MouseButtonPress, QEvent.MouseMove,
                          QEvent.KeyPress, QEvent.Wheel):
-                    if AuthManager.instance().current_role == 'admin':
+                    if AuthManager.instance().is_manager():
                         mgr._idle_timer.start(mgr._IDLE_TIMEOUT_MS)
                 return False
 
@@ -153,9 +153,9 @@ class DocumentManager:
         QApplication.instance().installEventFilter(self._idle_filter)
 
     def _onIdleTimeout(self):
-        if AuthManager.instance().current_role == 'admin':
+        if AuthManager.instance().is_manager():
             AuthManager.instance().logout()
-            msgInfo("自動登出", "閒置已超過 20 分鐘，已自動登出管理者身份。", self.window)
+            msgInfo("自動登出", "閒置已超過 20 分鐘，已自動登出，請重新登入。", self.window)
 
     _IDX_SETTINGS = 6          # 資料庫設定 Tab index
     _IDX_DBBROWSE = 4          # 資料庫瀏覽 Tab index

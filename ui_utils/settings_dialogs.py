@@ -88,6 +88,18 @@ def _has_alias_col(conn):
     return any(r[1] == "alias"
                for r in conn.execute("PRAGMA table_info(Ref_Personnel)"))
 
+
+def _audit_ref(conn, category, act, content, table=None, ref_id=None):
+    """參照表維護稽核（operator＝登入身分）。用同一 conn，由呼叫端 commit。"""
+    from lib.db_utils import writeAudit, buildDetail
+    from lib.auth_manager import AuthManager
+    am = AuthManager.instance()
+    writeAudit(conn, role=am.current_role, action="REF",
+               target_table=table, target_id=ref_id,
+               operator=am.actor_name(),
+               detail=buildDetail(category, act, content))
+
+
 class PersonnelAddDialog(QDialog):
 
     def __init__(self, db_path, parent=None):
@@ -155,6 +167,7 @@ class PersonnelAddDialog(QDialog):
             if _has_alias_col(conn):
                 conn.execute("UPDATE Ref_Personnel SET alias=? WHERE staff_id=?",
                              (alias, self._new_id))
+            _audit_ref(conn, "人員", "新增", name, "Ref_Personnel", self._new_id)
             conn.commit()
             conn.close()
             self._result = (self._new_id, name, bool(is_active))
@@ -175,6 +188,8 @@ class PersonnelEditDialog(QDialog):
         self.staff_id = staff_id      # 真 PK，給 UPDATE 用，不顯示
         self.seq      = seq           # 序號（列位置），僅供顯示
         self._result  = None
+        self._old_name   = staff_name
+        self._old_active = bool(is_active)
         self.setWindowTitle('修改人員')
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
         self.setStyleSheet(_DIALOG_SS)
@@ -240,6 +255,12 @@ class PersonnelEditDialog(QDialog):
             if _has_alias_col(conn):
                 conn.execute("UPDATE Ref_Personnel SET alias=? WHERE staff_id=?",
                              (alias, self.staff_id))
+            if name != self._old_name:
+                _audit_ref(conn, "人員", "修改", f"{self._old_name} → {name}",
+                           "Ref_Personnel", self.staff_id)
+            if bool(is_active) != self._old_active:
+                _audit_ref(conn, "人員", "啟用" if is_active else "停用", name,
+                           "Ref_Personnel", self.staff_id)
             conn.commit()
             conn.close()
             self._result = (self.staff_id, name, bool(is_active))
@@ -314,6 +335,7 @@ class DeptAddDialog(QDialog):
             conn.execute(
                 "INSERT INTO Ref_Departments (dept_id, dept_name, is_active, sort_order) VALUES (?,?,?,?)",
                 (self._new_id, name, is_active, new_sort))
+            _audit_ref(conn, "部門", "新增", name, "Ref_Departments", self._new_id)
             conn.commit()
             conn.close()
             self._result = (self._new_id, name, bool(is_active))
@@ -334,6 +356,8 @@ class DeptEditDialog(QDialog):
         self.dept_id = dept_id        # 真 PK，給 UPDATE 用，不顯示
         self.seq     = seq            # 序號（列位置），僅供顯示
         self._result = None
+        self._old_name   = dept_name
+        self._old_active = bool(is_active)
         self.setWindowTitle('修改部門')
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
         self.setStyleSheet(_DIALOG_SS)
@@ -378,6 +402,12 @@ class DeptEditDialog(QDialog):
             conn.execute(
                 "UPDATE Ref_Departments SET dept_name=?, is_active=? WHERE dept_id=?",
                 (name, is_active, self.dept_id))
+            if name != self._old_name:
+                _audit_ref(conn, "部門", "修改", f"{self._old_name} → {name}",
+                           "Ref_Departments", self.dept_id)
+            if bool(is_active) != self._old_active:
+                _audit_ref(conn, "部門", "啟用" if is_active else "停用", name,
+                           "Ref_Departments", self.dept_id)
             conn.commit()
             conn.close()
             self._result = (self.dept_id, name, bool(is_active))
@@ -452,6 +482,7 @@ class CaseTypeAddDialog(QDialog):
             conn.execute(
                 "INSERT INTO Ref_CaseTypes (case_type_id, case_type_name, is_active, sort_order) VALUES (?,?,?,?)",
                 (self._new_id, name, is_active, new_sort))
+            _audit_ref(conn, "案類", "新增", name, "Ref_CaseTypes", self._new_id)
             conn.commit()
             conn.close()
             self._result = (self._new_id, name, bool(is_active))
@@ -472,6 +503,8 @@ class CaseTypeEditDialog(QDialog):
         self.type_id = type_id        # 真 PK，給 UPDATE 用，不顯示
         self.seq     = seq            # 序號（列位置），僅供顯示
         self._result = None
+        self._old_name   = type_name
+        self._old_active = bool(is_active)
         self.setWindowTitle('修改案件類型')
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
         self.setStyleSheet(_DIALOG_SS)
@@ -516,6 +549,12 @@ class CaseTypeEditDialog(QDialog):
             conn.execute(
                 "UPDATE Ref_CaseTypes SET case_type_name=?, is_active=? WHERE case_type_id=?",
                 (name, is_active, self.type_id))
+            if name != self._old_name:
+                _audit_ref(conn, "案類", "修改", f"{self._old_name} → {name}",
+                           "Ref_CaseTypes", self.type_id)
+            if bool(is_active) != self._old_active:
+                _audit_ref(conn, "案類", "啟用" if is_active else "停用", name,
+                           "Ref_CaseTypes", self.type_id)
             conn.commit()
             conn.close()
             self._result = (self.type_id, name, bool(is_active))
@@ -537,7 +576,9 @@ class ChangePasswordDialog(QDialog):
     def __init__(self, db_path, parent=None):
         super().__init__(parent)
         self.db_path = db_path
-        self.setWindowTitle('變更管理者密碼')
+        from lib.auth_manager import AuthManager
+        self._actor = AuthManager.instance().actor_name()
+        self.setWindowTitle(f'變更{self._actor}密碼')
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
         self.setStyleSheet(_DIALOG_SS)
         self._build()
@@ -546,6 +587,10 @@ class ChangePasswordDialog(QDialog):
         vlay = QVBoxLayout(self)
         vlay.setSpacing(16)
         vlay.setContentsMargins(24, 20, 24, 16)
+
+        lbl_who = QLabel(f"目前變更的是「{self._actor}」的登入密碼")
+        lbl_who.setStyleSheet("color: #6b6b6e;")
+        vlay.addWidget(lbl_who)
 
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignRight)
@@ -598,8 +643,21 @@ class ChangePasswordDialog(QDialog):
             return
 
         from lib.auth_manager import AuthManager
-        ok = AuthManager.instance().change_password(old, new, self.db_path)
+        am = AuthManager.instance()
+        actor = am.actor_name()
+        ok = am.change_password(old, new, self.db_path)
         if ok:
+            # 變更密碼事件稽核（不記密碼內容）
+            try:
+                from lib.db_utils import writeAudit, buildDetail, getConn
+                conn = getConn(self.db_path)
+                writeAudit(conn, role=am.current_role, action="PWD",
+                           operator=actor,
+                           detail=buildDetail("系統", "修改", f"{actor}變更密碼"))
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
             self.accept()
         else:
             self.lbl_err.setText("目前密碼錯誤")
@@ -835,13 +893,30 @@ class ArchiveRootDialog(QDialog):
             cb.blockSignals(False)
 
     def _save(self):
-        from lib.db_utils import setSetting, ARCHIVE_ROOT_KEY, clearPdfIndexCache
+        from lib.db_utils import (setSetting, getSetting, ARCHIVE_ROOT_KEY,
+                                  clearPdfIndexCache, getConn,
+                                  writeAudit, buildDetail)
         root = self.w_path.text().strip().replace("/", "\\").rstrip("\\")
         if not root:
             self.w_path.setStyleSheet("border: 1px solid #c0392b;")
             return
+        old_root = (getSetting(self.db_path, ARCHIVE_ROOT_KEY, "") or "").strip()
         setSetting(self.db_path, ARCHIVE_ROOT_KEY, root)
         setSetting(self.db_path, "archive_subdir_crim", self.cb_crim.currentText().strip())
         setSetting(self.db_path, "archive_subdir_gen",  self.cb_gen.currentText().strip())
         clearPdfIndexCache()
+        # 歸檔路徑變更稽核（路徑實際改變才記）
+        if root != old_root:
+            try:
+                from lib.auth_manager import AuthManager
+                am = AuthManager.instance()
+                conn = getConn(self.db_path)
+                writeAudit(conn, role=am.current_role, action="CONFIG",
+                           operator=am.actor_name(),
+                           detail=buildDetail("系統", "修改",
+                                              f"歸檔路徑：{old_root or '（未設定）'} → {root}"))
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
         self.accept()

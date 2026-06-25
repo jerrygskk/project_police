@@ -9,6 +9,7 @@ from lib.base_tab import BaseTab
 from lib.db_utils import (
     getResourcePath, loadUi, msgInfo, msgWarning, msgCritical, confirmBox,
     resolveArchivedPdf, getSetting, ARCHIVE_ROOT_KEY,
+    writeAudit, buildDetail,
 )
 from lib.auth_manager import AuthManager
 from ui_utils import (
@@ -243,7 +244,9 @@ class TabDBBrowse(BaseTab):
 
     def _onRolePerm(self, _role=None):
         """身分變更：逐列切換刪除鈕停用/啟用、編號連結可點/純文字。"""
-        is_admin = AuthManager.instance().is_admin()
+        # 刪除：僅最高權限管理者；編輯（編號連結）：歸檔管理亦可
+        can_delete = AuthManager.instance().is_admin()
+        can_edit   = AuthManager.instance().is_manager()
         for key in ("task", "crim", "gen"):
             table = self._ui.get(key, {}).get("table")
             if not table:
@@ -253,7 +256,7 @@ class TabDBBrowse(BaseTab):
             link_col = next((i for i, c in enumerate(cols) if c.get("link")), None)
             order = getattr(self, "_docorder", {}).get(key, [])
             if del_col is not None:
-                refreshDeleteBtns(table, is_admin, del_col)
+                refreshDeleteBtns(table, can_delete, del_col)
             if link_col is not None:
                 for r in range(table.rowCount()):
                     if r < len(order):
@@ -261,7 +264,7 @@ class TabDBBrowse(BaseTab):
                         setDocIdLinkCell(
                             table, r, link_col, did,
                             lambda _row, d, k=key: self._onEdit(k, self._rowOf(k, d), d),
-                            clickable=is_admin,
+                            clickable=can_edit,
                         )
 
     # ── 範圍下拉：全部欄位 + 可搜尋欄位 ──────────────────────
@@ -747,12 +750,12 @@ class TabDBBrowse(BaseTab):
 
             if c.get("link"):
                 doc_id = str(r.get(id_col) or "")
-                # 一般使用者無修改權限 → 編號改純文字不可點（admin 才可開編輯）
-                is_admin = AuthManager.instance().is_admin()
+                # 編號可點＝可開編輯：歸檔管理亦可（刪除仍僅管理者）
+                can_edit = AuthManager.instance().is_manager()
                 setDocIdLinkCell(
                     table, pos, c_idx, doc_id,
                     lambda _row, did, k=key: self._onEdit(k, self._rowOf(k, did), did),
-                    clickable=is_admin,
+                    clickable=can_edit,
                 )
                 continue
 
@@ -868,6 +871,15 @@ class TabDBBrowse(BaseTab):
             "is_reported=0, is_electronic='' WHERE doc_id=?"),
     }
 
+    # 瀏覽頁刪除稽核取值：(類別, 主旨欄, 主表名)
+    # operator 不寫入——瀏覽頁刪除一定是 admin 跨庫操作，與資料列的人脫鉤，
+    # 記資料列的人反而誤導。role=admin 已足夠辨識。
+    _AUDIT_DEL = {
+        "task": ("交辦", "subject",         "Document_Task"),
+        "crim": ("刑案", "subject_summary", "Document_Criminal"),
+        "gen":  ("一般", "subject",         "Document_General"),
+    }
+
     def _onDelete(self, key, doc_id):
         if not doc_id:
             return
@@ -878,7 +890,18 @@ class TabDBBrowse(BaseTab):
             return
         try:
             conn = self._getConn()
+            # 清空前先取主旨快照（operator 不寫入，見 _AUDIT_DEL 註）
+            cat, subj_col, tbl = self._AUDIT_DEL[key]
+            row = conn.execute(
+                f"SELECT {subj_col} FROM {tbl} WHERE doc_id=?",
+                (doc_id,)).fetchone()
+            subject = (row[0] if row else "") or ""
             conn.execute(self._CLEAR_SQL[key], (doc_id,))
+            writeAudit(conn,
+                       role=AuthManager.instance().current_role,
+                       action="DELETE", target_table=tbl, target_id=doc_id,
+                       operator=None,
+                       detail=buildDetail(cat, "刪除", f"主旨：{subject}"))
             conn.commit()
             conn.close()
         except Exception as e:
