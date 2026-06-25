@@ -227,17 +227,10 @@ class TabDBBrowse(BaseTab):
             self._initScope(key)
             self._bindEvents(key)
 
-        # 初次載入三張表
-        for key in ("task", "crim", "gen"):
-            self._reload(key)
-
-        # 記錄初始指紋，之後切換進來時據此判斷是否需重載
+        # 初次載入延後到「第一次切到本頁」(on_activated) 才做，並彈「載入中」提示，
+        # 避免啟動時即建三表 cellWidget（資料量大時拖慢整個 App 開啟）。
         self._sigs = {}
-        for key in ("task", "crim", "gen"):
-            try:
-                self._sigs[key] = self._tableSignature(key)
-            except Exception:
-                pass
+        self._loaded = False
 
         # 身分切換時即時更新各表的刪除鈕與編號連結可用狀態
         AuthManager.instance().role_changed.connect(self._onRolePerm)
@@ -978,6 +971,23 @@ class TabDBBrowse(BaseTab):
         # 指紋改變 → 只重載該表，反映其他頁的增/修/刪。
         if not hasattr(self, "_sigs"):
             self._sigs = {}
+        # 首次進入本頁：彈「載入中」提示後才建三表（啟動時不建，加快開啟）。
+        if not getattr(self, "_loaded", False):
+            def _first():
+                for key in ("task", "crim", "gen"):
+                    self._reload(key)
+                    try:
+                        self._sigs[key] = self._tableSignature(key)
+                    except Exception:
+                        pass
+            runWithBusy(self._inner, _first, text="載入資料中，請稍候…")
+            self._loaded = True
+            has_root = bool(getSetting(self.db_path, ARCHIVE_ROOT_KEY, "").strip())
+            for key in ("crim", "gen"):
+                lbl = self._arch_warn.get(key)
+                if lbl:
+                    lbl.setVisible(not has_root)
+            return
         # 參照表改名（設定頁改過）→ 就地輕量刷新 ref_col 欄，不重建列（零頓）。
         if getattr(self, "_ref_changed", False):
             for key in ("task", "crim", "gen"):
