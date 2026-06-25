@@ -3,7 +3,7 @@
  <class>Dialog</class>
  <widget class="QDialog" name="Dialog">
   <property name="geometry">
-   <rect><x>0</x><y>0</y><width>480</width><height>740</height></rect>
+   <rect><x>0</x><y>0</y><width>520</width><height>560</height></rect>
   </property>
   <property name="windowTitle">
    <string>公文管理系統 - 主選單</string>
@@ -30,6 +30,22 @@ QLabel#versionLabel {
     font-size: 11pt;
     color: #aeaeb2;
     background-color: #f2f2f7;
+}
+QToolButton {
+    background-color: #ffffff;
+    border: 1px solid #d9d9de;
+    border-radius: 12px;
+    color: #1c1c1e;
+    font-size: 13pt;
+    font-weight: 500;
+    padding: 8px 4px;
+}
+QToolButton:hover {
+    background-color: #eaf1f8;
+    border: 1px solid #b9cbe0;
+}
+QToolButton:pressed {
+    background-color: #d8e4f0;
 }
    </string>
   </property>
@@ -67,51 +83,74 @@ QLabel#versionLabel {
     </widget>
    </item>
 
-   <!-- 按鈕區 -->
+   <!-- 按鈕區（2 欄磚格） -->
    <item>
-    <layout class="QVBoxLayout" name="btnLayout">
-     <property name="spacing"><number>12</number></property>
+    <layout class="QGridLayout" name="btnGrid">
+     <property name="horizontalSpacing"><number>10</number></property>
+     <property name="verticalSpacing"><number>10</number></property>
      <property name="topMargin"><number>16</number></property>
-     <item>
-      <widget class="QPushButton" name="btn_report_assignment">
-       <property name="minimumSize"><size><width>0</width><height>60</height></size></property>
-       <property name="text"><string>交辦單陳報</string></property>
+     <item row="0" column="0">
+      <widget class="QToolButton" name="btn_report_assignment">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+       <property name="text"><string>交辦單發文</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
       </widget>
      </item>
-     <item>
-      <widget class="QPushButton" name="btn_receive_assignment">
-       <property name="minimumSize"><size><width>0</width><height>60</height></size></property>
+     <item row="0" column="1">
+      <widget class="QToolButton" name="btn_receive_assignment">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
        <property name="text"><string>交辦單收文</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
       </widget>
      </item>
-     <item>
-      <widget class="QPushButton" name="btn_report_case">
-       <property name="minimumSize"><size><width>0</width><height>60</height></size></property>
-       <property name="text"><string>案件陳報</string></property>
+     <item row="1" column="0">
+      <widget class="QToolButton" name="btn_report_case">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+       <property name="text"><string>公文陳報</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
       </widget>
      </item>
-     <item>
-      <widget class="QPushButton" name="btn_generate_receipt">
-       <property name="minimumSize"><size><width>0</width><height>60</height></size></property>
-       <property name="text"><string>產生簽收表</string></property>
+     <item row="1" column="1">
+      <widget class="QToolButton" name="btn_generate_receipt">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+       <property name="text"><string>簽收單列印</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
       </widget>
      </item>
-     <item>
-      <widget class="QPushButton" name="btn_dbbrowse">
-       <property name="minimumSize"><size><width>0</width><height>60</height></size></property>
+     <item row="2" column="0">
+      <widget class="QToolButton" name="btn_dbbrowse">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
        <property name="text"><string>資料庫瀏覽</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
       </widget>
      </item>
-     <item>
-      <widget class="QPushButton" name="btn_archive">
-       <property name="minimumSize"><size><width>0</width><height>60</height></size></property>
+     <item row="2" column="1">
+      <widget class="QToolButton" name="btn_archive">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
        <property name="text"><string>檔案歸檔</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
       </widget>
      </item>
-     <item>
-      <widget class="QPushButton" name="btn_settings">
-       <property name="minimumSize"><size><width>0</width><height>60</height></size></property>
+     <item row="3" column="0">
+      <widget class="QToolButton" name="btn_settings">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
        <property name="text"><string>資料庫設定</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
+      </widget>
+     </item>
+     <item row="3" column="1">
+      <widget class="QToolButton" name="btn_audit">
+       <property name="minimumSize"><size><width>0</width><height>82</height></size></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+       <property name="text"><string>操作紀錄</string></property>
+       <property name="toolButtonStyle"><enum>Qt::ToolButtonTextUnderIcon</enum></property>
       </widget>
      </item>
     </layout>

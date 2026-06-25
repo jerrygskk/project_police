@@ -134,6 +134,9 @@
       <widget class="QWidget" name="tab_settings">
        <attribute name="title"><string>資料庫設定</string></attribute>
       </widget>
+      <widget class="QWidget" name="tab_audit">
+       <attribute name="title"><string>操作紀錄</string></attribute>
+      </widget>
      </widget>
     </item>
    </layout>

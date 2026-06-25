@@ -66,7 +66,7 @@ from lib.theme import APPLE_STYLE
 from lib.version import __version__
 from lib.db_utils import getResourcePath, loadUi, msgInfo
 from lib.auth_manager import AuthManager
-from tabs     import TabDispatch, TabReceive, TabReport, TabPrint, TabDBBrowse, TabArchive, TabSettings
+from tabs     import TabDispatch, TabReceive, TabReport, TabPrint, TabDBBrowse, TabArchive, TabSettings, TabAudit
 from res import resources_rc  # 註冊 Qt resource（arrow.svg）
 
 
@@ -88,6 +88,7 @@ class DocumentManager:
         4: TabDBBrowse,
         5: TabArchive,
         6: TabSettings,
+        7: TabAudit,
     }
 
     def __init__(self, tab_index=0):
@@ -227,9 +228,25 @@ class MainMenu:
         'btn_dbbrowse':           4,
         'btn_archive':            5,
         'btn_settings':           6,
+        'btn_audit':              7,
+    }
+
+    # 各功能磚格圖示（qrc 別名 :/menu/，於程式內套用以免 QUiLoader 解析 resource 問題）
+    ICON_MAP = {
+        'btn_report_assignment':  ':/menu/dispatch.svg',
+        'btn_receive_assignment': ':/menu/receive.svg',
+        'btn_report_case':        ':/menu/report.svg',
+        'btn_generate_receipt':   ':/menu/print.svg',
+        'btn_dbbrowse':           ':/menu/browse.svg',
+        'btn_archive':            ':/menu/archive.svg',
+        'btn_settings':           ':/menu/settings.svg',
+        'btn_audit':              ':/menu/audit.svg',
     }
 
     def __init__(self):
+        from PySide6.QtGui import QIcon
+        from PySide6.QtCore import QSize
+
         self.ui = loadUi(getResourcePath("layouts/main_menu.ui"))
         if not self.ui:
             sys.exit(1)
@@ -244,6 +261,10 @@ class MainMenu:
         for btn_name, idx in self.BTN_MAP.items():
             btn = getattr(self.ui, btn_name, None)
             if btn:
+                icon_path = self.ICON_MAP.get(btn_name)
+                if icon_path:
+                    btn.setIcon(QIcon(icon_path))
+                    btn.setIconSize(QSize(30, 30))
                 btn.clicked.connect(lambda checked=False, i=idx: self._onSelect(i))
 
         btn_exit = getattr(self.ui, 'btn_exit', None)

@@ -22,7 +22,16 @@
     <file alias="btn/add.svg">buttons/add.svg</file>
     <file alias="btn/edit.svg">buttons/edit.svg</file>
     <file alias="btn/save_order.svg">buttons/save_order.svg</file>
+    <file alias="btn/export_csv.svg">buttons/export_csv.svg</file>
     <file alias="btn/overdue.svg">buttons/overdue.svg</file>
+    <file alias="menu/dispatch.svg">buttons/menu_dispatch.svg</file>
+    <file alias="menu/receive.svg">buttons/menu_receive.svg</file>
+    <file alias="menu/report.svg">buttons/menu_report.svg</file>
+    <file alias="menu/print.svg">buttons/menu_print.svg</file>
+    <file alias="menu/browse.svg">buttons/menu_browse.svg</file>
+    <file alias="menu/archive.svg">buttons/menu_archive.svg</file>
+    <file alias="menu/settings.svg">buttons/menu_settings.svg</file>
+    <file alias="menu/audit.svg">buttons/menu_audit.svg</file>
     <file alias="tab/task.svg">tabs/task.svg</file>
     <file alias="tab/crim_report.svg">tabs/crim_report.svg</file>
     <file alias="tab/gen_report.svg">tabs/gen_report.svg</file>

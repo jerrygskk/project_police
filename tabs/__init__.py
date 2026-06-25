@@ -5,8 +5,9 @@ from .tab_print    import TabPrint
 from .tab_dbbrowse import TabDBBrowse
 from .tab_archive  import TabArchive
 from .tab_settings import TabSettings
+from .tab_audit    import TabAudit
 
 __all__ = [
     "TabDispatch", "TabReceive", "TabReport", "TabPrint",
-    "TabDBBrowse", "TabArchive", "TabSettings",
+    "TabDBBrowse", "TabArchive", "TabSettings", "TabAudit",
 ]
