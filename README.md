@@ -61,6 +61,8 @@ main.py
 
 瀏覽頁（Tab4）三表、歸檔頁（Tab5）待歸檔清單各約 700+ 列，重建 cellWidget 才是成本所在。故依「變動性質」分三條路徑：
 
+> **瀏覽頁惰性載入**：`setup()` 不建表（避免每次開 App、不論開哪頁都先建三表 cellWidget），改為**第一次切到瀏覽頁**（`on_activated`，`_loaded` 旗標）才以 `runWithBusy` 顯示「載入中」後建一次，之後沿用下列指紋／diff 機制。⚠️ 每列建刪除鈕＋編號連結兩個 cellWidget 是先天成本，列數上千時首次開啟仍需數秒（本程式年度 Reset 歸零，實際年量約數百～2000，可接受）；若未來年量大增需秒開，方向是拿掉每列 widget 改純 item＋`cellClicked`（大改，未做）。
+
 1. **參照改名（人員／部門／案類）→ 就地輕量更新**：設定頁改過參照表時 `_ref_changed=True`，`on_activated` 走 `_refreshRefCells`（瀏覽）／重載小清單（歸檔），**只對 `ref_col` 標記欄 `setText`，不重建列**（700 列實測 ~20ms）。指紋只看公文表 `last_modified`，碰不到參照改名，故必須走此旗標路徑。
 2. **跨頁增／修／刪 → 指紋差異更新**：比對 `(COUNT, MAX(last_modified))`，變了才 `_diffUpdate`／`_diffDocs`，只重建變動列。變動列數 `>= _BUSY_ROW_THRESHOLD`（預設 100）才跳「更新中」提示。
 3. **手動「重載」鈕**：瀏覽頁每區塊、歸檔頁每類各一顆，強制整表重建（瀏覽）／重掃資料夾＋重載清單＋重新比對（歸檔），一律以 `runWithBusy` 顯示「更新中」。是使用者面對任何外部變動（如外部新增／改名 PDF）的逃生口。
