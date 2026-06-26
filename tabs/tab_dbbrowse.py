@@ -409,8 +409,10 @@ class TabDBBrowse(BaseTab):
         for row_idx, r in enumerate(all_rows):
             did = order[row_idx] if row_idx < len(order) else ""
             if kw:
+                kw_l = kw.lower()  # 不分大小寫（中文不受影響，惠及英數）
                 matched = [vc for vc in search_cols
-                           if r.get(vc) is not None and kw in str(r.get(vc))]
+                           if r.get(vc) is not None
+                           and kw_l in str(r.get(vc)).lower()]
             else:
                 matched = []
             matched_map[did] = matched

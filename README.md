@@ -103,7 +103,7 @@ main.py
 
 - SHA-256 密碼存 `App_Settings`：`admin_password_hash`（預設 `admin`）、`archive_password_hash`（預設 `0000`）。**兩組密碼必須相異**——`login()` 先比 admin 再比 archive，若兩組同值則 archive 永遠登不進去。
 - **登入**：`login(password, db_path)` 依序比對兩組 hash，中 admin → role=`admin`、中 archive → role=`archive`、都不中 → 失敗（並寫一筆登入失敗稽核，不記輸入的密碼）。
-- 標題列顯示三態 `[一般使用者]`/`[歸檔管理]`/`[管理者模式]`，admin 與 archive 皆閒置 20 分鐘自動登出。
+- 標題列顯示三態 `[一般使用者]`/`[歸檔管理]`/`[管理者模式]`，admin 與 archive 皆閒置 **10 分鐘**自動登出（降回一般使用者，程式不關）。
 - **便捷判斷**：`is_admin()`（最高權限）／`is_archive()`／`is_manager()`（admin or archive，給「歸檔管理也能做」的功能用）／`actor_name()`（回中文身分名，稽核 operator 用）。**勿在各處寫字串比較**。
 - **變更密碼**：`change_password()` 依「當前登入身分」改對應那組（admin→admin、archive→archive）；user 身分不得改（回 False）。變更密碼為高風險操作，**Enter 不送出**（防誤按），只能滑鼠點。
 
@@ -121,6 +121,20 @@ main.py
 
 > 一般使用者限制由 `TaskEditDialog(restricted=…)` 控制（鎖定欄位顯示 DB 原值＋灰 `:disabled` 樣式，儲存只動承辦人）；身分變更時 `_onRolePerm` 重刷編號連結與刪除鈕。連結可點與否：收文／發文／陳報頁仍由 `setDocIdLinkCell(clickable=…)` 控制（cellWidget）；**瀏覽頁已改純 item**，`_onRolePerm` 只切編號欄 `setForeground`（藍＝可點）、`refreshDeleteBtns` 切 ✕ 字色，點擊一律走 `cellClicked`。
 > 「歸檔管理也能做」的判斷（歸檔頁、Tab4 編輯、編輯彈窗歸檔狀態區塊）用 `is_manager()`；「僅 admin」的（Tab4 刪除鈕、Tab0 發文）維持 `is_admin()`。設定頁的參照表維護按鈕對 archive `setEnabled(False)`（需配 `:disabled` 樣式才會變灰，見 §2 雷）；雙擊參照表列會繞過按鈕 enabled，故 6 個 `_add*/_edit*` 方法首加 `_refEditable()`（僅 admin）guard。
+
+### 閒置處理與多人使用（main.py）
+
+兩個獨立的閒置計時器（皆在 `DocumentManager`，由全域事件過濾器 `_IdleFilter` 監聽滑鼠/鍵盤/滾輪重設）：
+
+- **閒置自動登出**：`_idle_timer`，**10 分鐘**，**僅管理者／歸檔管理**計時，到點 `logout()` 降回一般使用者（程式不關）。
+- **閒置自動關閉**：`_close_timer`，**20 分鐘**，**不分身分一律計時**，到點 `QApplication.quit()`（靜默，僅 error.log 留一行；會丟掉未送出的暫存輸入）。順序上管理者離開會先 10 分自動登出、再到 20 分整支關閉。
+
+**APP 層軟性互斥（`lib/app_lock.py`）**：DB 放網路磁碟機給多台機器同時跑時，SQLite 檔案鎖不保證跨機器生效、真同時寫入可能毀損。故在 `dbfile.db` 旁維護鎖檔 `dbfile.lock`（JSON：機器名/使用者/開啟時間/心跳/PID），開啟時讀它判斷是否已有人在用：
+
+- 偵測到「新」的鎖檔（心跳未超過 `STALE_SECONDS=5 分鐘`）→ 跳 `confirmBox`：「○○○（電腦 X）自 HH:MM 起正在使用本系統」，灰字次要說明提醒「多人同時編輯可能造成資料毀損，建議稍後再開」＋「開啟後若閒置超過 20 分鐘，程式將自動關閉」（讓使用者知道何時可再回來），按鈕**仍要開啟 / 取消離開**（純勸導，預設取消）。心跳過舊＝視為當機殘留，可直接接管。
+- 開啟後寫自己的鎖檔、每 `HEARTBEAT_MS=60 秒` 更新心跳。**清鎖檔兩道**：`app.aboutToQuit`（蓋正常關窗、閒置自動關閉）＋ `atexit`（補蓋主選單離開、建表失敗等 `sys.exit` 不經 Qt quit 的路徑）；皆只刪屬於本實例者（比對機器名＋PID）、冪等靜默。**當機／強制結束／斷電**兩者皆蓋不到，靠心跳停止後 `STALE_SECONDS` 失效自癒。
+- ⚠️ **是勸導不是保證**：可按「仍要開啟」硬上，corruption 風險（SMB 鎖那層）仍在。**不做唯讀模式、不擋 DB 寫入**（寫入併發由 SQLite 自身忙線鎖處理，對應「資料庫忙線中」友善訊息）。讀寫鎖檔失敗一律靜默退讓，不阻擋開程式。
+- 純邏輯（parse/format/is_stale/is_mine/lock_file_path）有單元測試 `tests/test_app_lock.py`。
 
 ### 稽核 log（操作紀錄）
 
@@ -167,7 +181,7 @@ main.py
 - `_applyOverdue(key)`：僅呼叫 `_applyRowVisibility`（不獨立重算）
 - 搜尋框 / 範圍下拉觸發 `_applyFilter`，**不觸發 `_reload`**；`_reload` 只在 Tab 切換且指紋改變時呼叫（或 `_diffUpdate` fallback）
 
-**比對方式**：`kw in str(值)` 的**子字串包含、區分大小寫**（非模糊比對）；選了範圍下拉只比該欄，否則比所有 `search:True` 欄。
+**比對方式**：`kw.lower() in str(值).lower()` 的**子字串包含、不分大小寫**（非模糊比對；中文不受 `.lower()` 影響，只惠及英數）；選了範圍下拉只比該欄，否則比所有 `search:True` 欄。
 
 **差異更新（`_diffUpdate`）**：查 `last_modified > since` 得到變動 PK；對每筆維護 `_allRows[key]`（append / 就地更新 / pop）、`_docorder[key]`、表格列，最後呼叫 `_applyFilter` 重算可見性。變動列數 `>= _BUSY_ROW_THRESHOLD`（預設 100）時，重建段落以 `runWithBusy` 包起來顯示「更新中」。
 
@@ -201,6 +215,7 @@ main.py
 │   ├── db_utils.py      路徑解析 / 通用彈窗 / nextDocId / 跨年度重置（performYearEndReset、listInactiveRefItems）（DEBUG_MODE 在第一行）
 │   ├── base_tab.py      BaseTab 基底
 │   ├── auth_manager.py  權限單例（`is_admin()` 便捷判斷）
+│   ├── app_lock.py      APP 層軟性互斥（dbfile.lock 鎖檔讀寫/失效判斷，純邏輯可單測）
 │   ├── archive_text.py  歸檔比對純文字/檔名工具（_tokenize/_parseDate/_pkOf/_sanitize/_trimName/_resolveNames/_parseSubject；自 tab_archive 抽出，可單測。承辦人/主旨解析需餵 DB 人名字典）
 │   ├── theme.py         全域 QSS（Apple HIG 風格）
 │   ├── version.py       版本號單一來源（__version__；進版只改這裡，主選單顯示自動同步）
@@ -506,6 +521,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
   --hidden-import lib.db_utils ^
   --hidden-import lib.base_tab ^
   --hidden-import lib.auth_manager ^
+  --hidden-import lib.app_lock ^
   --hidden-import lib.theme ^
   --hidden-import lib.loading_screen ^
   --hidden-import lib.version ^
@@ -552,7 +568,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 - 指令開頭 `del ...spec & rmdir build dist` 是刻意的：開發期不信任殘留 spec（會用到上次的過期設定），每次砍掉 spec / build / dist 用乾淨 CLI 參數全新生成。`2>nul` 讓首次執行（檔案不存在）不報錯
 - **跨年度重置的自動重啟**：onefile 版重啟新程序前必設環境變數 `PYINSTALLER_RESET_ENVIRONMENT=1`（PyInstaller 6.10+ 官方機制），否則新程序沿用舊 `_MEI` 環境、到已刪除的暫存目錄找 `python3xx.dll`/標準庫而崩潰（`Failed to load Python DLL` / `unicodedata` 缺失）。`_restartApp()` 已處理。詳見第 2 節踩雷表與第 5 節 Reset 子節
 - 若打包後報 `No module named res`，加 `--hidden-import res.resources_rc`
-- 核心模組在 `lib/`，主程式打包已列 `--hidden-import lib.*` 七個（含 `lib.archive_text`）；若仍報 `No module named lib.xxx`，補對應的 hidden-import
+- 核心模組在 `lib/`，主程式打包已列 `--hidden-import lib.*` 八個（含 `lib.archive_text`、`lib.app_lock`）；若仍報 `No module named lib.xxx`，補對應的 hidden-import
 - GitHub release 上傳用英文檔名
 - **exe 檔案資訊（右鍵→內容→詳細資料）**：由 `--version-file version_info.txt` 帶入。`version_info.txt` 不在 build 時生成，而是**進版時由 `tools/bump_version.py` 連同版號一起產生**（見 §8 進版），已收進 git。打包只需引用、不用多做。要改顯示文字（公司/產品名）改 `tools/bump_version.py` 頂部常數
 

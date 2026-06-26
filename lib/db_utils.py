@@ -79,6 +79,47 @@ def msgCritical(title, text, parent=None):
     _makeMsg(QMessageBox.Critical, title, text, parent)
 
 
+# ── 未預期例外 → 白話訊息 ───────────────────────────────────────
+# 全域錯誤處理用：把工程語言的例外轉成承辦看得懂、可行動的提示。
+# 技術細節（traceback）仍只進 error.log，不丟給使用者。純邏輯，可單測。
+_GENERIC_ERROR = ("程式發生未預期的錯誤，已記錄至 error.log。\n"
+                  "請將該檔案提供維護人員協助處理。")
+
+def friendlyErrorMessage(exc_type, exc_value):
+    """依例外型別回傳白話、可行動的錯誤訊息（不含技術細節）。
+
+    對照不到的型別一律回泛用訊息。`exc_type` 可為 None（此時只看 value）。
+    """
+    name = getattr(exc_type, "__name__", "") or type(exc_value).__name__
+    text = str(exc_value or "")
+    low = text.lower()
+
+    # SQLite：忙線鎖定 / 缺表 / 檔案損毀
+    if name in ("OperationalError",) or "operationalerror" in low:
+        if "locked" in low or "busy" in low:
+            return ("資料庫忙線中，可能有其他視窗正開啟本程式。\n"
+                    "請關閉其他視窗後再試一次。")
+        return ("資料庫存取發生問題，請關閉程式後重新開啟；\n"
+                "若持續發生，請聯繫維護人員並提供 error.log。")
+    if name in ("DatabaseError", "IntegrityError", "DataError") or \
+            "databaseerror" in low or "malformed" in low:
+        return ("資料庫檔案可能損毀或格式異常。\n"
+                "請聯繫維護人員，並提供 error.log 與資料庫備份檔。")
+
+    # 檔案 / 權限 / 網路磁碟
+    if name in ("PermissionError",):
+        return ("無法存取檔案（可能正被其他程式開啟，或權限不足）。\n"
+                "請關閉相關檔案後再試一次。")
+    if name in ("FileNotFoundError",):
+        return ("找不到所需的檔案或資料夾。\n"
+                "若為歸檔資料夾，請至「設定」頁確認路徑是否正確。")
+    if name in ("OSError", "IOError"):
+        return ("檔案或資料夾存取失敗，可能是網路磁碟機已中斷連線。\n"
+                "請確認網路磁碟機連線後再試一次。")
+
+    return _GENERIC_ERROR
+
+
 # ── 通用確認彈窗 ───────────────────────────────────────────────
 def confirmBox(title, text, confirm_text="確認", cancel_text="取消",
                confirm_danger=False, default_confirm=True, parent=None,

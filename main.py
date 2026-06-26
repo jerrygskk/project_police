@@ -47,10 +47,9 @@ def _setup_error_handler():
         try:
             from PySide6.QtWidgets import QApplication
             from lib.db_utils import msgCritical as _msgCritical
+            from lib.db_utils import friendlyErrorMessage as _friendly
             if QApplication.instance():
-                _msgCritical("系統錯誤",
-                    f"程式發生錯誤，已記錄至 error.log：\n\n{exc_value}"
-                )
+                _msgCritical("系統錯誤", _friendly(exc_type, exc_value))
         except Exception:
             pass
 
@@ -135,11 +134,17 @@ class DocumentManager:
         self._updateTitle(AuthManager.instance().current_role)
         AuthManager.instance().role_changed.connect(self._updateTitle)
 
-        # 閒置 20 分鐘自動登出
-        self._IDLE_TIMEOUT_MS = 20 * 60 * 1000
+        # 閒置 10 分鐘自動登出（僅管理者／歸檔管理）
+        self._IDLE_TIMEOUT_MS = 10 * 60 * 1000
         self._idle_timer = QTimer(self.window)
         self._idle_timer.setSingleShot(True)
         self._idle_timer.timeout.connect(self._onIdleTimeout)
+        # 閒置 20 分鐘自動關閉整支程式（不分身分，一律計時）
+        self._CLOSE_TIMEOUT_MS = 20 * 60 * 1000
+        self._close_timer = QTimer(self.window)
+        self._close_timer.setSingleShot(True)
+        self._close_timer.timeout.connect(self._onIdleClose)
+        self._close_timer.start(self._CLOSE_TIMEOUT_MS)
         self._installIdleFilter()
 
     def _updateTitle(self, role):
@@ -162,6 +167,9 @@ class DocumentManager:
                 t = ev.type()
                 if t in (QEvent.MouseButtonPress, QEvent.MouseMove,
                          QEvent.KeyPress, QEvent.Wheel):
+                    # 任何操作都重設「自動關閉」計時（不分身分）
+                    mgr._close_timer.start(mgr._CLOSE_TIMEOUT_MS)
+                    # 「自動登出」計時僅管理者／歸檔管理
                     if AuthManager.instance().is_manager():
                         mgr._idle_timer.start(mgr._IDLE_TIMEOUT_MS)
                 return False
@@ -173,7 +181,12 @@ class DocumentManager:
     def _onIdleTimeout(self):
         if AuthManager.instance().is_manager():
             AuthManager.instance().logout()
-            msgInfo("自動登出", "閒置已超過 20 分鐘，已自動登出，請重新登入。", self.window)
+            msgInfo("自動登出", "閒置已超過 10 分鐘，已自動登出，請重新登入。", self.window)
+
+    def _onIdleClose(self):
+        # 閒置 20 分鐘自動關閉整支程式（靜默，僅 error.log 留痕）。
+        logging.error("閒置已超過 20 分鐘，自動關閉程式。")
+        QApplication.instance().quit()
 
     _IDX_SETTINGS = 6          # 資料庫設定 Tab index
     _IDX_DBBROWSE = 4          # 資料庫瀏覽 Tab index
@@ -309,6 +322,49 @@ if __name__ == "__main__":
     app.setWindowIcon(QIcon(icon_path))
 
     db_path = getResourcePath("dbfile.db")
+
+    # ── APP 層軟性互斥：開啟時偵測是否已有人在用（純勸導，不擋 DB）──
+    from datetime import datetime as _dt
+    from lib import app_lock as _lock
+    from lib.db_utils import confirmBox as _confirmBox
+    _lock_path = _lock.lock_file_path(db_path)
+    _machine, _user, _pid = _lock.current_identity()
+    _opened_iso = _dt.now().isoformat(timespec="seconds")
+
+    _existing = _lock.read_lock(_lock_path)
+    if _existing and not _lock.is_stale(
+            _existing.get("heartbeat", ""), _dt.now().isoformat(timespec="seconds")):
+        _who = _existing.get("user") or "其他使用者"
+        _mc = _existing.get("machine") or "其他電腦"
+        _since = (_existing.get("opened") or "").replace("T", " ")[:16]
+        if not _confirmBox(
+                "系統使用中",
+                f"{_who}（電腦 {_mc}）自 {_since} 起正在使用本系統。",
+                confirm_text="仍要開啟", cancel_text="取消離開",
+                confirm_danger=True, default_confirm=False,
+                informative="多人同時編輯可能造成資料毀損，建議稍後再開。\n"
+                            "開啟後若閒置超過 20 分鐘，程式將自動關閉。"):
+            sys.exit(0)
+
+    # 寫入自己的鎖檔並啟動心跳；正常結束時清掉（含閒置自動關）。
+    _lock.write_lock(_lock_path, _machine, _user, _opened_iso,
+                     _dt.now().isoformat(timespec="seconds"), _pid)
+
+    def _heartbeat():
+        _lock.write_lock(_lock_path, _machine, _user, _opened_iso,
+                         _dt.now().isoformat(timespec="seconds"), _pid)
+
+    _hb_timer = QTimer()
+    _hb_timer.timeout.connect(_heartbeat)
+    _hb_timer.start(_lock.HEARTBEAT_MS)
+
+    # 清鎖檔：aboutToQuit 蓋正常關窗/自動關閉；atexit 補蓋 sys.exit（主選單離開、
+    # 建表失敗）等不經 Qt quit 的路徑。當機/斷電兩者皆蓋不到，靠心跳失效自癒。
+    def _cleanup_lock():
+        _lock.remove_lock(_lock_path, machine=_machine, pid=_pid)
+    app.aboutToQuit.connect(_cleanup_lock)
+    import atexit
+    atexit.register(_cleanup_lock)
 
     from lib.loading_screen import LoadingScreen
 

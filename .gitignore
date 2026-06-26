@@ -5,6 +5,7 @@ fix_views.py
 dbfile_backup_*.db
 tests/pii_denylist.local.txt
 dbfile.db-journal
+dbfile.lock
 *.xlsm
 *.crdownload
 __pycache__/
