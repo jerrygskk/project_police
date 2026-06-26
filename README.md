@@ -118,6 +118,7 @@ main.py
 | 資料庫瀏覽 Tab4 | 全可改（含刪除） | 可**修改**、**無刪除**（刪除鈕仍僅 admin） | 不開放編輯 |
 | 檔案歸檔 Tab5 | 可使用 | 可使用 | 無法使用 |
 | 設定 Tab6 | 全可使用 | **可視**：變更密碼／歸檔資料夾設定／登出開放；參照表維護（新增／改名／儲存排序／拖拉）與跨年度重置 **disable 灰掉** | 無法使用 |
+| 操作紀錄 Tab7 | 可檢視（唯讀／篩選／匯出 CSV） | 無法使用（顯示遮罩、導引設定頁登入） | 無法使用（顯示遮罩、導引設定頁登入） |
 
 > 一般使用者限制由 `TaskEditDialog(restricted=…)` 控制（鎖定欄位顯示 DB 原值＋灰 `:disabled` 樣式，儲存只動承辦人）；身分變更時 `_onRolePerm` 重刷編號連結與刪除鈕。連結可點與否：收文／發文／陳報頁仍由 `setDocIdLinkCell(clickable=…)` 控制（cellWidget）；**瀏覽頁已改純 item**，`_onRolePerm` 只切編號欄 `setForeground`（藍＝可點）、`refreshDeleteBtns` 切 ✕ 字色，點擊一律走 `cellClicked`。
 > 「歸檔管理也能做」的判斷（歸檔頁、Tab4 編輯、編輯彈窗歸檔狀態區塊）用 `is_manager()`；「僅 admin」的（Tab4 刪除鈕、Tab0 發文）維持 `is_admin()`。設定頁的參照表維護按鈕對 archive `setEnabled(False)`（需配 `:disabled` 樣式才會變灰，見 §2 雷）；雙擊參照表列會繞過按鈕 enabled，故 6 個 `_add*/_edit*` 方法首加 `_refEditable()`（僅 admin）guard。
@@ -287,8 +288,8 @@ main.py
 
 - **跑法**（專案根目錄）：`python -m unittest discover -s tests`
 - **命名**：檔案 `test_*.py`（unittest 自動探索的預設規則，勿改名）
-- **環境**：`test_db_utils` / `test_status` / `test_auth_manager` / `test_error_msg`（受測 `db_utils`）/ `test_audit_view` 的受測模組 import 時會載入 PySide6，故**執行環境需裝 PySide6**；`test_archive_text` / `test_app_lock` / `test_db_backup` 是純 stdlib
-- **涵蓋**：歸檔檔名解析（`archive_text`：日期/PK/斷詞，含 PK 撞號雷）、流水號/跨年度重置/設定/歸檔定位（`db_utils`）、逾期計算與狀態色（`status`）、權限與密碼（`auth_manager`）、錯誤訊息白話化（`db_utils.friendlyErrorMessage`，`test_error_msg`）、軟性互斥鎖檔（`app_lock`：parse/is_stale/is_mine）、平時自動備份（`db_backup`：每日/每週到期/修剪＋backup round-trip）、操作紀錄解析（`tab_audit.parseDetail`，`test_audit_view`）。另有 `test_no_pii` 防個資外洩（見 CLAUDE）
+- **環境**：`test_db_utils` / `test_status` / `test_auth_manager` / `test_error_msg`（受測 `db_utils`）/ `test_audit`（受測 `db_utils`）/ `test_audit_view` 的受測模組 import 時會載入 PySide6，故**執行環境需裝 PySide6**；`test_archive_text` / `test_app_lock` / `test_db_backup` 是純 stdlib
+- **涵蓋**：歸檔檔名解析（`archive_text`：日期/PK/斷詞，含 PK 撞號雷）、流水號/跨年度重置/設定/歸檔定位（`db_utils`）、逾期計算與狀態色（`status`）、權限與密碼（`auth_manager`）、錯誤訊息白話化（`db_utils.friendlyErrorMessage`，`test_error_msg`）、稽核寫入 helper（`db_utils` 的 `buildDetail`／`auditStaffName`／`writeAudit` round-trip，`test_audit`）、操作紀錄解析（`tab_audit.parseDetail`，`test_audit_view`）、軟性互斥鎖檔（`app_lock`：parse/is_stale/is_mine）、平時自動備份（`db_backup`：每日/每週到期/修剪＋backup round-trip）。另有 `test_no_pii` 防個資外洩（見 CLAUDE）
 - **紀律**：動到可單測的純邏輯（解析、SQL round-trip、狀態計算、權限判斷）時，**一併新增/更新對應測試**；GUI 互動部分仍須上機驗證
 
 ---
