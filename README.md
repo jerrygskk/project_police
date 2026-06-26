@@ -149,6 +149,22 @@ main.py
 - **手動還原**：關閉程式後，將 `backups/` 內要還原的那份**複製覆蓋** `dbfile.db`（覆蓋前建議先把現有 `dbfile.db` 另存留底），再重開程式。目前無還原 UI。
 - 純邏輯（`is_daily_due`/`is_weekly_due`/`parse_daily_dates`/`parse_weekly_dates`/`prune_targets`）＋ sqlite backup round-trip 有單元測試 `tests/test_db_backup.py`。`backups/` 已加入 `.gitignore`。
 
+### 全域錯誤處理與白話化訊息
+
+未預期的例外由 `main.py` 的全域 handler（`_setup_error_handler` 設 `sys.excepthook`）統一接手，做三件事：
+
+1. **寫 `error.log`**（exe／專案根目錄下，UTF-8，含完整 traceback）。
+2. **寫 Windows 事件檢視器**（有 `pywin32` 時；無則靜默跳過）。
+3. **彈白話錯誤視窗**（`QApplication` 存在時）：以 `db_utils.friendlyErrorMessage(exc_type, exc_value)` 把工程語言的例外轉成承辦看得懂、可行動的提示——**技術細節（traceback）只進 error.log，不丟給使用者**。
+
+`friendlyErrorMessage` 依例外型別分類對應白話訊息（純邏輯、可單測，測試 `tests/test_error_msg.py`）：
+
+- **SQLite**：忙線鎖定（locked/busy）→「資料庫忙線中…請關閉其他視窗」；缺表／損毀（malformed、DatabaseError 等）→「資料庫檔案可能損毀…請提供 error.log 與備份檔」。
+- **檔案／權限／網路磁碟**：`PermissionError`（檔案被佔用／權限不足）、`FileNotFoundError`（找不到檔案／歸檔資料夾，導向設定頁）、`OSError`/`IOError`（網路磁碟機可能斷線）。
+- 對照不到的型別 → 泛用訊息（已記錄至 error.log、請提供維護人員）。
+
+> 與「資料庫忙線中」訊息呼應的是 APP 層軟性互斥（見上）：多機共用網路碟、真同時寫入時，SQLite 忙線鎖會丟 `OperationalError`，此處轉成白話提示使用者關閉其他視窗重試。
+
 ### 稽核 log（操作紀錄）
 
 對關鍵操作寫不可竄改意圖的操作紀錄（單機環境本質無法防 admin 直接開 DB 改 log，已接受；程式內不提供刪 log UI）。
@@ -271,8 +287,8 @@ main.py
 
 - **跑法**（專案根目錄）：`python -m unittest discover -s tests`
 - **命名**：檔案 `test_*.py`（unittest 自動探索的預設規則，勿改名）
-- **環境**：`test_db_utils` / `test_status` / `test_auth_manager` 的受測模組 import 時會載入 PySide6，故**執行環境需裝 PySide6**；僅 `test_archive_text` 是純 stdlib
-- **涵蓋**：歸檔檔名解析（`archive_text`：日期/PK/斷詞，含 PK 撞號雷）、流水號/跨年度重置/設定/歸檔定位（`db_utils`）、逾期計算與狀態色（`status`）、權限與密碼（`auth_manager`）
+- **環境**：`test_db_utils` / `test_status` / `test_auth_manager` / `test_error_msg`（受測 `db_utils`）/ `test_audit_view` 的受測模組 import 時會載入 PySide6，故**執行環境需裝 PySide6**；`test_archive_text` / `test_app_lock` / `test_db_backup` 是純 stdlib
+- **涵蓋**：歸檔檔名解析（`archive_text`：日期/PK/斷詞，含 PK 撞號雷）、流水號/跨年度重置/設定/歸檔定位（`db_utils`）、逾期計算與狀態色（`status`）、權限與密碼（`auth_manager`）、錯誤訊息白話化（`db_utils.friendlyErrorMessage`，`test_error_msg`）、軟性互斥鎖檔（`app_lock`：parse/is_stale/is_mine）、平時自動備份（`db_backup`：每日/每週到期/修剪＋backup round-trip）、操作紀錄解析（`tab_audit.parseDetail`，`test_audit_view`）。另有 `test_no_pii` 防個資外洩（見 CLAUDE）
 - **紀律**：動到可單測的純邏輯（解析、SQL round-trip、狀態計算、權限判斷）時，**一併新增/更新對應測試**；GUI 互動部分仍須上機驗證
 
 ---
