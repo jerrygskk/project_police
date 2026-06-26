@@ -170,7 +170,7 @@ main.py
 
 對關鍵操作寫不可竄改意圖的操作紀錄（單機環境本質無法防 admin 直接開 DB 改 log，已接受；程式內不提供刪 log UI）。
 
-- **表**：`Audit_Log`（log_id/ts/role/action/target_table/target_id/operator/detail）。**不寫進啟動 DDL**（比照本專案不做啟動 migration 的慣例），靠一次性腳本 `fix_audit_setup.py` 建表。
+- **表**：`Audit_Log`（log_id/ts/role/action/target_table/target_id/operator/detail）。**不寫進啟動 DDL**（比照本專案不做啟動 migration 的慣例）。**自 v1.1.0 起，入庫／Release 的空殼已預先跑過 `fix_audit_setup.py`、內建本表＋兩組密碼**，故全新安裝免再跑；僅升級現場既有舊庫才需另跑 `fix_audit_setup.py` 補表。
 - **helper（`lib/db_utils.py`）**：
   - `writeAudit(conn, *, role, action, detail, target_table, target_id, operator)`：用呼叫端**同一個 conn**寫入（與業務操作同 transaction，由呼叫端統一 commit）；ts 取 SQLite 本機時間。**缺 `Audit_Log` 表的舊 DB 靜默跳過**（`except: pass`），不中斷業務。
   - `buildDetail(類別, 動作, 內容)` → `[類別][動作]內容`。類別＝交辦／刑案／一般／人員／部門／案類／歸檔／系統。
@@ -183,7 +183,7 @@ main.py
 - **刪除取值時機**：清空式 UPDATE **之前**先 SELECT operator＋主旨（清空後拿不到）。
 - **已接上的事件**：收文／刑案／一般／瀏覽頁刪除、發文改承辦（限 `source='dispatch'` 且 processor 變動）、參照表新增／改名／停用啟用（排序不記）、歸檔取消（電子／紙本；歸檔本身不記，只記取消）、跨年度重置、變更密碼（不記密碼內容）、歸檔路徑變更、登入失敗（不記輸入的密碼）。
 - **Reset 與 log**：①先寫 Reset log（含清除筆數）②整庫自動備份（歷史 log 隨備份保存）③`performYearEndReset` 清空主表時**含 `Audit_Log`**（當前庫歸零、歷史在備份檔）。
-- ⚠️ **發布／升級 DB 須先建表**：空殼或現場舊 DB 都要先跑 `fix_audit_setup.py`（建 `Audit_Log`＋設兩組密碼），否則程式照跑但稽核一筆都不寫（靜默退化成單一 admin、無 log）。`fix_audit_setup.py` 為一次性工具、**不入庫**。
+- ⚠️ **DB 須含本表才會寫稽核**：自 v1.1.0 起**入庫／Release 的空殼已內建 `Audit_Log`＋兩組密碼**（建置時預跑 `fix_audit_setup.py` 烤入），全新安裝直接可用。**僅現場既有舊庫升級**才需另跑 `fix_audit_setup.py` 補表，否則程式照跑但稽核一筆都不寫（靜默退化成單一 admin、無 log）。`fix_audit_setup.py` 為一次性工具、**不入庫**。
 
 **檢視 UI（操作紀錄 Tab7，`tabs/tab_audit.py`）**：唯讀、**僅 admin**（非 admin 顯示遮罩，導引至設定頁登入；牆同歸檔頁 `outer_stack` 機制，連 `role_changed`）。
 - 全量載入 `Audit_Log`（`ORDER BY log_id DESC`）後以 `setRowHidden` 篩選（比照資料庫瀏覽頁）；`detail` 經 `parseDetail` 解析 `[類別][動作]內容` 拆「類別／動作/內容」三欄顯示。
@@ -526,8 +526,8 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 
 | 資料表 | 欄位 / 說明 |
 |--------|------|
-| App_Settings | key / value。權限相關 key：`admin_password_hash`（管理者密碼 SHA-256，預設 `admin`）、`archive_password_hash`（歸檔管理密碼 SHA-256，預設 `0000`；舊 DB 缺此 key，須跑 `fix_audit_setup.py` 補）。另有 `archive_root`/`archive_subdir_crim`/`archive_subdir_gen`（歸檔路徑，Reset 時清空） |
-| Audit_Log | log_id（PK AUTOINCREMENT）/ ts / role / action / target_table / target_id / operator / detail。操作紀錄；**不在啟動 DDL**，靠 `fix_audit_setup.py` 一次性建表（缺表時 `writeAudit` 靜默跳過）。詳見 §3「稽核 log」 |
+| App_Settings | key / value。權限相關 key：`admin_password_hash`（管理者密碼 SHA-256，預設 `admin`）、`archive_password_hash`（歸檔管理密碼 SHA-256，預設 `0000`；v1.1.0 起入庫空殼已內建，舊 DB 缺此 key 才須跑 `fix_audit_setup.py` 補）。另有 `archive_root`/`archive_subdir_crim`/`archive_subdir_gen`（歸檔路徑，Reset 時清空） |
+| Audit_Log | log_id（PK AUTOINCREMENT）/ ts / role / action / target_table / target_id / operator / detail。操作紀錄；**不在啟動 DDL**；自 v1.1.0 起入庫空殼已內建本表（舊庫升級才需 `fix_audit_setup.py` 補；缺表時 `writeAudit` 靜默跳過）。詳見 §3「稽核 log」 |
 
 ### Views
 
