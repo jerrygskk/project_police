@@ -9,19 +9,27 @@ from lib.db_utils import getResourcePath
 
 
 # ── 載入步驟定義（說明, 完成後的 %）──────────────────────────
+# 背景執行緒（LoadWorker）負責 0~64%（資源、DB 連線、三表 SQL 讀取）；
+# 65~100% 為主執行緒分段建表，由 DocumentManager 經 setStep 驅動（見 BUILD_STEPS）。
 LOAD_STEPS = [
-    ("偵測暫存區就緒...",           15),
-    ("載入資源檔...",               20),
-    ("套用介面樣式...",             25),
-    ("載入主選單介面...",           32),
-    ("連線資料庫...",               40),
-    ("載入人員對照表...",           47),
-    ("載入部門與案類資料...",       54),
-    ("初始化交辦單發文...",         65),
-    ("初始化交辦單收文...",         75),
-    ("載入案件陳報介面...",         85),
-    ("初始化案件陳報選單...",       95),
-    ("完成",                       100),
+    ("偵測暫存區就緒...",            2),
+    ("載入資源檔...",                3),
+    ("套用介面樣式...",              7),
+    ("載入主選單介面...",           11),
+    ("連線資料庫...",               15),
+    ("載入人員對照表...",           19),
+    ("載入部門與案類資料...",       22),
+    ("讀取交辦單資料...",           25),
+    ("讀取刑案資料...",             30),
+    ("讀取一般陳報資料...",         35),
+    ("載入操作介面...",             38),
+]
+
+# 主執行緒分段建表步驟（DocumentManager 依此回報進度）；完成 100 另由呼叫端送出
+BUILD_STEPS = [
+    ("task", "建立交辦單清單...",   42),
+    ("crim", "建立刑案清單...",     57),
+    ("gen",  "建立一般陳報清單...", 68),
 ]
 
 
@@ -82,40 +90,38 @@ class LoadWorker(QThread):
         self.step_done.emit(*LOAD_STEPS[5])
         time.sleep(DEBUG_DELAY)
 
-        # 步驟 7：載入部門、案類
+        # 步驟 7：載入部門、案類（conn 先不關，下面要查三表）
         results['depts'] = conn.execute(
             "SELECT dept_id, dept_name FROM Ref_Departments ORDER BY dept_id"
         ).fetchall()
         results['case_types'] = conn.execute(
             "SELECT case_type_id, case_type_name FROM Ref_CaseTypes ORDER BY case_type_id"
         ).fetchall()
-        conn.close()
         self.step_done.emit(*LOAD_STEPS[6])
         time.sleep(DEBUG_DELAY)
 
-        # 步驟 8：載入 Layout1.ui
-        results['layout1_path'] = getResourcePath("layouts/Layout1.ui")
-        self.step_done.emit(*LOAD_STEPS[7])
-        time.sleep(DEBUG_DELAY)
+        # 步驟 8~10：背景預讀三張瀏覽表的完整資料（純 SQL，不碰 Qt）。
+        # 主執行緒之後用這份資料直接建表，免再查 DB。
+        from tabs.tab_dbbrowse import queryBrowseRows
+        browse = {}
+        for i, key in enumerate(("task", "crim", "gen")):
+            try:
+                browse[key] = queryBrowseRows(conn, key)
+            except Exception:
+                browse[key] = None   # 預讀失敗 → 主執行緒 fallback 就地查
+            self.step_done.emit(*LOAD_STEPS[7 + i])
+            time.sleep(DEBUG_DELAY)
+        results['browse'] = browse
+        conn.close()
 
-        # 步驟 9：載入 Layout2.ui
-        results['layout2_path'] = getResourcePath("layouts/Layout2.ui")
-        self.step_done.emit(*LOAD_STEPS[8])
-        time.sleep(DEBUG_DELAY)
-
-        # 步驟 10：載入 Layout3.ui
-        results['layout3_path'] = getResourcePath("layouts/Layout3.ui")
-        self.step_done.emit(*LOAD_STEPS[9])
-        time.sleep(DEBUG_DELAY)
-
-        # 步驟 11：預熱 Tab 類別 import
+        # 步驟 11：預熱 Tab 類別 import + Layout 路徑
         from tabs import TabDispatch, TabReceive, TabReport  # noqa
         results['tabs'] = (TabDispatch, TabReceive, TabReport)
+        results['layout1_path'] = getResourcePath("layouts/Layout1.ui")
         self.step_done.emit(*LOAD_STEPS[10])
         time.sleep(DEBUG_DELAY)
 
-        # 步驟 12：完成
-        self.step_done.emit(*LOAD_STEPS[11])
+        # 背景階段完成 → 交主執行緒分段建表（65~100% 由 DocumentManager 驅動）
         self.finished.emit(results)
 
 
@@ -125,9 +131,10 @@ class LoadingScreen(QWidget):
     - 置中於螢幕
     - 上方橫幅圖片（等比例縮放至寬 700px）
     - 下方進度區 40px：說明文字、百分比、進度條
-    - 載入完成後自動關閉並發出 done 信號
+    - 背景讀取完成後發出 dataReady（不自動關閉），由主執行緒分段建表；
+      建表期間呼叫 setStep 更新進度條，全部完成後呼叫 finishAndClose 關閉。
     """
-    done = Signal(object)
+    dataReady = Signal(object)
 
     WIN_W = 700
     WIN_H = 319   # 圖片等比例高度 279 + 進度區 40
@@ -231,6 +238,13 @@ class LoadingScreen(QWidget):
         self.status_label.setText(desc)
         self.pct_label.setText(f"{percent}%")
 
-    def _on_finished(self, results):
+    # 供主執行緒建表階段更新進度條（與背景步驟共用同一條）
+    def setStep(self, desc, percent):
+        self._on_step(desc, percent)
+
+    def finishAndClose(self):
         self.close()
-        self.done.emit(results)
+
+    def _on_finished(self, results):
+        # 背景讀取完成：不關閉，交主執行緒分段建表
+        self.dataReady.emit(results)

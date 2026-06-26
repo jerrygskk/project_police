@@ -91,7 +91,7 @@ class DocumentManager:
         7: TabAudit,
     }
 
-    def __init__(self, tab_index=0):
+    def __init__(self, tab_index=0, prefetch=None, progress=None):
         self.db_path   = getResourcePath("dbfile.db")
         self.window    = loadUi(getResourcePath("layouts/Layout1.ui"))
         if not self.window:
@@ -104,6 +104,23 @@ class DocumentManager:
             tab = TabClass(self.tab_widget, self.db_path)
             tab.setup(idx)
             self.tabs[idx] = tab
+
+        # 瀏覽頁三表：用啟動預查資料分段建表，逐表更新載入進度條（65~100%）。
+        # 建表必須在主執行緒，故放在此處（非背景 worker）；processEvents 讓進度條即時重繪。
+        from PySide6.QtWidgets import QApplication
+        from lib.loading_screen import BUILD_STEPS
+        browse = self.tabs.get(self._IDX_DBBROWSE)
+        if browse and hasattr(browse, 'buildInitial'):
+            bdata = (prefetch or {}).get('browse', {})
+            for key, label, pct in BUILD_STEPS:
+                if progress:
+                    progress(label, pct)
+                    QApplication.processEvents()
+                browse.buildInitial(key, rows=bdata.get(key))
+            browse.markLoaded()
+            if progress:
+                progress("完成", 100)
+                QApplication.processEvents()
 
         if self.tab_widget:
             self.tab_widget.setCurrentIndex(tab_index)
@@ -295,25 +312,32 @@ if __name__ == "__main__":
 
     from lib.loading_screen import LoadingScreen
 
-    # _menu_ref 用來持有 menu 和 mgr 的引用，防止被 GC 回收導致閃退
-    _menu_ref = []
+    # _refs 持有 menu / loading / mgr 引用，防止被 GC 回收導致閃退
+    _refs = []
 
-    def _on_loading_done(results):
-        """Loading 完成後顯示主選單"""
+    def _on_data_ready(results):
+        # 進度條期間就把整個主視窗建好（含三表建表）；建完才出主選單，選完秒進。
+        mgr = DocumentManager(tab_index=0, prefetch=results, progress=loading.setStep)
+        _refs.append(mgr)
+        loading.finishAndClose()
+        if not (hasattr(mgr, 'window') and mgr.window):
+            sys.exit(1)
+        mgr.window.setWindowIcon(QIcon(icon_path))
+
+        # 一切就緒後才顯示主選單，使用者選功能後直接切到該頁
         menu = MainMenu()
-        _menu_ref.append(menu)
+        _refs.append(menu)
         if menu.ui.exec() != QDialog.Accepted or menu.selected_tab < 0:
             sys.exit(0)
-
-        mgr = DocumentManager(tab_index=menu.selected_tab)
-        _menu_ref.append(mgr)  # 防止 GC 回收，否則 QTimer 回呼時物件已消失
-        if hasattr(mgr, 'window') and mgr.window:
-            mgr.window.setWindowIcon(QIcon(icon_path))
-            mgr.window.show()
-            QTimer.singleShot(50, lambda: mgr._onTabChanged(menu.selected_tab))
+        mgr.tab_widget.blockSignals(True)
+        mgr.tab_widget.setCurrentIndex(menu.selected_tab)
+        mgr.tab_widget.blockSignals(False)
+        mgr.window.show()
+        QTimer.singleShot(50, lambda: mgr._onTabChanged(menu.selected_tab))
 
     loading = LoadingScreen(db_path)
-    loading.done.connect(_on_loading_done)
+    _refs.append(loading)
+    loading.dataReady.connect(_on_data_ready)
     loading.show()
 
     sys.exit(app.exec())

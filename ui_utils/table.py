@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView,
     QPushButton, QWidget, QHBoxLayout
 )
-from PySide6.QtGui import QFontMetrics
+from PySide6.QtGui import QFontMetrics, QColor
 
 
 # 固定寬度欄位（格式固定，不需動態量）
@@ -137,9 +137,13 @@ def makeDeleteBtn(callback):
 
 
 def refreshDeleteBtns(table, enabled, col=0):
-    """逐列切換刪除鈕的啟用狀態（身分變更時即時 greyout/還原）。
-    刪除鈕由 makeDeleteBtn 建立、包在 cellWidget 容器內、objectName='deleteBtn'。"""
+    """逐列切換刪除欄的啟用/停用狀態（身分變更時即時更新）。
+    支援 item 文字型（✕ 紅/灰）與 widget 鈕型（makeDeleteBtn）兩種實作。"""
     for r in range(table.rowCount()):
+        item = table.item(r, col)
+        if item is not None:
+            item.setForeground(QColor("#e74c3c") if enabled else QColor("#aeaeb2"))
+            continue
         cont = table.cellWidget(r, col)
         if cont:
             btn = cont.findChild(QPushButton, "deleteBtn")

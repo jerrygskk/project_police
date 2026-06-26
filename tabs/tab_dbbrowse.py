@@ -13,7 +13,7 @@ from lib.db_utils import (
 )
 from lib.auth_manager import AuthManager
 from ui_utils import (
-    setupPreviewTable, autoResizeTable, setDocIdLinkCell, makeDeleteBtn, refreshDeleteBtns,
+    setupPreviewTable, autoResizeTable, refreshDeleteBtns,
     TaskEditDialog, CriminalEditDialog, GeneralEditDialog, runWithBusy, preserveScroll,
 )
 
@@ -115,6 +115,23 @@ TABLE_META = {
         "dialog": GeneralEditDialog, "archive": True,
     },
 }
+
+
+def queryBrowseRows(conn, key):
+    """以既有連線查單表的完整 View 列（dict 列表，含 _proc_active 與歸檔表 _arch_fname）。
+    抽成 module 函式，供瀏覽頁主執行緒查詢與啟動 LoadWorker 背景預載共用。
+    只用純 sqlite3，不碰 Qt 物件，可安全在背景執行緒呼叫。"""
+    meta = TABLE_META[key]
+    arch_sel = ", b.is_electronic AS _arch_fname" if meta.get("archive") else ""
+    sql = f"""
+        SELECT v.*, COALESCE(p.is_active, 1) AS _proc_active{arch_sel}
+        FROM {meta['view']} v
+        LEFT JOIN {meta['base']} b ON v."{meta['id_col']}" = b.doc_id
+        LEFT JOIN Ref_Personnel p ON b.{meta['proc_fk']} = p.staff_id
+    """
+    cur = conn.execute(sql)
+    names = [d[0] for d in cur.description]
+    return [dict(zip(names, row)) for row in cur.fetchall()]
 
 
 def _statusColor(status):
@@ -252,13 +269,10 @@ class TabDBBrowse(BaseTab):
                 refreshDeleteBtns(table, can_delete, del_col)
             if link_col is not None:
                 for r in range(table.rowCount()):
-                    if r < len(order):
-                        did = order[r]
-                        setDocIdLinkCell(
-                            table, r, link_col, did,
-                            lambda _row, d, k=key: self._onEdit(k, self._rowOf(k, d), d),
-                            clickable=can_edit,
-                        )
+                    item = table.item(r, link_col)
+                    if item is not None:
+                        item.setForeground(
+                            QColor("#4A7FA5") if can_edit else QColor("#1c1c1e"))
 
     # ── 範圍下拉：全部欄位 + 可搜尋欄位 ──────────────────────
     def _initScope(self, key):
@@ -295,6 +309,16 @@ class TabDBBrowse(BaseTab):
         if u.get("overdue"):
             u["overdue"].toggled.connect(lambda _, k=key: self._applyOverdue(k))
             self._styleOverdue(key)
+        # 刪除欄、編號欄（文字型 item）：以 cellClicked 攔截，不建 cellWidget
+        del_col  = next((i for i, c in enumerate(TABLE_META[key]["cols"]) if c.get("delete")), None)
+        link_col = next((i for i, c in enumerate(TABLE_META[key]["cols"]) if c.get("link")),   None)
+        if u["table"]:
+            if del_col is not None:
+                u["table"].cellClicked.connect(
+                    lambda row, col, k=key, dc=del_col: self._onDeleteCell(k, row, col, dc))
+            if link_col is not None:
+                u["table"].cellClicked.connect(
+                    lambda row, col, k=key, lc=link_col: self._onLinkCell(k, row, col, lc))
 
     # 精簡 / 完整：兩顆獨立膠囊（藥丸形，圓角=高度一半），選中顆藍底白字。
     _SEG_STYLE = """
@@ -511,7 +535,7 @@ class TabDBBrowse(BaseTab):
         return btn.isChecked() if btn else False
 
     # ── 主載入（資料變動時才呼叫，建全欄、塞全部 cell）──────
-    def _reload(self, key):
+    def _reload(self, key, rows=None):
         meta = TABLE_META[key]
         u = self._ui[key]
         table = u["table"]
@@ -536,12 +560,13 @@ class TabDBBrowse(BaseTab):
             cap_mode=False,
         )
 
-        # 查詢資料
-        try:
-            rows = self._query(key)
-        except Exception as e:
-            msgCritical("DB錯誤", f"載入資料失敗：{e}")
-            return
+        # 查詢資料（啟動預載時 rows 由外部帶入，免重查）
+        if rows is None:
+            try:
+                rows = self._query(key)
+            except Exception as e:
+                msgCritical("DB錯誤", f"載入資料失敗：{e}")
+                return
 
         id_col = meta["id_col"]
         table.setRowCount(0)
@@ -602,22 +627,11 @@ class TabDBBrowse(BaseTab):
 
     def _query(self, key):
         """回傳 dict 列表，含 View 全欄 + _proc_active（+ 歸檔表的 _arch_fname 原始檔名）。"""
-        meta = TABLE_META[key]
-        arch_sel = ", b.is_electronic AS _arch_fname" if meta.get("archive") else ""
-        sql = f"""
-            SELECT v.*, COALESCE(p.is_active, 1) AS _proc_active{arch_sel}
-            FROM {meta['view']} v
-            LEFT JOIN {meta['base']} b ON v."{meta['id_col']}" = b.doc_id
-            LEFT JOIN Ref_Personnel p ON b.{meta['proc_fk']} = p.staff_id
-        """
         conn = self._getConn()
         try:
-            cur = conn.execute(sql)
-            names = [d[0] for d in cur.description]
-            out = [dict(zip(names, row)) for row in cur.fetchall()]
+            return queryBrowseRows(conn, key)
         finally:
             conn.close()
-        return out
 
     def _isEmptied(self, key, r):
         """該筆是否已被清空（軟刪除）。只看真實內容欄是否全空，
@@ -721,13 +735,13 @@ class TabDBBrowse(BaseTab):
         for c_idx, c in enumerate(cols):
             # 刪除欄（最左）：放 X 鈕，點擊以 doc_id 觸發刪除
             if c.get("delete"):
-                doc_id = str(r.get(id_col) or "")
-                container, del_btn = makeDeleteBtn(
-                    lambda _=None, k=key, d=doc_id: self._onDelete(k, d))
-                # 一般使用者無修改權限 → 刪除鈕停用變灰（admin 全開）
-                if not AuthManager.instance().is_admin():
-                    del_btn.setEnabled(False)
-                table.setCellWidget(pos, c_idx, container)
+                item = QTableWidgetItem("✕")
+                item.setTextAlignment(Qt.AlignCenter)
+                item.setForeground(
+                    QColor("#e74c3c") if AuthManager.instance().is_admin()
+                    else QColor("#aeaeb2"))
+                item.setFlags(Qt.ItemIsEnabled)
+                table.setItem(pos, c_idx, item)
                 continue
 
             val = r.get(c["view_col"])
@@ -743,29 +757,33 @@ class TabDBBrowse(BaseTab):
 
             if c.get("link"):
                 doc_id = str(r.get(id_col) or "")
-                # 編號可點＝可開編輯：歸檔管理亦可（刪除仍僅管理者）
                 can_edit = AuthManager.instance().is_manager()
-                setDocIdLinkCell(
-                    table, pos, c_idx, doc_id,
-                    lambda _row, did, k=key: self._onEdit(k, self._rowOf(k, did), did),
-                    clickable=can_edit,
-                )
+                if table.cellWidget(pos, c_idx) is not None:
+                    table.removeCellWidget(pos, c_idx)
+                lnk = QTableWidgetItem(doc_id)
+                lnk.setTextAlignment(Qt.AlignCenter)
+                if can_edit and doc_id:
+                    lnk.setForeground(QColor("#4A7FA5"))
+                lnk.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                table.setItem(pos, c_idx, lnk)
                 continue
 
-            # 主旨欄：cellWidget =（有真實歸檔檔名時）前置電子檔圖示鈕 + 文字。
-            # 只有點圖示鈕才開檔（行為比照歸檔頁），整格其餘區域不觸發。
+            # 主旨欄：有真實 PDF 檔名才建 cellWidget（圖示鈕 + 文字）；
+            # 其餘一律用 item + tooltip，省掉 QWidget 配置成本。
             if c.get("stretch"):
                 afn = ""
                 if TABLE_META[key].get("archive"):
                     afn = (r.get("_arch_fname") or "").strip()
                     if not afn.lower().endswith(".pdf"):
                         afn = ""
-                cont = QWidget()
-                hl = QHBoxLayout(cont)
-                hl.setContentsMargins(6, 0, 6, 0)
-                hl.setSpacing(4)
-                hl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                 if afn:
+                    if table.item(pos, c_idx) is not None:
+                        table.takeItem(pos, c_idx)
+                    cont = QWidget()
+                    hl = QHBoxLayout(cont)
+                    hl.setContentsMargins(6, 0, 6, 0)
+                    hl.setSpacing(4)
+                    hl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                     bo = QPushButton()
                     bo.setIcon(QIcon(":/icon_pdf.svg"))
                     bo.setIconSize(QSize(16, 16))
@@ -778,13 +796,23 @@ class TabDBBrowse(BaseTab):
                     bo.clicked.connect(
                         lambda _=False, k=key, f=afn: self._openArchivedPdf(k, f))
                     hl.addWidget(bo)
-                lab = QLabel(text)
-                if text:
-                    lab.setToolTip(text)
-                if inactive:
-                    lab.setStyleSheet("color: #aeaeb2;")
-                hl.addWidget(lab, 1)
-                table.setCellWidget(pos, c_idx, cont)
+                    lab = QLabel(text)
+                    if text:
+                        lab.setToolTip(text)
+                    if inactive:
+                        lab.setStyleSheet("color: #aeaeb2;")
+                    hl.addWidget(lab, 1)
+                    table.setCellWidget(pos, c_idx, cont)
+                else:
+                    if table.cellWidget(pos, c_idx) is not None:
+                        table.removeCellWidget(pos, c_idx)
+                    sit = QTableWidgetItem(text)
+                    sit.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                    if text:
+                        sit.setToolTip(text)
+                    if inactive:
+                        sit.setForeground(QColor("#aeaeb2"))
+                    table.setItem(pos, c_idx, sit)
                 continue
 
             item = QTableWidgetItem(text)
@@ -872,6 +900,22 @@ class TabDBBrowse(BaseTab):
         "crim": ("刑案", "subject_summary", "Document_Criminal"),
         "gen":  ("一般", "subject",         "Document_General"),
     }
+
+    def _onDeleteCell(self, key, row, col, del_col):
+        """cellClicked handler：攔截文字型 ✕ 欄的點擊觸發刪除。"""
+        if col != del_col or not AuthManager.instance().is_admin():
+            return
+        order = getattr(self, "_docorder", {}).get(key, [])
+        if row < len(order):
+            self._onDelete(key, order[row])
+
+    def _onLinkCell(self, key, row, col, link_col):
+        """cellClicked handler：攔截編號欄點擊開啟編輯視窗。"""
+        if col != link_col or not AuthManager.instance().is_manager():
+            return
+        order = getattr(self, "_docorder", {}).get(key, [])
+        if row < len(order):
+            self._onEdit(key, row, order[row])
 
     def _onDelete(self, key, doc_id):
         if not doc_id:
@@ -965,28 +1009,44 @@ class TabDBBrowse(BaseTab):
             conn.close()
         return (row[0], row[1])
 
+    def buildInitial(self, key, rows=None):
+        """啟動載入畫面期間建單一表（rows 為背景預查資料，None 則就地查 DB）。
+        逐表呼叫，呼叫端可在每張表之間更新進度條。"""
+        if not hasattr(self, "_sigs"):
+            self._sigs = {}
+        self._reload(key, rows=rows)
+        try:
+            self._sigs[key] = self._tableSignature(key)
+        except Exception:
+            pass
+
+    def markLoaded(self):
+        """三表皆已由 buildInitial 建好後呼叫：標記已載入、更新歸檔根目錄警示。"""
+        self._loaded = True
+        self._refreshArchWarn()
+
+    def _refreshArchWarn(self):
+        has_root = bool(getSetting(self.db_path, ARCHIVE_ROOT_KEY, "").strip())
+        for key in ("crim", "gen"):
+            lbl = self._arch_warn.get(key)
+            if lbl:
+                lbl.setVisible(not has_root)
+
     def on_activated(self):
         # 切換進「資料庫瀏覽」時，逐表比對變動指紋：
         # 指紋未變 → 不重載（避免無謂重建 700+ 列造成頓挫）；
         # 指紋改變 → 只重載該表，反映其他頁的增/修/刪。
         if not hasattr(self, "_sigs"):
             self._sigs = {}
-        # 首次進入本頁：彈「載入中」提示後才建三表（啟動時不建，加快開啟）。
+        # Fallback：正常啟動已由 buildInitial 預建三表（_loaded=True）。
+        # 萬一未預建（例外路徑）才在此彈提示補建，確保仍能看到資料。
         if not getattr(self, "_loaded", False):
             def _first():
                 for key in ("task", "crim", "gen"):
-                    self._reload(key)
-                    try:
-                        self._sigs[key] = self._tableSignature(key)
-                    except Exception:
-                        pass
+                    self.buildInitial(key)
             runWithBusy(self._inner, _first, text="載入資料中，請稍候…")
             self._loaded = True
-            has_root = bool(getSetting(self.db_path, ARCHIVE_ROOT_KEY, "").strip())
-            for key in ("crim", "gen"):
-                lbl = self._arch_warn.get(key)
-                if lbl:
-                    lbl.setVisible(not has_root)
+            self._refreshArchWarn()
             return
         # 參照表改名（設定頁改過）→ 就地輕量刷新 ref_col 欄，不重建列（零頓）。
         if getattr(self, "_ref_changed", False):
@@ -1007,8 +1067,4 @@ class TabDBBrowse(BaseTab):
                 self._sigs[key] = sig
 
         # 歸檔根目錄警示
-        has_root = bool(getSetting(self.db_path, ARCHIVE_ROOT_KEY, "").strip())
-        for key in ("crim", "gen"):
-            lbl = self._arch_warn.get(key)
-            if lbl:
-                lbl.setVisible(not has_root)
+        self._refreshArchWarn()
