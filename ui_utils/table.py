@@ -97,6 +97,21 @@ def autoResizeTable(table):
     table.setProperty("init_done", True)
 
 
+# 編號「超連結」外觀的單一真相來源（藍字）。改色只動這裡。
+LINK_COLOR = "#4A7FA5"
+
+
+def applyLinkStyle(item, clickable=True):
+    """把 QTableWidgetItem 套成超連結外觀（藍字＋底線）。
+    clickable=False → 還原成一般深色、無底線。
+    供「純 item」做法的頁面（資料庫瀏覽、歸檔）共用，確保與 setDocIdLinkCell
+    的 <a> 連結同色（皆引用 LINK_COLOR），不再各自硬寫。"""
+    item.setForeground(QColor(LINK_COLOR) if clickable else QColor("#1c1c1e"))
+    f = item.font()
+    f.setUnderline(clickable)
+    item.setFont(f)
+
+
 def setDocIdLinkCell(table, row, col, doc_id, on_click, clickable=True):
     """
     在表格 (row, col) 放一個編號欄。
@@ -110,7 +125,7 @@ def setDocIdLinkCell(table, row, col, doc_id, on_click, clickable=True):
     if clickable and doc_id:
         if table.item(row, col) is not None:
             table.takeItem(row, col)
-        lbl = QLabel(f'<a href="{doc_id}" style="color:#4A7FA5;">{doc_id}</a>')
+        lbl = QLabel(f'<a href="{doc_id}" style="color:{LINK_COLOR};text-decoration:underline;">{doc_id}</a>')
         lbl.setAlignment(Qt.AlignCenter)
         lbl.setOpenExternalLinks(False)
         lbl.linkActivated.connect(lambda link, r=row: on_click(r, link))

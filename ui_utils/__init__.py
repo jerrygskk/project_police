@@ -15,6 +15,8 @@ from .table   import (
     makeDeleteBtn,
     refreshDeleteBtns,
     setDocIdLinkCell,
+    applyLinkStyle,
+    LINK_COLOR,
     FIXED_COL_WIDTHS,
 )
 
@@ -45,6 +47,8 @@ __all__ = [
     "makeDeleteBtn",
     "refreshDeleteBtns",
     "setDocIdLinkCell",
+    "applyLinkStyle",
+    "LINK_COLOR",
     "helpDialog",
     "attachHelpButton",
     "TaskEditDialog",

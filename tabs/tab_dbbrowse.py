@@ -13,7 +13,7 @@ from lib.db_utils import (
 )
 from lib.auth_manager import AuthManager
 from ui_utils import (
-    setupPreviewTable, autoResizeTable, refreshDeleteBtns,
+    setupPreviewTable, autoResizeTable, refreshDeleteBtns, applyLinkStyle,
     TaskEditDialog, CriminalEditDialog, GeneralEditDialog, runWithBusy, preserveScroll,
 )
 
@@ -271,8 +271,7 @@ class TabDBBrowse(BaseTab):
                 for r in range(table.rowCount()):
                     item = table.item(r, link_col)
                     if item is not None:
-                        item.setForeground(
-                            QColor("#4A7FA5") if can_edit else QColor("#1c1c1e"))
+                        applyLinkStyle(item, can_edit)   # 藍字+底線/還原（單一來源）
 
     # ── 範圍下拉：全部欄位 + 可搜尋欄位 ──────────────────────
     def _initScope(self, key):
@@ -765,7 +764,7 @@ class TabDBBrowse(BaseTab):
                 lnk = QTableWidgetItem(doc_id)
                 lnk.setTextAlignment(Qt.AlignCenter)
                 if can_edit and doc_id:
-                    lnk.setForeground(QColor("#4A7FA5"))
+                    applyLinkStyle(lnk)                 # 藍字+底線（單一來源）
                 lnk.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                 table.setItem(pos, c_idx, lnk)
                 continue

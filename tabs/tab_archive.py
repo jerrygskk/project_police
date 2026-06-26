@@ -1,7 +1,7 @@
 import os
 import re
 
-from PySide6.QtCore import Qt, QUrl, QSize, QTimer
+from PySide6.QtCore import Qt, QUrl, QSize, QTimer, QObject, QEvent
 from PySide6.QtGui import QDesktopServices, QPalette, QColor, QIcon, QIntValidator
 from PySide6.QtWidgets import (
     QVBoxLayout, QTabWidget, QLineEdit, QPushButton, QLabel,
@@ -19,7 +19,7 @@ from lib.archive_text import (
     _parseSubject as _parseSubjectText,
 )
 from ui_utils import (
-    setDocIdLinkCell,
+    applyLinkStyle,
     RowHoverFilter, RowHoverDelegate, TwoLineElideLabel,
     CriminalEditDialog, GeneralEditDialog, runWithBusy, preserveScroll,
 )
@@ -30,6 +30,33 @@ _BUSY_ROW_THRESHOLD = 100
 
 # 待歸檔清單選中列的左側指示 bar 顏色（搭配藍底深藍字辨識選定公文）
 _SEL_BAR_COLOR = "#3f6fb5"
+
+
+class _LinkClickFilter(QObject):
+    """攔截待歸檔清單「編號欄」的左鍵按下：開該筆編輯視窗，並消化事件，
+    使表格不進入選取流程——編輯與選取是兩個獨立概念，點編號不該改動
+    「選取＝鎖定比對候選 PDF」的當前列。其他欄照常選取。
+    （比照資料庫瀏覽改純 item 做法；瀏覽頁無選取語意故用 cellClicked，
+    歸檔頁有選取語意，須在 MouseButtonPress 階段攔截才不會動到選取。）"""
+
+    def __init__(self, tab, key, table, link_col):
+        super().__init__(table)
+        self._tab = tab
+        self._key = key
+        self._table = table
+        self._link_col = link_col
+
+    def eventFilter(self, obj, event):
+        if (event.type() == QEvent.MouseButtonPress
+                and event.button() == Qt.LeftButton):
+            idx = self._table.indexAt(event.position().toPoint())
+            if idx.isValid() and idx.column() == self._link_col:
+                order = getattr(self._tab, "_docorder", {}).get(self._key, [])
+                row = idx.row()
+                if row < len(order) and order[row]:
+                    self._tab._onEditDoc(self._key, order[row])
+                return True   # 消化 → 不改動選取/鎖定
+        return False
 
 
 class _SelBarDelegate(QStyledItemDelegate):
@@ -426,6 +453,16 @@ class TabArchive(BaseTab):
         if key not in self._selBound:
             table.itemSelectionChanged.connect(lambda k=key: self._onRowSelected(k))
             self._selBound.add(key)
+        # 編號欄點擊→開編輯（不改選取）：viewport 事件過濾器只裝一次
+        self._linkBound = getattr(self, "_linkBound", set())
+        if key not in self._linkBound:
+            link_col = next(
+                (i for i, c in enumerate(cols) if c["view"] == meta["id_col"]), None)
+            if link_col is not None:
+                lf = _LinkClickFilter(self, key, table, link_col)
+                table.viewport().installEventFilter(lf)
+                table._link_filter = lf      # 防 GC
+            self._linkBound.add(key)
 
         self._docrows = getattr(self, "_docrows", {})
         self._docrows[key] = {}
@@ -453,11 +490,15 @@ class TabArchive(BaseTab):
         meta = META[key]
         for ci, c in enumerate(cols):
             if c["view"] == meta["id_col"]:
-                # 編號欄：超連結，點擊開該筆編輯視窗（比照交辦單/資料庫瀏覽）
+                # 編號欄：純 item（比照資料庫瀏覽，避免每列建 cellWidget）。
+                # 藍字+底線偽裝超連結；點擊開編輯由 _LinkClickFilter 攔截處理
+                # （在 viewport MouseButtonPress 階段，故不會動到列選取）。
                 doc_id = str(r.get(c["view"]) or "")
-                setDocIdLinkCell(
-                    table, pos, ci, doc_id,
-                    lambda _row, did, k=key: self._onEditDoc(k, did))
+                item = QTableWidgetItem(doc_id)
+                item.setTextAlignment(Qt.AlignCenter)
+                if doc_id:
+                    applyLinkStyle(item)
+                table.setItem(pos, ci, item)
                 continue
             val = r.get(c["view"])
             text = "" if val is None else str(val)
