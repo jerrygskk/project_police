@@ -350,6 +350,10 @@ if __name__ == "__main__":
     _lock.write_lock(_lock_path, _machine, _user, _opened_iso,
                      _dt.now().isoformat(timespec="seconds"), _pid)
 
+    # ── 平時自動備份：每日覆蓋＋每週另存（本機輪替，純靜默）──
+    from lib import db_backup as _backup
+    _backup.run_auto_backup(db_path)
+
     def _heartbeat():
         _lock.write_lock(_lock_path, _machine, _user, _opened_iso,
                          _dt.now().isoformat(timespec="seconds"), _pid)

@@ -136,6 +136,19 @@ main.py
 - ⚠️ **是勸導不是保證**：可按「仍要開啟」硬上，corruption 風險（SMB 鎖那層）仍在。**不做唯讀模式、不擋 DB 寫入**（寫入併發由 SQLite 自身忙線鎖處理，對應「資料庫忙線中」友善訊息）。讀寫鎖檔失敗一律靜默退讓，不阻擋開程式。
 - 純邏輯（parse/format/is_stale/is_mine/lock_file_path）有單元測試 `tests/test_app_lock.py`。
 
+### 平時自動備份（`lib/db_backup.py`）
+
+單機程式平時零備份，硬碟外的損毀（檔案毀損、誤刪、DB malformed）一旦發生即無救。故於**程式啟動時**（鎖檔寫入後、建主視窗前，`main.py` 呼叫 `run_auto_backup`）做**常規祖孫式（GFS）輪替備份**，存放於 `dbfile.db` 同目錄的 `backups/` 子夾。做到每週為止（不做 monthly 那一層），兩層皆帶日期、各自輪替修剪：
+
+- **每日** `dbfile_backup_day_YYYYMMDD.db`：每天第一次開啟時建一份（當天再開不重做），保留最近 `DAILY_KEEP=7` 份、較舊者刪除。最近一週有逐日粒度。
+- **每週** `dbfile_backup_week_YYYYMMDD.db`：每週（ISO 週）第一次開啟時建一份，保留最近 `WEEKLY_KEEP=4` 份。涵蓋約一個月。誤刪當天靠每日救、過幾天才發現靠每週救。
+
+- **備份方式**：用 sqlite3 backup API 取一致性快照（即使有並發寫入也安全），先寫 `.tmp` 再 `os.replace` 原子換上（中途失敗不毀既有好檔）。保留份數常數在 `lib/db_backup.py` 頂部，要調量改那裡。
+- **容錯**：全程 `try/except`，失敗只記 `error.log`，**絕不拋例外、絕不阻擋程式開啟**（同 app_lock 哲學）。
+- ⚠️ **本層只防本機檔案損毀／誤刪，救不了硬碟整顆故障**（備份與本體同碟）。防硬碟故障需異地備份（指定另一顆碟／網路碟／USB），為後續另一層、尚未實作。
+- **手動還原**：關閉程式後，將 `backups/` 內要還原的那份**複製覆蓋** `dbfile.db`（覆蓋前建議先把現有 `dbfile.db` 另存留底），再重開程式。目前無還原 UI。
+- 純邏輯（`is_daily_due`/`is_weekly_due`/`parse_daily_dates`/`parse_weekly_dates`/`prune_targets`）＋ sqlite backup round-trip 有單元測試 `tests/test_db_backup.py`。`backups/` 已加入 `.gitignore`。
+
 ### 稽核 log（操作紀錄）
 
 對關鍵操作寫不可竄改意圖的操作紀錄（單機環境本質無法防 admin 直接開 DB 改 log，已接受；程式內不提供刪 log UI）。
@@ -216,6 +229,7 @@ main.py
 │   ├── base_tab.py      BaseTab 基底
 │   ├── auth_manager.py  權限單例（`is_admin()` 便捷判斷）
 │   ├── app_lock.py      APP 層軟性互斥（dbfile.lock 鎖檔讀寫/失效判斷，純邏輯可單測）
+│   ├── db_backup.py     平時自動備份（啟動時 GFS 輪替：每日留 7＋每週留 4，本機 backups/，純邏輯可單測）
 │   ├── archive_text.py  歸檔比對純文字/檔名工具（_tokenize/_parseDate/_pkOf/_sanitize/_trimName/_resolveNames/_parseSubject；自 tab_archive 抽出，可單測。承辦人/主旨解析需餵 DB 人名字典）
 │   ├── theme.py         全域 QSS（Apple HIG 風格）
 │   ├── version.py       版本號單一來源（__version__；進版只改這裡，主選單顯示自動同步）
@@ -522,6 +536,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
   --hidden-import lib.base_tab ^
   --hidden-import lib.auth_manager ^
   --hidden-import lib.app_lock ^
+  --hidden-import lib.db_backup ^
   --hidden-import lib.theme ^
   --hidden-import lib.loading_screen ^
   --hidden-import lib.version ^
@@ -568,7 +583,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 - 指令開頭 `del ...spec & rmdir build dist` 是刻意的：開發期不信任殘留 spec（會用到上次的過期設定），每次砍掉 spec / build / dist 用乾淨 CLI 參數全新生成。`2>nul` 讓首次執行（檔案不存在）不報錯
 - **跨年度重置的自動重啟**：onefile 版重啟新程序前必設環境變數 `PYINSTALLER_RESET_ENVIRONMENT=1`（PyInstaller 6.10+ 官方機制），否則新程序沿用舊 `_MEI` 環境、到已刪除的暫存目錄找 `python3xx.dll`/標準庫而崩潰（`Failed to load Python DLL` / `unicodedata` 缺失）。`_restartApp()` 已處理。詳見第 2 節踩雷表與第 5 節 Reset 子節
 - 若打包後報 `No module named res`，加 `--hidden-import res.resources_rc`
-- 核心模組在 `lib/`，主程式打包已列 `--hidden-import lib.*` 八個（含 `lib.archive_text`、`lib.app_lock`）；若仍報 `No module named lib.xxx`，補對應的 hidden-import
+- 核心模組在 `lib/`，主程式打包已列 `--hidden-import lib.*` 九個（含 `lib.archive_text`、`lib.app_lock`、`lib.db_backup`）；若仍報 `No module named lib.xxx`，補對應的 hidden-import
 - GitHub release 上傳用英文檔名
 - **exe 檔案資訊（右鍵→內容→詳細資料）**：由 `--version-file version_info.txt` 帶入。`version_info.txt` 不在 build 時生成，而是**進版時由 `tools/bump_version.py` 連同版號一起產生**（見 §8 進版），已收進 git。打包只需引用、不用多做。要改顯示文字（公司/產品名）改 `tools/bump_version.py` 頂部常數
 
