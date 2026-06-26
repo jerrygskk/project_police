@@ -191,6 +191,7 @@ main.py
 - **表格樣式比照資料庫瀏覽頁**：固定列高 30、不換行（內容單行省略、完整內容入 tooltip）、無格線、`NoSelection`+`NoFocus`（唯讀不反白）。
 - **篩選**：期間起迄（`QDateEdit`，留白＝不限，哨兵 `minimumDate`=2000-01-01）／身分／類別／關鍵字（比對內容＋對象人）；底部計數「顯示 N／共 M 筆」。
 - **匯出 CSV**：`btn_export` 匯出**目前篩選後**可見列（`utf-8-sig`，動作欄寫原文不含「●」）。
+- **切頁免重建**：`on_activated` 比對資料指紋 `(COUNT, MAX(log_id))`（append-only＋Reset 清空皆能偵測變動），指紋未變且已載入過則不重建（比照資料庫瀏覽頁）；需重建時以 `preserveScroll` 保留捲動位置。
 - 跨年度 Reset 會清 `Audit_Log`，故單庫紀錄量上限約一年，全量載入無虞。`parseDetail` 純邏輯有單元測試 `tests/test_audit_view.py`。
 
 ### 別名（alias）
@@ -366,7 +367,7 @@ self.setStyleSheet("""
 | 可空白日期欄、月曆打開停在今天 | `widgets.py` 的 `setupDateEditCalendarOnly(dateedit)`（搭 `setSpecialValueText(" ")` ＋設 minimumDate 當空白哨兵；過濾器裝 calendarWidget，見 §2 雷） |
 | 固定 N 行、超長尾端省略的標籤 | `widgets.py` 的 `TwoLineElideLabel`（固定 2 行高、第 2 行尾 `…`、完整內容入 tooltip；建構後以 `actions.replaceWidget(舊label, 新)` 換掉 .ui 的 QLabel） |
 | 預覽表黏底捲動 | `setupPreviewTable` 後呼叫 `attachStickyScroll(table)` |
-| 重建/差異更新表格時保留捲動位置 | `widgets.py` 的 `preserveScroll(table, func)`：執行 func 前記下 `verticalScrollBar().value()`，func 後以 `QTimer.singleShot(0,…)` 還原並 clamp 到當下 maximum。已用於瀏覽 `_diffUpdate`/`_reload`、歸檔 `_diffDocs`/`_loadDocs`/`_rematch`、設定 `_renderSortTable`。輸入暫存預覽表（交辦發/收文、陳報）刻意維持 `attachStickyScroll` 捲到底，不套此 helper |
+| 重建/差異更新表格時保留捲動位置 | `widgets.py` 的 `preserveScroll(table, func)`：執行 func 前記下 `verticalScrollBar().value()`，func 後以 `QTimer.singleShot(0,…)` 還原並 clamp 到當下 maximum。已用於瀏覽 `_diffUpdate`/`_reload`、歸檔 `_diffDocs`/`_loadDocs`/`_rematch`、設定 `_renderSortTable`、操作紀錄 `_populate`。輸入暫存預覽表（交辦發/收文、陳報）刻意維持 `attachStickyScroll` 捲到底，不套此 helper |
 
 ### 通用彈窗（db_utils）
 
