@@ -61,7 +61,9 @@ main.py
 
 瀏覽頁（Tab4）三表、歸檔頁（Tab5）待歸檔清單各約 700+ 列，重建 cellWidget 才是成本所在。故依「變動性質」分三條路徑：
 
-> **瀏覽頁惰性載入**：`setup()` 不建表（避免每次開 App、不論開哪頁都先建三表 cellWidget），改為**第一次切到瀏覽頁**（`on_activated`，`_loaded` 旗標）才以 `runWithBusy` 顯示「載入中」後建一次，之後沿用下列指紋／diff 機制。⚠️ 每列建刪除鈕＋編號連結兩個 cellWidget 是先天成本，列數上千時首次開啟仍需數秒（本程式年度 Reset 歸零，實際年量約數百～2000，可接受）；若未來年量大增需秒開，方向是拿掉每列 widget 改純 item＋`cellClicked`（大改，未做）。
+> **啟動預載建表（＋進度條）**：取消惰性載入。啟動順序為 `載入畫面 → 主選單 → 選功能秒進`：載入畫面期間，`LoadWorker` 背景執行緒先預讀三表完整資料（`queryBrowseRows`，純 SQL，可跨執行緒），再交主執行緒於 `DocumentManager.__init__` 以 `buildInitial` 分段建好整個主視窗，進度條全程顯示「讀取…／建立…清單」（`LOAD_STEPS`／`BUILD_STEPS` 見 `lib/loading_screen.py`）。主選單出現時主視窗已就緒。建完設 `_loaded=True`，之後沿用下列指紋／diff 機制；`on_activated` 首次分支降為 fallback（萬一未預建才補建）。
+>
+> **建表成本已大幅降低**：原本每列「刪除鈕＋編號連結」兩個 cellWidget 是先天成本。現改為**刪除欄（✕）、編號欄、無 PDF 的主旨欄一律純 `QTableWidgetItem`**，點擊以 `cellClicked` 攔截（`_onDeleteCell`／`_onLinkCell`）；只有刑案／一般陳報「有真實 PDF 檔名」的主旨列才保留 cellWidget（PDF 圖示鈕）。交辦單每列 0 個 cellWidget。⚠️ 建表發生在主視窗 show 之前（viewport 寬=0），欄寬靠 `autoResizeTable` 重試補正。
 
 1. **參照改名（人員／部門／案類）→ 就地輕量更新**：設定頁改過參照表時 `_ref_changed=True`，`on_activated` 走 `_refreshRefCells`（瀏覽）／重載小清單（歸檔），**只對 `ref_col` 標記欄 `setText`，不重建列**（700 列實測 ~20ms）。指紋只看公文表 `last_modified`，碰不到參照改名，故必須走此旗標路徑。
 2. **跨頁增／修／刪 → 指紋差異更新**：比對 `(COUNT, MAX(last_modified))`，變了才 `_diffUpdate`／`_diffDocs`，只重建變動列。變動列數 `>= _BUSY_ROW_THRESHOLD`（預設 100）才跳「更新中」提示。
@@ -117,7 +119,7 @@ main.py
 | 檔案歸檔 Tab5 | 可使用 | 可使用 | 無法使用 |
 | 設定 Tab6 | 全可使用 | **可視**：變更密碼／歸檔資料夾設定／登出開放；參照表維護（新增／改名／儲存排序／拖拉）與跨年度重置 **disable 灰掉** | 無法使用 |
 
-> 一般使用者限制由 `TaskEditDialog(restricted=…)` 控制（鎖定欄位顯示 DB 原值＋灰 `:disabled` 樣式，儲存只動承辦人）；連結可點與否由各 tab `setDocIdLinkCell(clickable=…)` 控制，身分變更時 `_onRolePerm` 重刷（編號連結＋刪除鈕）。
+> 一般使用者限制由 `TaskEditDialog(restricted=…)` 控制（鎖定欄位顯示 DB 原值＋灰 `:disabled` 樣式，儲存只動承辦人）；身分變更時 `_onRolePerm` 重刷編號連結與刪除鈕。連結可點與否：收文／發文／陳報頁仍由 `setDocIdLinkCell(clickable=…)` 控制（cellWidget）；**瀏覽頁已改純 item**，`_onRolePerm` 只切編號欄 `setForeground`（藍＝可點）、`refreshDeleteBtns` 切 ✕ 字色，點擊一律走 `cellClicked`。
 > 「歸檔管理也能做」的判斷（歸檔頁、Tab4 編輯、編輯彈窗歸檔狀態區塊）用 `is_manager()`；「僅 admin」的（Tab4 刪除鈕、Tab0 發文）維持 `is_admin()`。設定頁的參照表維護按鈕對 archive `setEnabled(False)`（需配 `:disabled` 樣式才會變灰，見 §2 雷）；雙擊參照表列會繞過按鈕 enabled，故 6 個 `_add*/_edit*` 方法首加 `_refEditable()`（僅 admin）guard。
 
 ### 稽核 log（操作紀錄）
@@ -211,10 +213,15 @@ main.py
 │   ├── tabs/            HELP 子頁籤圖（qrc 別名 :/tab/，gen_buttons.py 產出）
 ├── tabs/                各 Tab
 ├── ui_utils/            共用 UI 工具（table/widgets/status/sticky_scroll/edit_dialog/settings_dialogs/help_dialog/help_content；button_imgs 為 gen_buttons 產出對照表）
+├── tools/               開發／維運工具腳本（入庫，皆從專案根目錄執行；不被核心模組 import）
+│   ├── bump_version.py     進版（改 lib/version.py ＋產 version_info.txt，見 §8）
+│   ├── gen_buttons.py      產 HELP 按鈕／子頁籤 SVG（見 §5）
+│   └── gen_quickstart.py   產速查卡 PDF（見 §5）
 └── tests/               純邏輯單元測試（unittest，見下「單元測試」節）
 ```
 
-> 根目錄獨立工具：`bump_version.py`（進版）、`gen_buttons.py`（產 HELP 按鈕／子頁籤 SVG，見 §5）、`gen_quickstart.py`（產速查卡 PDF，見 §5）。皆不 import 核心模組。
+> `tools/` 各腳本錨定 repo 根（`bump_version` 與 CWD 脫鉤、`gen_*` 抓 `__file__` 上一層），但**一律從專案根目錄執行**（`python tools/bump_version.py …`）。皆不 import 核心模組。
+> 一次性／現場交付腳本（`fix_audit_setup.py`／`fix_cat_status.py`／`seed_*.py`）刻意**不入庫、留根目錄**：`fix_*` 會打包成 exe 發給現場放 `dbfile.db` 旁執行（靠「找腳本旁的 db」邏輯，不可改），`seed_*` 為本機壓測／塞假料丟棄腳本。
 
 > 核心模組（db_utils、base_tab、auth_manager、theme、loading_screen）在 `lib/`，本文其餘章節為精簡仍以簡稱（如「db_utils」）指稱，實際 import 路徑為 `from lib.db_utils import ...`。`main.py`（入口）與上述獨立工具留根目錄，互不 import 核心模組。
 
@@ -346,8 +353,8 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 - **內容單一來源** `ui_utils/help_content.py`：七頁說明以**結構化區塊** `HELP_PAGES` 描述（block 型別：`lead`/`muted`/`label`/`hint`/`warn`/`sec`，`sec` 內含 `p`/`ol`/`ul`/`map`/`table`/`cols`/`note`），由 `_render_html()` 產出彈窗 HTML、`render_review_text()` 產出純文字校稿（`docs/help_text_review.txt`，未入庫）。改說明文字只動 `HELP_PAGES`，兩種輸出自動同步。tooltip 候選存 `HELP_TIPS`。
 - **彈窗元件** `ui_utils/help_dialog.py`：`helpDialog(parent, tab_index)` 以 `QTextBrowser` 顯示（白底、Enter/Esc 關、右上警徽 LOGO + 全寬鋼藍橫線）；`attachHelpButton(tab_widget, window)` 於 `main.py` tabs 建完後呼叫一次，掛上分頁列右上角 `setCornerWidget` 說明鈕（依 `currentIndex()` 開對應頁）並套 tooltip。
 - **版面**：Apple HIG 留白編排，段落標題用**鋼藍細豎條＋下細分隔線**（`_h_header`，非滿版色帶），步驟序號用**實心鋼藍方塊白字**（`ol`），內文深黑 `#1c1c1e`。內文字距 `_LETTER_SPACING=92`（`help_dialog.py`）——⚠️ `QTextBrowser` 不吃 CSS `letter-spacing`，設在 `QFont` 上。⚠️ `QTextBrowser` 是 Qt rich-text 子集，**不支援圓角／陰影／flex／懸掛縮排**：色塊用單格表格 `bgcolor`、清單懸掛縮排用兩欄表格（標號欄 + 文字欄）達成。
-- **按鈕／子頁籤示意圖**：說明文字裡的按鈕（如「確認發文」）與子頁籤（如「❐ 刑案陳報」）用**預烤圓角 SVG**（`<img>` 內嵌），因 `QTextBrowser` inline 樣式做不出圓角。SVG 由 `python gen_buttons.py` 依 `BUTTONS`／`TABS` 清單批次產出至 `res/buttons/`（別名 `:/btn/`）與 `res/tabs/`（`:/tab/`），配色比照 `lib/theme.py` 烤進圖；對照表 `ui_utils/button_imgs.py`（label→路徑/寬高，入庫）供 `help_content` 查表。改標籤／配色改該腳本重跑、重編 qrc。⚠️ `QTextBrowser` 圖片點陣化解析度有上限（intrinsic 取 2× 已封頂），圖片**不會跟內文一樣銳利**；`font-family` 須用裸字型名（逗號清單會被 QtSvg 當成不存在字型 fallback）。
-- **速查卡**：母本 `QUICKSTART`（`help_content.py`，七 Tab 濃縮，與 `HELP_PAGES` 同檔各自合身）；`python gen_quickstart.py`（reportlab 嵌微軟正黑體，含 `_check_glyphs` 字形覆蓋率檢查）產 `docs/Quick_Start.pdf`（A4 直式 2 頁，`docs/` 未入庫）。改說明同時動到速查卡時，`QUICKSTART` 要一併同步。
+- **按鈕／子頁籤示意圖**：說明文字裡的按鈕（如「確認發文」）與子頁籤（如「❐ 刑案陳報」）用**預烤圓角 SVG**（`<img>` 內嵌），因 `QTextBrowser` inline 樣式做不出圓角。SVG 由 `python tools/gen_buttons.py` 依 `BUTTONS`／`TABS` 清單批次產出至 `res/buttons/`（別名 `:/btn/`）與 `res/tabs/`（`:/tab/`），配色比照 `lib/theme.py` 烤進圖；對照表 `ui_utils/button_imgs.py`（label→路徑/寬高，入庫）供 `help_content` 查表。改標籤／配色改該腳本重跑、重編 qrc。⚠️ `QTextBrowser` 圖片點陣化解析度有上限（intrinsic 取 2× 已封頂），圖片**不會跟內文一樣銳利**；`font-family` 須用裸字型名（逗號清單會被 QtSvg 當成不存在字型 fallback）。
+- **速查卡**：母本 `QUICKSTART`（`help_content.py`，七 Tab 濃縮，與 `HELP_PAGES` 同檔各自合身）；`python tools/gen_quickstart.py`（reportlab 嵌微軟正黑體，含 `_check_glyphs` 字形覆蓋率檢查）產 `docs/Quick_Start.pdf`（A4 直式 2 頁，`docs/` 未入庫）。改說明同時動到速查卡時，`QUICKSTART` 要一併同步。
 - 圖示 `res/buttons/icon_help.svg`（鋼藍 #4977b1）走 qrc 內嵌（`:/icon_help.svg`），改了要重編 qrc。
 
 ### tab_report.py 特殊架構
@@ -538,7 +545,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 
 - `dbfile.db` 不打包，與 exe 同資料夾（真實資料）
 - `arrow.svg` / `icon_pdf.svg` / `icon_archive.svg` / `icon_paper.svg` / `icon_help.svg`（共用 icon）及 `res/buttons/*.svg`（HELP 真按鈕圖，別名 `:/btn/`）、`res/tabs/*.svg`（HELP 子頁籤圖，別名 `:/tab/`）已透過 `resources_rc.py` 內嵌，不需 `--add-data`；改了要重編 qrc（`pyside6-rcc res/resources.qrc -o res/resources_rc.py`）
-- `res/buttons/*.svg`（真按鈕）與 `res/tabs/*.svg`（子頁籤）由 `python gen_buttons.py` 依 `BUTTONS`／`TABS` 清單批次產出（同時更新對照表 `ui_utils/button_imgs.py`）；改了標籤／配色改該腳本重跑，再重編 qrc
+- `res/buttons/*.svg`（真按鈕）與 `res/tabs/*.svg`（子頁籤）由 `python tools/gen_buttons.py` 依 `BUTTONS`／`TABS` 清單批次產出（同時更新對照表 `ui_utils/button_imgs.py`）；改了標籤／配色改該腳本重跑，再重編 qrc
 - 列印用 `QtPrintSupport`，加 `--hidden-import PySide6.QtPrintSupport` 保險
 - matplotlib 只用 `backend_agg`（PNG）+ `backend_pdf`（存 PDF），其餘 backend 全排除
 - 結構重組後 `.ui` 進 `layouts/`、圖片進 `res/`，`--add-data` 路徑要對應第二參數（解壓目標目錄）
@@ -547,13 +554,13 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 - 若打包後報 `No module named res`，加 `--hidden-import res.resources_rc`
 - 核心模組在 `lib/`，主程式打包已列 `--hidden-import lib.*` 七個（含 `lib.archive_text`）；若仍報 `No module named lib.xxx`，補對應的 hidden-import
 - GitHub release 上傳用英文檔名
-- **exe 檔案資訊（右鍵→內容→詳細資料）**：由 `--version-file version_info.txt` 帶入。`version_info.txt` 不在 build 時生成，而是**進版時由 `bump_version.py` 連同版號一起產生**（見 §8 進版），已收進 git。打包只需引用、不用多做。要改顯示文字（公司/產品名）改 `bump_version.py` 頂部常數
+- **exe 檔案資訊（右鍵→內容→詳細資料）**：由 `--version-file version_info.txt` 帶入。`version_info.txt` 不在 build 時生成，而是**進版時由 `tools/bump_version.py` 連同版號一起產生**（見 §8 進版），已收進 git。打包只需引用、不用多做。要改顯示文字（公司/產品名）改 `tools/bump_version.py` 頂部常數
 
 ---
 
 ## 8. 版本記錄
 
-> 版本號單一來源為 `lib/version.py` 的 `__version__`。**進版一律用 `python bump_version.py <版號>`**（版號自帶，不自動進位；執行前會先印出目前版號），它會同時改 `version.py` 與產出 `version_info.txt`（exe 檔案資訊）；標題列與主選單顯示自動同步。本表與 git tag（`v{__version__}`）需手動對齊。⚠️ 勿手改 `version.py`，否則 `version_info.txt` 不同步。
+> 版本號單一來源為 `lib/version.py` 的 `__version__`。**進版一律用 `python tools/bump_version.py <版號>`**（版號自帶，不自動進位；執行前會先印出目前版號），它會同時改 `version.py` 與產出 `version_info.txt`（exe 檔案資訊）；標題列與主選單顯示自動同步。本表與 git tag（`v{__version__}`）需手動對齊。⚠️ 勿手改 `version.py`，否則 `version_info.txt` 不同步。
 
 | 版本 | 摘要 |
 |------|------|

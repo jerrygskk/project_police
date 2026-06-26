@@ -23,7 +23,9 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether)
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# 本檔在 tools/ 之下，repo 根為上一層（供 import ui_utils）
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
 from ui_utils.help_content import QUICKSTART, HELP_TITLES  # noqa: E402
 
 # ── 字型 ───────────────────────────────────────────────────────
@@ -155,7 +157,7 @@ def _check_glyphs():
 
 if __name__ == "__main__":
     _check_glyphs()
-    out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs")
+    out_dir = os.path.join(_ROOT, "docs")
     os.makedirs(out_dir, exist_ok=True)
     out = os.path.join(out_dir, "Quick_Start.pdf")
     build(out)

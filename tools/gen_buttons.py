@@ -113,7 +113,8 @@ def _svg(label, style):
     return svg, w
 
 def main():
-    root = os.path.dirname(os.path.abspath(__file__))
+    # 本檔在 tools/ 之下，repo 根為上一層
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     mapping = {}   # label -> (src, w, h)
     # (清單, 子資料夾, qrc 別名前綴)
     for items, subdir, prefix in ((BUTTONS, "buttons", "btn"),

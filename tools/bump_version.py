@@ -2,7 +2,7 @@
 進版工具：一次完成「改版號 + 產出 version_info.txt」。
 
 用法：
-    python bump_version.py 1.0.4   # 版號一律自帶
+    python tools/bump_version.py 1.0.4   # 版號一律自帶（從專案根目錄執行）
 
 會做兩件事：
   1. 改寫 lib/version.py 的 __version__
@@ -22,8 +22,10 @@ DESCRIPTION = "公文管理系統"
 COPYRIGHT   = "© 2026 桃園市政府警察局中壢分局龍興派出所"
 EXE_NAME    = "Police-Document-Manager.exe"
 
-VERSION_PY  = Path("lib/version.py")
-INFO_TXT    = Path("version_info.txt")
+# 錨定 repo 根（本檔在 tools/ 之下），與當前工作目錄脫鉤
+ROOT        = Path(__file__).resolve().parent.parent
+VERSION_PY  = ROOT / "lib" / "version.py"
+INFO_TXT    = ROOT / "version_info.txt"
 _VER_RE     = re.compile(r'__version__\s*=\s*"([^"]*)"')
 
 

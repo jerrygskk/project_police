@@ -70,11 +70,11 @@
 
 - 版本號定義於 `lib/version.py`，進版時只進第三碼
 - 進位與否他決定，不要自己跳版號
-- **進版一律跑 `python bump_version.py <版號>`**（版號自帶、不自動進位；會先印出目前版號），它會同時改 `version.py` 與產出 `version_info.txt`（exe 檔案資訊）。**勿手改 `version.py`**，否則 `version_info.txt` 不同步
+- **進版一律跑 `python tools/bump_version.py <版號>`**（從專案根目錄執行；版號自帶、不自動進位；會先印出目前版號），它會同時改 `version.py` 與產出 `version_info.txt`（exe 檔案資訊）。**勿手改 `version.py`**，否則 `version_info.txt` 不同步
 
 #### 用語約定（他會用簡稱，要對上）
 
-- **「進版」** = 跑 `python bump_version.py <版號>`（機制見上「版本號」節）+ 打 git tag `v{版本號}` + README §8 補一列版本記錄
+- **「進版」** = 跑 `python tools/bump_version.py <版號>`（機制見上「版本號」節）+ 打 git tag `v{版本號}` + README §8 補一列版本記錄
 - **「push上去」、「推上去」** = 把改動 commit + push。**逐檔 add**（當輪或上次 push 後改動的檔案逐一 add，**不要一次全加**，跳過 `dbfile.db`）；**叫你推才推**，沒說不要問「要推嗎？」
   - ⚠️ **多行 commit 訊息用 Bash tool 的 heredoc**（`git commit -F - <<'EOF' … EOF`），**不要用 PowerShell here-string `@'…'@`**——它在 Bash 不被解析，`@` 會被當訊息第一行黏進 subject。（這個雷踩過多次）
 - ⚠️ **push 前必確認無真實人名／個資**：要 commit／push 的內容（含測試 fixture 檔名、文件範例、`dbfile.db`）不得含真實人名，有則先替換成虛構佔位名才能推。`dbfile.db` 只能是**乾淨空殼**（人員僅佔位、無公文），且提交前先 `VACUUM`（刪除的資料會殘留在 slack space，strings 掃得到）。
