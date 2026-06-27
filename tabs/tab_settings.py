@@ -49,6 +49,7 @@ _NAV_INACTIVE = (
     "border: none; border-radius: 8px; padding: 10px 14px; "
     "font-weight: 500; font-size: 14pt; text-align: left; }"
     "QPushButton:hover { background-color: #e5e5ea; }"
+    "QPushButton:disabled { color: #c5c5c9; background-color: transparent; }"
 )
 _NAV_BOTTOM = (
     "QPushButton { background-color: transparent; color: #636366; "
@@ -463,9 +464,10 @@ class TabSettings(BaseTab):
         if self._btn_year_reset:
             self._btn_year_reset.setEnabled(is_admin)
 
-        # 資源回收筒：僅 admin 可見（archive 連 nav 鈕都不顯示）
+        # 資源回收筒：admin 可用；歸檔管理可見但停用（反灰，與其他維護功能一致）
         if self._nav_btns[self._PAGE_TRASH]:
-            self._nav_btns[self._PAGE_TRASH].setVisible(is_admin)
+            self._nav_btns[self._PAGE_TRASH].setVisible(True)
+            self._nav_btns[self._PAGE_TRASH].setEnabled(is_admin)
 
     # ── 身份切換監聽：登出時回到密碼驗證畫面 ─────────────────────
     def _onRoleChanged(self, role):

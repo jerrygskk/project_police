@@ -21,7 +21,9 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether)
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether,
+    PageBreak)
+from PIL import Image, ImageDraw
 
 # 本檔在 tools/ 之下，repo 根為上一層（供 import ui_utils）
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -63,13 +65,50 @@ _tip = ParagraphStyle("tip", fontName=FONT, fontSize=9.5, textColor=AMBER_INK,
                      leading=13.5)
 
 
+X_IMG = None   # (path, 顯示寬pt, 顯示高pt)；於 __main__ 產好刪除鈕 PNG 後設定
+
+
+def _make_x_button(path):
+    """畫一顆紅底白叉的刪除鈕 PNG（比照介面刪除色 #e74c3c），供 PDF 內嵌。"""
+    s = 6   # 放大倍率求清晰（顯示時再縮小）
+    W, H = 26 * s, 22 * s
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([0, 0, W - 1, H - 1], radius=5 * s, fill="#e74c3c")
+    cx, cy, arm, lw = W / 2, H / 2, 5 * s, 2 * s
+    d.line([cx - arm, cy - arm, cx + arm, cy + arm], fill="white", width=lw)
+    d.line([cx - arm, cy + arm, cx + arm, cy - arm], fill="white", width=lw)
+    img.save(path)
+
+
+def _purpose_html(purpose):
+    """灰字說明；把 {X} 占位換成內嵌刪除鈕圖（無圖時退回文字 ✕）。"""
+    if "{X}" not in purpose:
+        return purpose
+    if X_IMG:
+        p, w, h = X_IMG
+        return purpose.replace(
+            "{X}", f'<img src="{p}" width="{w}" height="{h}" valign="-2"/>')
+    return purpose.replace("{X}", "✕")
+
+
+def _tip_blocks(tip):
+    """tip 欄位正規化成「提示塊」串列。每塊為字串（單行）或 [帶頭句, 分點…]。"""
+    return tip if isinstance(tip, (list, tuple)) else ([tip] if tip else [])
+
+
+def _block_strings(block):
+    """把一個提示塊攤平成純字串串列（供字形檢查用）。"""
+    return list(block) if isinstance(block, (list, tuple)) else [block]
+
+
 def _section(idx):
     """單一 Tab 區塊（標題列 + 用途 + 步驟 + 提示），整塊不跨頁。"""
     purpose, steps, tip = QUICKSTART[idx]
     flow = []
 
     # 標題列：鋼藍序號方塊 + 頁名
-    badge = Table([[Paragraph(str(idx), ParagraphStyle(
+    badge = Table([[Paragraph(str(idx + 1), ParagraphStyle(
         "b", fontName=FONT_BD, fontSize=13, textColor=colors.white,
         alignment=1, leading=15))]], colWidths=[8 * mm], rowHeights=[8 * mm])
     badge.setStyle(TableStyle([
@@ -88,14 +127,19 @@ def _section(idx):
     ]))
     flow.append(head)
     flow.append(Spacer(1, 3))
-    flow.append(Paragraph(purpose, _purpose))
+    flow.append(Paragraph(_purpose_html(purpose), _purpose))
 
     for i, s in enumerate(steps, 1):
         flow.append(Paragraph(
             f'<font name="{FONT_BD}" color="#4977b1">{i}.</font>&nbsp;{s}', _step))
 
-    if tip:
-        t = Table([[Paragraph("※&nbsp; " + tip, _tip)]], colWidths=[None])
+    for tp in _tip_blocks(tip):
+        if isinstance(tp, (list, tuple)):
+            html = "※&nbsp; " + tp[0] + "".join(
+                "<br/>&nbsp;&nbsp;・ " + p for p in tp[1:])
+        else:
+            html = "※&nbsp; " + tp
+        t = Table([[Paragraph(html, _tip)]], colWidths=[None])
         t.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), AMBER_BG),
             ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7),
@@ -131,8 +175,16 @@ def build(out_path):
         leftMargin=16 * mm, rightMargin=16 * mm,
         topMargin=28 * mm, bottomMargin=14 * mm,
         title="公文管理系統 快速上手速查卡")
+    # 版面分頁（指定）：
+    #   第 1 頁＝三大功能（交辦單發文／收文、公文陳報）＋簽收單列印
+    #   第 2 頁＝其餘（資料庫瀏覽、檔案歸檔、資料庫設定）
+    PAGE1 = [0, 1, 2, 3]
+    PAGE2 = [4, 5, 6]
     story = []
-    for idx in sorted(QUICKSTART):
+    for idx in PAGE1:
+        story.append(_section(idx))
+    story.append(PageBreak())
+    for idx in PAGE2:
         story.append(_section(idx))
     doc.build(story, onFirstPage=_header_band, onLaterPages=_header_band)
 
@@ -147,7 +199,10 @@ def _check_glyphs():
     cmap = set(TTCollection(_REG[1]).fonts[_REG[2]].getBestCmap())
     used = set("※公文管理系統快速上手七個分頁速查詳細說明請點程式各頁右上角的的鈕")
     for purpose, steps, tip in QUICKSTART.values():
-        for s in [purpose, *steps] + ([tip] if tip else []):
+        texts = [purpose, *steps]
+        for blk in _tip_blocks(tip):
+            texts += _block_strings(blk)
+        for s in texts:
             used |= set(s)
     missing = sorted(c for c in used if c.strip() and ord(c) not in cmap)
     if missing:
@@ -159,6 +214,9 @@ if __name__ == "__main__":
     _check_glyphs()
     out_dir = os.path.join(_ROOT, "docs")
     os.makedirs(out_dir, exist_ok=True)
+    xpng = os.path.join(out_dir, "_x_btn.png")
+    _make_x_button(xpng)
+    X_IMG = (xpng, 14, 12)
     out = os.path.join(out_dir, "Quick_Start.pdf")
     build(out)
     print(f"已產生：{out}")
