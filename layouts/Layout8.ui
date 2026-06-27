@@ -67,7 +67,7 @@
           </item>
           <item>
            <widget class="QDateEdit" name="audit_from">
-            <property name="minimumWidth"><number>120</number></property>
+            <property name="minimumWidth"><number>180</number></property>
             <property name="calendarPopup"><bool>true</bool></property>
             <property name="displayFormat"><string>yyyy-MM-dd</string></property>
            </widget>
@@ -79,41 +79,36 @@
           </item>
           <item>
            <widget class="QDateEdit" name="audit_to">
-            <property name="minimumWidth"><number>120</number></property>
+            <property name="minimumWidth"><number>180</number></property>
             <property name="calendarPopup"><bool>true</bool></property>
             <property name="displayFormat"><string>yyyy-MM-dd</string></property>
            </widget>
           </item>
 
           <item>
-           <widget class="QLabel" name="lbl_role">
-            <property name="text"><string>身分</string></property>
+           <widget class="QComboBox" name="audit_role">
+            <property name="minimumWidth"><number>140</number></property>
            </widget>
           </item>
+
           <item>
-           <widget class="QComboBox" name="audit_role">
+           <widget class="QComboBox" name="audit_cat">
             <property name="minimumWidth"><number>110</number></property>
            </widget>
           </item>
 
           <item>
-           <widget class="QLabel" name="lbl_cat">
-            <property name="text"><string>類別</string></property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QComboBox" name="audit_cat">
-            <property name="minimumWidth"><number>90</number></property>
-           </widget>
-          </item>
-
-          <item>
            <widget class="QLineEdit" name="audit_kw">
-            <property name="placeholderText"><string>關鍵字</string></property>
+            <property name="placeholderText"><string>搜尋內容或對象</string></property>
             <property name="clearButtonEnabled"><bool>true</bool></property>
            </widget>
           </item>
 
+          <item>
+           <widget class="QPushButton" name="btn_reload">
+            <property name="text"><string>重整</string></property>
+           </widget>
+          </item>
           <item>
            <widget class="QPushButton" name="btn_export">
             <property name="text"><string>匯出 CSV</string></property>

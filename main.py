@@ -58,7 +58,7 @@ def _setup_error_handler():
 _setup_error_handler()
 
 from PySide6.QtWidgets import QApplication, QDialog
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QFont
 
 from lib.theme import APPLE_STYLE
@@ -392,6 +392,14 @@ if __name__ == "__main__":
         # 一切就緒後才顯示主選單，使用者選功能後直接切到該頁
         menu = MainMenu()
         _refs.append(menu)
+        # 打包版偶爾因 Windows 前景鎖，主選單被壓到別的視窗後面：
+        # exec() 進事件迴圈、dialog 顯示後立刻清最小化狀態並搶到最前。
+        def _bringMenuFront():
+            w = menu.ui
+            w.setWindowState((w.windowState() & ~Qt.WindowMinimized) | Qt.WindowActive)
+            w.raise_()
+            w.activateWindow()
+        QTimer.singleShot(0, _bringMenuFront)
         if menu.ui.exec() != QDialog.Accepted or menu.selected_tab < 0:
             sys.exit(0)
         mgr.tab_widget.blockSignals(True)

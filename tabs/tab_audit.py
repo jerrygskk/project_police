@@ -76,12 +76,14 @@ class TabAudit(BaseTab):
         self._cat   = inner.findChild(QComboBox,   "audit_cat")
         self._kw    = inner.findChild(QLineEdit,   "audit_kw")
         self._btn_export = inner.findChild(QPushButton, "btn_export")
+        self._btn_reload = inner.findChild(QPushButton, "btn_reload")
         self._table = inner.findChild(QTableWidget, "audit_table")
         self._count = inner.findChild(QLabel,      "lbl_count")
 
         self._initDateEdits()
         self._initCombos()
         self._initTable()
+        self._shrinkFilterFont()
 
         # 全量資料快取（list of dict）＋資料指紋（沒變不重載）
         self._rows = []
@@ -95,6 +97,8 @@ class TabAudit(BaseTab):
         self._kw.textChanged.connect(lambda *_: self._applyFilter())
         if self._btn_export:
             self._btn_export.clicked.connect(self._export)
+        if self._btn_reload:
+            self._btn_reload.clicked.connect(lambda *_: self._load(force=True))
 
         # 身分牆
         self._applyGate()
@@ -108,11 +112,22 @@ class TabAudit(BaseTab):
             de.setDate(_BLANK_DATE)          # 預設皆不限（顯示全部）
             setupDateEditCalendarOnly(de)
 
+    def _shrinkFilterFont(self):
+        # 篩選列控件統一 12pt（全域 14pt 下 10 位日期太寬會 truncate）。
+        # 一律用 stylesheet 的 font-size，勿用 setFont——QFont 會被全域 theme 的
+        # CSS font 蓋回 14pt（CSS 字級優先於 QFont）。只覆寫 font-size，其餘
+        # border/padding 仍沿用 theme.py 的全域規則（不影響月曆／下拉清單）。
+        self._from.setStyleSheet("QDateEdit { font-size: 12pt; }")
+        self._to.setStyleSheet("QDateEdit { font-size: 12pt; }")
+        self._role.setStyleSheet("QComboBox { font-size: 12pt; }")
+        self._cat.setStyleSheet("QComboBox { font-size: 12pt; }")
+        self._kw.setStyleSheet("QLineEdit { font-size: 12pt; }")
+
     def _initCombos(self):
-        self._role.addItem("全部", None)
+        self._role.addItem("全部身分", None)   # 自述首項（已移除外部「身分」標籤）
         for code in ('admin', 'archive', 'user'):
             self._role.addItem(ROLE_ZH[code], code)
-        self._cat.addItem("全部", None)
+        self._cat.addItem("全部類別", None)     # 自述首項（已移除外部「類別」標籤）
         for c in CATEGORIES:
             self._cat.addItem(c, c)
 
@@ -183,10 +198,11 @@ class TabAudit(BaseTab):
         except Exception:
             return None
 
-    def _load(self):
-        # 指紋未變且已載入過 → 免重建（比照資料庫瀏覽頁，避免每次切入整表重建）
+    def _load(self, force=False):
+        # 指紋未變且已載入過 → 免重建（比照資料庫瀏覽頁，避免每次切入整表重建）。
+        # force=True（手動「⟳ 重整」）一律重查，繞過指紋短路。
         fp = self._fingerprint()
-        if fp is not None and fp == self._fp and self._table.rowCount():
+        if not force and fp is not None and fp == self._fp and self._table.rowCount():
             return
         self._fp = fp
 

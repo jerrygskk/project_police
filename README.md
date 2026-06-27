@@ -24,6 +24,7 @@ main.py
 - `DocumentManager.TAB_CLASSES` 是 `{index: TabClass}` 的字典，新增 Tab 在這裡登記
 - 每個 Tab 繼承 `BaseTab`，必須實作 `setup(tab_index)`
 - 可 override：`get_tables()`（回傳要 autoresize 的表格）、`get_focus_widget()`（進 Tab 時聚焦的元件）、`on_activated()`（被切到時刷新）
+- ⚠️ **主選單拉到最前**：打包版偶因 Windows 前景鎖，`MainMenu` 的 `exec()` dialog 會被壓到別的視窗後面。修法是 `QTimer.singleShot(0, …)` 在 exec 進事件迴圈、dialog 顯示後 `raise_()`＋`activateWindow()`＋清最小化狀態（`main.py` `_on_data_ready`）。
 
 ### Tab 結構（共 8 個）
 
@@ -189,7 +190,8 @@ main.py
 - 全量載入 `Audit_Log`（`ORDER BY log_id DESC`）後以 `setRowHidden` 篩選（比照資料庫瀏覽頁）；`detail` 經 `parseDetail` 解析 `[類別][動作]內容` 拆「類別／動作/內容」三欄顯示。
 - **欄位**：時間｜身分｜類別｜動作｜內容｜對象人。`role` 轉中文；刪除／重置／登入失敗動作以紅字＋紅「●」標示（`setForeground`，勿用 `::item{color}`）；身分 admin 鋼藍、archive 灰藍、空白灰。
 - **表格樣式比照資料庫瀏覽頁**：固定列高 30、不換行（內容單行省略、完整內容入 tooltip）、無格線、`NoSelection`+`NoFocus`（唯讀不反白）。
-- **篩選**：期間起迄（`QDateEdit`，留白＝不限，哨兵 `minimumDate`=2000-01-01）／身分／類別／關鍵字（比對內容＋對象人）；底部計數「顯示 N／共 M 筆」。
+- **篩選**：期間起迄（`QDateEdit`，留白＝不限，哨兵 `minimumDate`=2000-01-01）／身分／類別／關鍵字（比對內容＋對象人）；底部計數「顯示 N／共 M 筆」。身分／類別下拉**無外部標籤**，首項自述「全部身分」「全部類別」省版面；篩選列控件統一 12pt（用 stylesheet `font-size`，勿用 `setFont`——會被全域 14pt CSS 蓋回）。⚠️ 日期框寬度須容得下 14pt/12pt 的 10 位日期＋全域 `QDateEdit` 右內距 32px（讓位箭頭），尺寸先以 `QFontMetrics` 量測再設，勿憑猜。
+- **手動重整**：`btn_reload`（「重整」，CSV 左邊）→ `_load(force=True)` 繞過指紋短路強制重查，供 admin 久停本頁時取最新紀錄。
 - **匯出 CSV**：`btn_export` 匯出**目前篩選後**可見列（`utf-8-sig`，動作欄寫原文不含「●」）。
 - **切頁免重建**：`on_activated` 比對資料指紋 `(COUNT, MAX(log_id))`（append-only＋Reset 清空皆能偵測變動），指紋未變且已載入過則不重建（比照資料庫瀏覽頁）；需重建時以 `preserveScroll` 保留捲動位置。
 - 跨年度 Reset 會清 `Audit_Log`，故單庫紀錄量上限約一年，全量載入無虞。`parseDetail` 純邏輯有單元測試 `tests/test_audit_view.py`。
@@ -635,6 +637,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 
 | 版本 | 摘要 |
 |------|------|
+| v1.1.1 | **誤刪還原（資源回收筒）**：主表刪除（清空保留 doc_id）前先把整列快照存入 `Trash_Documents`，設定頁新增「資源回收筒」子頁（僅 admin）可單選還原，把快照寫回原文號、保留刪除當下歸檔狀態，並寫一筆「還原」稽核；跨年度 Reset 一併清空回收筒。**啟動冪等建表 `ensureSchema`**（`lib/db_schema.py`）：附加式結構（建表／加欄）改於啟動時自動套用，新增資料表不再需要發 fix 工具叫現場手動跑（破壞式變更仍走一次性手動）。**操作紀錄頁介面整理**：新增「重整」鈕（強制重查）、身分／類別下拉去除外部標籤改首項自述、篩選列字級收斂。**主選單顯示修正**：打包版偶因 Windows 前景鎖被其他視窗壓住，改在顯示後強制拉到最前。另含一輪 code review 修正（DB 連線改 `finally` 釋放、刪除入口補權限檢查、`_trimName` 收斂單一實作）。 |
 | v1.1.0 | **稽核大版本（特別版，含現場升級工具）**。**三角色權限＋操作稽核**：新增 `user`／`archive`（歸檔管理）／`admin` 三角色（兩組密碼），關鍵操作寫 `Audit_Log` 操作紀錄，新增「操作紀錄」檢視 Tab7（僅 admin、可篩選／匯出 CSV）。**效能**：瀏覽頁 cellWidget 改純 item＋啟動預載建表（載入畫面進度條，主選單出現時主視窗已就緒）。**安全性**：錯誤訊息白話化（全域 handler 套 `friendlyErrorMessage`）、搜尋不分大小寫、閒置 10 分自動登出＋閒置 20 分自動關閉、APP 層軟性互斥（`dbfile.lock` 勸導，多機共用網路碟時提醒）。**平時自動備份**：啟動時 GFS 輪替（每日留 7／每週留 4，本機 `backups/`，`lib/db_backup.py`）。**主選單**改 2 欄圖示磚格；dev 工具收進 `tools/`。⚠️ 升級舊庫前置：先 `fix_cat_status`（未套過 v1.0.9 者）再 `fix_audit_setup`（建 `Audit_Log`＋設兩組密碼），否則稽核不寫、退化為單一 admin。 |
 | v1.0.9 | **發文分類／案件狀態正規化**：`Ref_Case_Status`／`Ref_General_Category` 的顯示名去除歷史字母前綴、縮為兩字（A_現行犯→現行、D_業務陳報→業務…），View 撈出即顯示，移除程式端 `_STATUS_MAP`／`_CAT_MAP` 兩層轉換；簽收單列印「現行犯免簽收」判斷改以 `case_status` ID（`CS01`）比對、與顯示名脫鉤。收編 5 筆未正規化的 `H_核銷` 孤兒分類（併入「業務」GC01、業務單位補「行政組」）。一次性資料修補 `fix_cat_status.py`（執行前自動備份、不入庫）。**HELP 視覺優化**：說明內按鈕／子頁籤改用預烤圓角 SVG（`gen_buttons.py` 產出、對照表 `ui_utils/button_imgs.py`）、文字校正；`res/` 圖片資產集中到 `res/buttons/`＋`res/tabs/`。 |
 | v1.0.8 | **程式內 HELP**：每個大 Tab 右上角新增 help 說明鈕（線圖示），點開該頁「使用說明」彈窗（七頁內容，Apple HIG 留白編排、鋼藍色帶標題、右上警徽 LOGO）；各欄位／按鈕加 tooltip。內容單一來源 `ui_utils/help_content.py`（結構化 `HELP_PAGES`，同時產彈窗 HTML 與純文字校稿）；彈窗元件 `ui_utils/help_dialog.py`。新增圖示 `res/icon_help.svg`（qrc 內嵌）。**協作文件**：CLAUDE.md 補「一律台灣用語」。 |
