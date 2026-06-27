@@ -194,6 +194,18 @@ main.py
 - **切頁免重建**：`on_activated` 比對資料指紋 `(COUNT, MAX(log_id))`（append-only＋Reset 清空皆能偵測變動），指紋未變且已載入過則不重建（比照資料庫瀏覽頁）；需重建時以 `preserveScroll` 保留捲動位置。
 - 跨年度 Reset 會清 `Audit_Log`，故單庫紀錄量上限約一年，全量載入無虞。`parseDetail` 純邏輯有單元測試 `tests/test_audit_view.py`。
 
+### 誤刪還原（資源回收筒）
+
+主表「刪除」是清空欄位保留 doc_id（空殼列恆在）。為支援誤刪還原，**清空前先把整列快照存進回收筒**，還原時把快照寫回原 doc_id 那列。
+
+- **表 `Trash_Documents`**（見 §6）：`payload` 存刪除前整列 JSON 快照；`subject`/`doc_person`（承辦人）/`deleted_ts`/`deleted_role` 供清單顯示。由 `ensureSchema` 啟動冪等建立。
+- **helper（`lib/db_utils.py`，純邏輯可單測）**：`snapshotRow(conn, table, doc_id)` 清空前抓整列（table 走三主表 allowlist）；`writeTrash(...)` 寫回收筒（缺表靜默跳過，同 `writeAudit` 哲學）；`restoreFromTrash(conn, trash_id)` 把 payload 寫回原列＋刪該 trash 列（table allowlist 防注入）。測試 `tests/test_trash.py`。
+- **4 個刪除點**（瀏覽頁三表／收文／刑案／一般）清空 `UPDATE` 前一律先 `snapshotRow`＋`writeTrash`，與業務刪除同一 transaction。
+- **入口（設定 Tab6 子頁「資源回收筒」，僅 admin）**：唯讀單選表（刪除時間／文號／類別／主旨／對象人／刪除身分）＋關鍵字過濾（比對主旨＋對象人）＋「⟳ 重整」「↩ 還原」鈕。archive／user 連 nav 鈕都不顯示。還原寫一筆「還原」稽核。
+- **保留策略**：永久保留，跨年度 Reset 一併清空（`performYearEndReset` 含 `DELETE FROM Trash_Documents`）。
+- **還原保留歸檔狀態**：快照含 `is_reported`／`is_electronic`，原本已歸檔的資料還原後仍為已歸檔、不回待歸清單。清空式刪除不刪實體 PDF，實體檔通常仍在；若刪除到還原間 PDF 被外部移除，還原的檔名會指到不存在的檔。
+- ⚠️ **還原後刷新（踩雷）**：`restoreFromTrash` **必須排除 `last_modified`**，讓 update trigger（`WHEN NEW.last_modified IS OLD.last_modified`）自己蓋成當下時間；若寫回快照舊值，trigger 不觸發、瀏覽／歸檔頁的指紋偵測不到。另以旗標 `_pending_reload_keys` 通知瀏覽／歸檔頁，切過去時 `on_activated` 走 `_forceReload`（`runWithBusy` popup→全量重建），符合「先切過去→popup→刷新」慣例（`main.py` 給各 tab 加 `_manager` back-ref 供 sibling 取得）。
+
 ### 別名（alias）
 
 - 別名是「人的屬性」，存在 `Ref_Personnel.alias` 欄，分隔符為**半形逗號**，多別名同欄（如 `王佐,所長,副座`）
@@ -248,6 +260,7 @@ main.py
 │   ├── auth_manager.py  權限單例（`is_admin()` 便捷判斷）
 │   ├── app_lock.py      APP 層軟性互斥（dbfile.lock 鎖檔讀寫/失效判斷，純邏輯可單測）
 │   ├── db_backup.py     平時自動備份（啟動時 GFS 輪替：每日留 7＋每週留 4，本機 backups/，純邏輯可單測）
+│   ├── db_schema.py     啟動冪等建表 ensureSchema（附加式結構：_TABLES 建表＋_COLUMNS 加欄，見 §5）
 │   ├── archive_text.py  歸檔比對純文字/檔名工具（_tokenize/_parseDate/_pkOf/_sanitize/_trimName/_resolveNames/_parseSubject；自 tab_archive 抽出，可單測。承辦人/主旨解析需餵 DB 人名字典）
 │   ├── theme.py         全域 QSS（Apple HIG 風格）
 │   ├── version.py       版本號單一來源（__version__；進版只改這裡，主選單顯示自動同步）
@@ -297,9 +310,16 @@ main.py
 
 ## 5. 操作手冊（要改特定東西時查）
 
-### 新增 DB 欄位
+### 結構變更原則（附加式走 ensureSchema、破壞式才手動）
 
-本專案**不做啟動 migration**（單機、版本由維護者自管，migration 的價值皆不成立）。DB 結構變更走**一次性手動 `ALTER TABLE ... ADD COLUMN`**（直接對 `dbfile.db` 執行，不寫進程式、不在啟動時跑 DDL；View 有更動就 `DROP VIEW IF EXISTS … CREATE VIEW …`）：
+結構變更分兩類，界線分明：
+
+- **附加式（建表／加欄，只增不改）→ 啟動時冪等 `ensureSchema`**（`lib/db_schema.py`）：開程式時自動 `CREATE TABLE IF NOT EXISTS`／「缺欄才 `ADD COLUMN`」，各語句獨立 try、失敗只記 error.log、絕不擋開程式。新表／新欄登記進 `db_schema._TABLES`／`_COLUMNS`，**全新安裝與舊庫第一次開都自動長齊，現場免再發 fix 腳本**。目前註冊 `Audit_Log`、`Trash_Documents`。在 `main.py` 啟動序列（鎖檔後、自動備份前）呼叫一次。**forward-only**：只前瞻維護結構，不做回溯自愈（不補密碼、不改舊資料）。
+- **破壞式（改型別／改既有資料／改 View）→ 一次性手動**（不自動跑）：`ALTER TABLE` 改欄、資料修補、`DROP VIEW IF EXISTS … CREATE VIEW …` 仍走手動腳本對 `dbfile.db` 執行，不寫進啟動流程。
+
+> 為何不全交給啟動 migration：重型版本化 migration 對單機自管版本價值不成立；但「冪等建表／加欄」零風險又便宜，交給 `ensureSchema` 反而比「忘了跑 fix → 功能靜默退化」更安全。破壞式變更才需謹慎、維持手動。
+
+舊式「PRAGMA 缺欄退路」仍可用於程式碼讀寫可能尚未存在的欄位（現行 alias 欄即如此，見 `ui_utils/settings_dialogs.py`）：
 
 - 程式碼讀寫可能尚未存在的欄位前，用 **PRAGMA 缺欄退路**保護，確保未套用變更的舊 DB 不會報錯（現行 alias 欄即如此，見 `ui_utils/settings_dialogs.py`）：
 
@@ -527,7 +547,8 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 | 資料表 | 欄位 / 說明 |
 |--------|------|
 | App_Settings | key / value。權限相關 key：`admin_password_hash`（管理者密碼 SHA-256，預設 `admin`）、`archive_password_hash`（歸檔管理密碼 SHA-256，預設 `0000`；v1.1.0 起入庫空殼已內建，舊 DB 缺此 key 才須跑 `fix_audit_setup.py` 補）。另有 `archive_root`/`archive_subdir_crim`/`archive_subdir_gen`（歸檔路徑，Reset 時清空） |
-| Audit_Log | log_id（PK AUTOINCREMENT）/ ts / role / action / target_table / target_id / operator / detail。操作紀錄；**不在啟動 DDL**；自 v1.1.0 起入庫空殼已內建本表（舊庫升級才需 `fix_audit_setup.py` 補；缺表時 `writeAudit` 靜默跳過）。詳見 §3「稽核 log」 |
+| Audit_Log | log_id（PK AUTOINCREMENT）/ ts / role / action / target_table / target_id / operator / detail。操作紀錄；由 `ensureSchema` 啟動冪等建立（缺表時 `writeAudit` 靜默跳過）。詳見 §3「稽核 log」 |
+| Trash_Documents | trash_id（PK AUTOINCREMENT）/ table_name / doc_id / payload（刪除前整列 JSON 快照）/ subject / doc_person / deleted_ts / deleted_role。誤刪還原回收筒；由 `ensureSchema` 啟動冪等建立（缺表時相關 helper 靜默跳過）。詳見 §3「誤刪還原」 |
 
 ### Views
 
@@ -555,6 +576,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
   --hidden-import lib.auth_manager ^
   --hidden-import lib.app_lock ^
   --hidden-import lib.db_backup ^
+  --hidden-import lib.db_schema ^
   --hidden-import lib.theme ^
   --hidden-import lib.loading_screen ^
   --hidden-import lib.version ^
@@ -601,7 +623,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 - 指令開頭 `del ...spec & rmdir build dist` 是刻意的：開發期不信任殘留 spec（會用到上次的過期設定），每次砍掉 spec / build / dist 用乾淨 CLI 參數全新生成。`2>nul` 讓首次執行（檔案不存在）不報錯
 - **跨年度重置的自動重啟**：onefile 版重啟新程序前必設環境變數 `PYINSTALLER_RESET_ENVIRONMENT=1`（PyInstaller 6.10+ 官方機制），否則新程序沿用舊 `_MEI` 環境、到已刪除的暫存目錄找 `python3xx.dll`/標準庫而崩潰（`Failed to load Python DLL` / `unicodedata` 缺失）。`_restartApp()` 已處理。詳見第 2 節踩雷表與第 5 節 Reset 子節
 - 若打包後報 `No module named res`，加 `--hidden-import res.resources_rc`
-- 核心模組在 `lib/`，主程式打包已列 `--hidden-import lib.*` 九個（含 `lib.archive_text`、`lib.app_lock`、`lib.db_backup`）；若仍報 `No module named lib.xxx`，補對應的 hidden-import
+- 核心模組在 `lib/`，主程式打包已列 `--hidden-import lib.*` 十個（含 `lib.archive_text`、`lib.app_lock`、`lib.db_backup`、`lib.db_schema`）；若仍報 `No module named lib.xxx`，補對應的 hidden-import
 - GitHub release 上傳用英文檔名
 - **exe 檔案資訊（右鍵→內容→詳細資料）**：由 `--version-file version_info.txt` 帶入。`version_info.txt` 不在 build 時生成，而是**進版時由 `tools/bump_version.py` 連同版號一起產生**（見 §8 進版），已收進 git。打包只需引用、不用多做。要改顯示文字（公司/產品名）改 `tools/bump_version.py` 頂部常數
 
