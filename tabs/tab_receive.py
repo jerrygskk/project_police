@@ -8,7 +8,8 @@ from PySide6.QtWidgets import (
 from lib.base_tab import BaseTab
 from lib.db_utils import (getResourcePath, loadUi, nextDocId, DEBUG_MODE,
                           msgWarning, msgCritical, confirmBox,
-                          writeAudit, buildDetail, auditStaffName)
+                          writeAudit, buildDetail, auditStaffName,
+                          snapshotRow, writeTrash)
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
@@ -164,6 +165,7 @@ class TabReceive(BaseTab):
                               confirm_text="確認寫入", confirm_danger=True, default_confirm=True):
                     return
 
+        conn = None
         try:
             conn       = self._getConn()
             new_doc_id = nextDocId(conn, 'Document_Task')
@@ -174,7 +176,6 @@ class TabReceive(BaseTab):
                 VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
             """, (new_doc_id, recv_date, recv_id, dept_id, subject, proc_id, deadline))
             conn.commit()
-            conn.close()
 
             self._insertPreviewRow(
                 new_doc_id, subject,
@@ -187,6 +188,9 @@ class TabReceive(BaseTab):
 
         except Exception as e:
             msgCritical("寫入失敗", str(e))
+        finally:
+            if conn:
+                conn.close()
 
     # ── 預覽表格 ──────────────────────────────────────────
     def _insertPreviewRow(self, doc_id, subject, dept_name, processor_name, recv_date, deadline):
@@ -247,6 +251,9 @@ class TabReceive(BaseTab):
     def _deleteByDocId(self, doc_id):
         if not self.recv_table:
             return
+        if not AuthManager.instance().can("delete"):
+            msgWarning("權限不足", "請先以管理者身分登入後再執行刪除。")
+            return
 
         reply = confirmBox(
             "確認刪除",
@@ -256,16 +263,20 @@ class TabReceive(BaseTab):
         if not reply:
             return
 
+        conn = None
         try:
             conn = self._getConn()
-            # 清空前先取 operator（收文者）與主旨快照，供稽核紀錄
-            row = conn.execute(
-                "SELECT receive_id, subject FROM Document_Task WHERE doc_id=?",
-                (doc_id,)).fetchone()
+            # 清空前先抓整列快照：寫回收筒（誤刪可還原）＋取 operator/主旨給稽核
+            snap = snapshotRow(conn, "Document_Task", doc_id)
             # admin 跨庫操作與資料列的人脫鉤 → 留空；一般／歸檔管理記收文者
             operator = (None if AuthManager.instance().is_admin()
-                        else (auditStaffName(conn, row[0]) if row else ""))
-            subject  = (row[1] if row else "") or ""
+                        else (auditStaffName(conn, snap.get("receive_id")) if snap else ""))
+            subject  = (snap.get("subject") if snap else "") or ""
+            if snap:
+                writeTrash(conn, table_name="Document_Task", doc_id=doc_id,
+                           payload=snap, subject=subject,
+                           doc_person=auditStaffName(conn, snap.get("processor_id")),
+                           deleted_role=AuthManager.instance().current_role)
             conn.execute("""
                 UPDATE Document_Task SET
                     receive_date=NULL, receive_id=NULL, dept_id=NULL,
@@ -279,10 +290,12 @@ class TabReceive(BaseTab):
                        target_id=doc_id, operator=operator,
                        detail=buildDetail("交辦", "刪除", f"主旨：{subject}"))
             conn.commit()
-            conn.close()
         except Exception as e:
             msgCritical("刪除失敗", str(e))
             return
+        finally:
+            if conn:
+                conn.close()
 
         # 從 doc_id 找到對應列移除，不操作 row index
         for r in range(self.recv_table.rowCount()):

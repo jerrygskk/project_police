@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from lib.db_utils import msgCritical, getConn
+from lib.archive_text import _trimName as _archiveTrimName
 
 
 class BaseTab:
@@ -54,6 +55,7 @@ class BaseTab:
         載入人員與部門對照表。
         回傳 (personnel_list, dept_list)，各為 [(id, name), ...] 格式。
         """
+        conn = None
         try:
             conn = self._getConn()
             personnel = conn.execute(
@@ -64,17 +66,20 @@ class BaseTab:
                 "SELECT dept_id, dept_name FROM Ref_Departments "
                 "WHERE is_active=1 ORDER BY sort_order"
             ).fetchall()
-            conn.close()
             return personnel, depts
         except Exception as e:
             msgCritical("DB錯誤", f"載入對照表失敗: {e}")
             return [], []
+        finally:
+            if conn:
+                conn.close()
 
     # ── 共用資料轉換 helper ──────────────────────────────────
     @staticmethod
     def _trimName(name):
-        """去掉 - 後綴，例如 王小明-19.06 → 王小明"""
-        return name.split('-')[0] if name and '-' in name else (name or "")
+        """去掉 -／－ 後綴，例如 王小明-19.06 → 王小明（收斂至 archive_text._trimName，
+        統一處理半形 - 與全形 －）"""
+        return _archiveTrimName(name)
 
     @staticmethod
     def _fmtDate(d):
@@ -103,6 +108,7 @@ class BaseTab:
         """
         if not table:
             return
+        conn = None
         try:
             conn = self._getConn()
             for r in range(table.rowCount()):
@@ -123,7 +129,9 @@ class BaseTab:
                     table.item(r, dept_col).setText(dept_name)
                 if processor_name is not None and table.item(r, proc_col):
                     table.item(r, proc_col).setText(self._trimName(processor_name))
-            conn.close()
         except Exception as e:
             msgCritical("DB錯誤", f"刷新預覽列失敗: {e}")
+        finally:
+            if conn:
+                conn.close()
 

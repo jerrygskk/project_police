@@ -1181,6 +1181,14 @@ class TabArchive(BaseTab):
         # 切換進來時，比對未歸檔資料指紋；變了才做「差異更新」（只動變動列，不重建整表）。
         if not hasattr(self, "_sigs"):
             self._sigs = {}
+        # 還原誤刪後被標記的表：走 _forceReload（runWithBusy popup→重建），
+        # 確保被還原且未歸檔的列出現於待歸清單。
+        pend = getattr(self, "_pending_reload_keys", None)
+        if pend:
+            self._pending_reload_keys = None
+            for k in list(pend):
+                if k in ("crim", "gen") and self._ui.get(k, {}).get("doc"):
+                    self._forceReload(k)
         # 參照表改名（設定頁改過）→ 重載待歸檔清單反映新名稱（清單筆數少，全載即可）。
         if getattr(self, "_ref_changed", False):
             for key in ("crim", "gen"):

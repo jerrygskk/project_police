@@ -28,7 +28,7 @@ from lib.db_utils import (
     BTN_CONFIRM, BTN_CANCEL,
     loadUi, getResourcePath,
     performYearEndReset, getSetting, ARCHIVE_ROOT_KEY,
-    getConn, writeAudit, buildDetail,
+    getConn, writeAudit, buildDetail, restoreFromTrash,
 )
 from ui_utils import (
     PersonnelAddDialog, PersonnelEditDialog,
@@ -139,6 +139,14 @@ class TabSettings(BaseTab):
     _PAGE_PERSONNEL = 0
     _PAGE_DEPT      = 1
     _PAGE_CASETYPE  = 2
+    _PAGE_TRASH     = 3
+
+    # 回收筒 table_name → 類別中文
+    _TRASH_CAT = {
+        "Document_Task":     "交辦",
+        "Document_Criminal": "刑案",
+        "Document_General":  "一般",
+    }
 
     def setup(self, tab_index):
         tab = self.tab_widget.widget(tab_index)
@@ -176,6 +184,7 @@ class TabSettings(BaseTab):
             inner.findChild(QPushButton, "btn_nav_personnel"),
             inner.findChild(QPushButton, "btn_nav_dept"),
             inner.findChild(QPushButton, "btn_nav_casetype"),
+            inner.findChild(QPushButton, "btn_nav_trash"),
         ]
         btn_change_pwd = inner.findChild(QPushButton, "btn_change_pwd")
         btn_year_reset = inner.findChild(QPushButton, "btn_year_reset")
@@ -188,6 +197,15 @@ class TabSettings(BaseTab):
         self.tbl_personnel = inner.findChild(QTableWidget, "tbl_personnel")
         self.tbl_dept      = inner.findChild(QTableWidget, "tbl_dept")
         self.tbl_casetype  = inner.findChild(QTableWidget, "tbl_casetype")
+
+        # 資源回收筒（僅 admin）
+        self.tbl_trash         = inner.findChild(QTableWidget, "tbl_trash")
+        self.w_trash_filter    = inner.findChild(QLineEdit,    "w_trash_filter")
+        self.btn_restore_trash = inner.findChild(QPushButton,  "btn_restore_trash")
+        self.btn_reload_trash  = inner.findChild(QPushButton,  "btn_reload_trash")
+        self.lbl_trash_count   = inner.findChild(QLabel,       "lbl_trash_count")
+        self._lbl_hint_trash   = inner.findChild(QLabel,       "lbl_hint_trash")
+        self._trash_rows       = []   # 與 tbl_trash 列 1:1：每筆 {trash_id, cat, subject, person, role, ts}
 
         self.btn_add_personnel  = inner.findChild(QPushButton, "btn_add_personnel")
         self.btn_edit_personnel = inner.findChild(QPushButton, "btn_edit_personnel")
@@ -240,6 +258,22 @@ class TabSettings(BaseTab):
             if _lbl:
                 _lbl.setText("可拖拉列以調整排序，完成後按「儲存排序」")
                 _lbl.setStyleSheet("color: #8e8e93; font-size: 11pt;")
+
+        # ── 資源回收筒：表格、提示、signal ──
+        self._initTrashTable()
+        if self._lbl_hint_trash:
+            self._lbl_hint_trash.setText("還原後資料回填原文號。回收筒於跨年度重置時清空。")
+            self._lbl_hint_trash.setStyleSheet("color: #8e8e93; font-size: 11pt;")
+        if self.lbl_trash_count:
+            self.lbl_trash_count.setStyleSheet("color: #8e8e93; font-size: 11pt;")
+        if self.btn_restore_trash:
+            self.btn_restore_trash.setStyleSheet(BTN_CONFIRM)
+            self.btn_restore_trash.clicked.connect(self._restoreTrash)
+        if self.btn_reload_trash:
+            self.btn_reload_trash.setStyleSheet(BTN_CANCEL)
+            self.btn_reload_trash.clicked.connect(lambda _=False: self._loadTrash())
+        if self.w_trash_filter:
+            self.w_trash_filter.textChanged.connect(self._applyTrashFilter)
 
         self._outer_stack.setCurrentIndex(0)
 
@@ -345,7 +379,8 @@ class TabSettings(BaseTab):
         self._inner_stack.setCurrentIndex(idx)
         for i, btn in enumerate(self._nav_btns):
             btn.setStyleSheet(_NAV_ACTIVE if i == idx else _NAV_INACTIVE)
-        loaders = [self._loadPersonnel, self._loadDept, self._loadCaseType]
+        loaders = [self._loadPersonnel, self._loadDept,
+                   self._loadCaseType, self._loadTrash]
         loaders[idx]()
 
     def on_activated(self):
@@ -361,7 +396,8 @@ class TabSettings(BaseTab):
         self._maybeWarnArchiveRoot()
 
         idx = self._inner_stack.currentIndex()
-        loaders = [self._loadPersonnel, self._loadDept, self._loadCaseType]
+        loaders = [self._loadPersonnel, self._loadDept,
+                   self._loadCaseType, self._loadTrash]
         if 0 <= idx < len(loaders):
             loaders[idx]()
 
@@ -381,15 +417,18 @@ class TabSettings(BaseTab):
             self._maybeWarnArchiveRoot()
         else:
             # 登入失敗稽核（不記輸入內容）
+            conn = None
             try:
                 conn = getConn(self.db_path)
                 writeAudit(conn, role=AuthManager.instance().current_role,
                            action="LOGIN_FAIL", operator=None,
                            detail=buildDetail("系統", "登入失敗", ""))
                 conn.commit()
-                conn.close()
             except Exception:
                 pass
+            finally:
+                if conn:
+                    conn.close()
             self.lbl_login_err.setText("密碼錯誤，請再試一次")
             self.w_password.clear()
             self.w_password.setFocus()
@@ -423,6 +462,10 @@ class TabSettings(BaseTab):
         # 跨年度重置（破壞性，僅管理者）
         if self._btn_year_reset:
             self._btn_year_reset.setEnabled(is_admin)
+
+        # 資源回收筒：僅 admin 可見（archive 連 nav 鈕都不顯示）
+        if self._nav_btns[self._PAGE_TRASH]:
+            self._nav_btns[self._PAGE_TRASH].setVisible(is_admin)
 
     # ── 身份切換監聽：登出時回到密碼驗證畫面 ─────────────────────
     def _onRoleChanged(self, role):
@@ -471,6 +514,7 @@ class TabSettings(BaseTab):
 
         # 1.5 先寫稽核紀錄（在備份之前，使歷史 log 隨備份保存；
         #     performYearEndReset 會清空當前庫的 Audit_Log）
+        conn = None
         try:
             conn = getConn(self.db_path)
             n_main = sum(conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
@@ -484,9 +528,11 @@ class TabSettings(BaseTab):
                                           f"清空主表 {n_main} 筆、刪除停用項 {m_off} 筆、"
                                           f"重編參照表 id、歸零文號、清空歸檔路徑"))
             conn.commit()
-            conn.close()
         except Exception:
             pass
+        finally:
+            if conn:
+                conn.close()
 
         # 2. 自動備份至 dbfile 同目錄
         try:
@@ -610,6 +656,7 @@ class TabSettings(BaseTab):
         """從 DB 依 sort_order 撈進記憶體，清掉暫存 dirty，重繪表格"""
         tbl_name, idc, namec, _, _ = self._REF_CFG[key]
         want_alias = (key == "personnel")
+        conn = None
         try:
             conn = self._getConn()
             if want_alias:
@@ -627,10 +674,12 @@ class TabSettings(BaseTab):
                     f"SELECT {idc}, {namec}, is_active FROM {tbl_name} "
                     f"ORDER BY sort_order"
                 ).fetchall()
-            conn.close()
         except Exception as e:
             msgCritical("DB錯誤", str(e))
             return
+        finally:
+            if conn:
+                conn.close()
         st = self._sort_state[key]
         st["rows"]  = [list(r) for r in rows]   # [id, name, is_active(, alias)]
         st["dirty"] = False
@@ -667,6 +716,7 @@ class TabSettings(BaseTab):
         silent=True 時不跳「已儲存」提示（由修改流程觸發時用）"""
         tbl_name, idc, _, _, _ = self._REF_CFG[key]
         st = self._sort_state[key]
+        conn = None
         try:
             conn = self._getConn()
             for i, row in enumerate(st["rows"], start=1):
@@ -674,10 +724,12 @@ class TabSettings(BaseTab):
                     f"UPDATE {tbl_name} SET sort_order=? WHERE {idc}=?",
                     (i, row[0]))
             conn.commit()
-            conn.close()
         except Exception as e:
             msgCritical("儲存失敗", str(e))
             return
+        finally:
+            if conn:
+                conn.close()
         st["dirty"] = False
         st["save_btn"].setEnabled(False)
         self._ref_dirty = True
@@ -818,3 +870,161 @@ class TabSettings(BaseTab):
             if dlg.get_result():
                 self._ref_dirty = True
                 self._loadCaseType()
+
+    # ── 資源回收筒（誤刪還原，僅 admin）────────────────────────────
+    @staticmethod
+    def _roleZh(role):
+        return {"admin": "管理者", "archive": "歸檔管理",
+                "user": "一般使用者"}.get(role, role or "")
+
+    def _initTrashTable(self):
+        t = self.tbl_trash
+        if not t:
+            return
+        vh = t.verticalHeader()
+        vh.setVisible(False)
+        vh.setDefaultSectionSize(30)        # 固定列高，比照資料庫瀏覽頁
+        t.setWordWrap(False)                # 不換行（單行省略＋tooltip）
+        t.setShowGrid(False)
+        t.setFocusPolicy(Qt.NoFocus)        # 去焦點虛線框（選取仍可用）
+        t.setAlternatingRowColors(True)
+        t.setStyleSheet("""
+            QTableWidget {
+                background-color: #ffffff;
+                alternate-background-color: #f2f2f7;
+                border: none; border-top: 1px solid #c6c6c8;
+                font-size: 13pt;
+            }
+            QHeaderView::section {
+                background-color: #f2f2f7; color: #3a3a3c;
+                font-weight: 600; font-size: 13pt; padding: 4px 4px;
+                border: none; border-bottom: 2px solid #c6c6c8;
+                border-right: 1px solid #e5e5ea;
+            }
+            QTableWidget::item { padding: 2px 6px; border-bottom: 1px solid #e5e5ea; }
+            QTableWidget::item:selected { background-color: #d6e3f5; color: #1c3d5a; }
+        """)
+        hdr = t.horizontalHeader()
+        # 0 刪除時間 / 1 文號 / 2 類別 / 3 主旨 / 4 對象人 / 5 刪除身分
+        for c in (0, 1, 2, 4, 5):
+            hdr.setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(3, QHeaderView.Stretch)
+
+    def _loadTrash(self):
+        if not self.tbl_trash:
+            return
+        rows = []
+        try:
+            conn = getConn(self.db_path)
+            try:
+                cur = conn.execute(
+                    "SELECT trash_id, table_name, doc_id, subject, doc_person, "
+                    "deleted_role, deleted_ts FROM Trash_Documents "
+                    "ORDER BY trash_id DESC")
+                for tid, tbl, doc_id, subj, person, role, ts in cur.fetchall():
+                    rows.append({
+                        "trash_id": tid,
+                        "doc_id":   str(doc_id or ""),
+                        "cat":      self._TRASH_CAT.get(tbl, tbl or ""),
+                        "subject":  subj or "",
+                        "person":   person or "",
+                        "role":     self._roleZh(role),
+                        "ts":       (ts or "").replace("T", " ")[:16],
+                    })
+            finally:
+                conn.close()
+        except Exception:
+            rows = []   # 缺 Trash_Documents 的舊 DB → 空清單
+        self._trash_rows = rows
+        self._renderTrash()
+
+    def _renderTrash(self):
+        t = self.tbl_trash
+        if not t:
+            return
+        kw = (self.w_trash_filter.text() if self.w_trash_filter else "").strip().lower()
+        t.setRowCount(0)
+        shown = 0
+        for r in self._trash_rows:
+            if kw and kw not in r["subject"].lower() and kw not in r["person"].lower():
+                continue
+            row = t.rowCount()
+            t.insertRow(row)
+            for c, text in enumerate(
+                    (r["ts"], r["doc_id"], r["cat"],
+                     r["subject"], r["person"], r["role"])):
+                it = QTableWidgetItem(text)
+                it.setData(Qt.UserRole, r["trash_id"])
+                if c == 3 and text:
+                    it.setToolTip(text)
+                t.setItem(row, c, it)
+            shown += 1
+        if self.lbl_trash_count:
+            self.lbl_trash_count.setText(f"顯示 {shown}／共 {len(self._trash_rows)} 筆")
+
+    def _applyTrashFilter(self, _=None):
+        self._renderTrash()
+
+    def _restoreTrash(self):
+        if not AuthManager.instance().is_admin():
+            return
+        t = self.tbl_trash
+        row = t.currentRow() if t else -1
+        if row < 0:
+            msgWarning("請選擇項目", "請先選取要還原的紀錄", self.tab_widget)
+            return
+        cell = t.item(row, 0)
+        if not cell:
+            return
+        trash_id = cell.data(Qt.UserRole)
+        subj = t.item(row, 3).text() if t.item(row, 3) else ""
+        cat  = t.item(row, 2).text() if t.item(row, 2) else ""
+        if not confirmBox(
+                "還原誤刪", "確定還原此筆紀錄？資料將回填原文號。",
+                confirm_text="還原", cancel_text="取消",
+                informative=(f"{cat}　{subj}" if subj else None)):
+            return
+        ret = None
+        conn = None
+        try:
+            conn = getConn(self.db_path)
+            ret = restoreFromTrash(conn, trash_id)
+            if ret:
+                tbl, doc_id = ret
+                writeAudit(conn,
+                           role=AuthManager.instance().current_role,
+                           action="還原", target_table=tbl,
+                           target_id=str(doc_id), operator=None,
+                           detail=buildDetail(
+                               self._TRASH_CAT.get(tbl, ""), "還原", subj))
+            conn.commit()
+        except Exception:
+            msgCritical("還原失敗", "還原時發生錯誤，請稍後再試。", self.tab_widget)
+            return
+        finally:
+            if conn:
+                conn.close()
+        if not ret:
+            msgWarning("無法還原", "此筆紀錄已不存在或無法還原。", self.tab_widget)
+        else:
+            # 標記被還原的那張表：瀏覽／歸檔頁切過去時於 on_activated 走 _forceReload
+            # （runWithBusy「更新中」popup → 全量重建），遵循既有重載慣例。
+            self._flagSiblingReload({
+                "Document_Task": "task", "Document_Criminal": "crim",
+                "Document_General": "gen"}.get(ret[0]))
+        self._loadTrash()
+
+    def _flagSiblingReload(self, key):
+        """標記其他 Tab（瀏覽／歸檔）下次顯示時強制重載指定表。"""
+        if not key:
+            return
+        try:
+            mgr = getattr(self, "_manager", None)
+            for t in getattr(mgr, "tabs", {}).values():
+                if t is self or not hasattr(t, "_forceReload"):
+                    continue
+                pend = getattr(t, "_pending_reload_keys", None) or set()
+                pend.add(key)
+                t._pending_reload_keys = pend
+        except Exception:
+            pass

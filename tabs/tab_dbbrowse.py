@@ -9,7 +9,7 @@ from lib.base_tab import BaseTab
 from lib.db_utils import (
     getResourcePath, loadUi, msgInfo, msgWarning, msgCritical, confirmBox,
     resolveArchivedPdf, getSetting, ARCHIVE_ROOT_KEY,
-    writeAudit, buildDetail,
+    writeAudit, buildDetail, snapshotRow, writeTrash, auditStaffName,
 )
 from lib.auth_manager import AuthManager
 from ui_utils import (
@@ -928,12 +928,16 @@ class TabDBBrowse(BaseTab):
             return
         try:
             conn = self._getConn()
-            # 清空前先取主旨快照（operator 不寫入，見 _AUDIT_DEL 註）
+            # 清空前先抓整列快照：寫回收筒（誤刪可還原）＋取主旨給稽核。
+            # operator 不寫入稽核（見 _AUDIT_DEL 註）；回收筒對象人取承辦人。
             cat, subj_col, tbl = self._AUDIT_DEL[key]
-            row = conn.execute(
-                f"SELECT {subj_col} FROM {tbl} WHERE doc_id=?",
-                (doc_id,)).fetchone()
-            subject = (row[0] if row else "") or ""
+            snap = snapshotRow(conn, tbl, doc_id)
+            subject = (snap.get(subj_col) if snap else "") or ""
+            if snap:
+                writeTrash(conn, table_name=tbl, doc_id=doc_id, payload=snap,
+                           subject=subject,
+                           doc_person=auditStaffName(conn, snap.get("processor_id")),
+                           deleted_role=AuthManager.instance().current_role)
             conn.execute(self._CLEAR_SQL[key], (doc_id,))
             writeAudit(conn,
                        role=AuthManager.instance().current_role,
@@ -1049,6 +1053,14 @@ class TabDBBrowse(BaseTab):
             self._loaded = True
             self._refreshArchWarn()
             return
+        # 還原誤刪後被標記的表：走 _forceReload（runWithBusy popup→全量重建），
+        # 確保被還原的列出現，並遵循「先 popup 再刷新」慣例。
+        pend = getattr(self, "_pending_reload_keys", None)
+        if pend:
+            self._pending_reload_keys = None
+            for k in list(pend):
+                if self._ui.get(k, {}).get("table"):
+                    self._forceReload(k)
         # 參照表改名（設定頁改過）→ 就地輕量刷新 ref_col 欄，不重建列（零頓）。
         if getattr(self, "_ref_changed", False):
             for key in ("task", "crim", "gen"):

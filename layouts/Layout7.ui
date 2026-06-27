@@ -140,6 +140,11 @@
             </widget>
            </item>
            <item>
+            <widget class="QPushButton" name="btn_nav_trash">
+             <property name="text"><string>資源回收筒</string></property>
+            </widget>
+           </item>
+           <item>
             <spacer name="navStretch">
              <property name="orientation"><enum>Qt::Vertical</enum></property>
              <property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property>
@@ -334,7 +339,70 @@
               <column><property name="text"><string>序號</string></property></column>
               <column><property name="text"><string>案件類型名稱</string></property></column>
               <column><property name="text"><string>狀態</string></property></column>
-              
+
+             </widget>
+            </item>
+           </layout>
+          </widget>
+
+          <!-- ── 子頁 3：資源回收筒（僅 admin） ── -->
+          <widget class="QWidget" name="page_trash">
+           <layout class="QVBoxLayout" name="trashLayout">
+            <property name="spacing"><number>8</number></property>
+            <property name="leftMargin"><number>20</number></property>
+            <property name="topMargin"><number>16</number></property>
+            <property name="rightMargin"><number>20</number></property>
+            <property name="bottomMargin"><number>16</number></property>
+            <item>
+             <layout class="QHBoxLayout" name="trashActionRow">
+              <property name="spacing"><number>8</number></property>
+              <item>
+               <widget class="QLineEdit" name="w_trash_filter">
+                <property name="minimumSize"><size><width>240</width><height>0</height></size></property>
+                <property name="maximumSize"><size><width>300</width><height>16777215</height></size></property>
+                <property name="placeholderText"><string>搜尋主旨或對象人</string></property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="trashActionStretch">
+                <property name="orientation"><enum>Qt::Horizontal</enum></property>
+                <property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="lbl_trash_count">
+                <property name="text"><string></string></property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btn_reload_trash">
+                <property name="text"><string>⟳ 重整</string></property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btn_restore_trash">
+                <property name="text"><string>↩ 還原</string></property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QTableWidget" name="tbl_trash">
+              <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+              <property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property>
+              <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
+              <column><property name="text"><string>刪除時間</string></property></column>
+              <column><property name="text"><string>文號</string></property></column>
+              <column><property name="text"><string>類別</string></property></column>
+              <column><property name="text"><string>主旨</string></property></column>
+              <column><property name="text"><string>對象人</string></property></column>
+              <column><property name="text"><string>刪除身分</string></property></column>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lbl_hint_trash">
+              <property name="wordWrap"><bool>true</bool></property>
+              <property name="text"><string></string></property>
              </widget>
             </item>
            </layout>

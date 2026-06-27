@@ -40,6 +40,10 @@ def _build_schema(conn):
         CREATE TABLE Document_Task (doc_id TEXT PRIMARY KEY);
         CREATE TABLE Document_Criminal (doc_id TEXT PRIMARY KEY);
         CREATE TABLE Document_General (doc_id TEXT PRIMARY KEY);
+        CREATE TABLE Trash_Documents (
+            trash_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            table_name TEXT, doc_id TEXT, payload TEXT, subject TEXT,
+            doc_person TEXT, deleted_ts TEXT, deleted_role TEXT);
         """
     )
 
@@ -105,6 +109,10 @@ class TestYearEndReset(_DbTestBase):
 
     def test_full_reset(self):
         self._seed()
+        self.conn.execute(
+            "INSERT INTO Trash_Documents(table_name, doc_id, payload, "
+            "deleted_ts) VALUES('Document_Task','T1','{}','2026-01-01')")
+        self.conn.commit()
         performYearEndReset(self.db_path)
         c = sqlite3.connect(self.db_path)
         try:
@@ -112,6 +120,9 @@ class TestYearEndReset(_DbTestBase):
             for t in ("Document_Task", "Document_Criminal", "Document_General"):
                 self.assertEqual(
                     c.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0], 0)
+            # 回收筒一併清空
+            self.assertEqual(
+                c.execute("SELECT COUNT(*) FROM Trash_Documents").fetchone()[0], 0)
             # 停用刪除，存活 2 人，依 sort_order 重編：乙(原so1)→P01、甲(原so2)→P02
             rows = c.execute(
                 "SELECT staff_id, staff_name, sort_order FROM Ref_Personnel "

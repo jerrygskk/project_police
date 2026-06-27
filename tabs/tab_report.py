@@ -9,7 +9,8 @@ from PySide6.QtWidgets import (
 from lib.base_tab import BaseTab
 from lib.db_utils import (getResourcePath, loadUi, nextDocId, DEBUG_MODE,
                           msgWarning, msgCritical, confirmBox,
-                          writeAudit, buildDetail, auditStaffName)
+                          writeAudit, buildDetail, auditStaffName,
+                          snapshotRow, writeTrash)
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
@@ -312,6 +313,7 @@ class TabReport(BaseTab):
         """掃刑案預覽表，更新案類/承辦人/受理人欄。"""
         if not self.crim_table:
             return
+        conn = None
         try:
             conn = self._getConn()
             for r in range(self.crim_table.rowCount()):
@@ -338,14 +340,17 @@ class TabReport(BaseTab):
                     self.crim_table.item(r, 5).setText(self._trimName(proc_name))
                 if recv_name is not None:
                     self.crim_table.item(r, 6).setText(self._trimName(recv_name))
-            conn.close()
         except Exception as e:
             msgCritical("DB錯誤", f"刷新刑案預覽列失敗: {e}")
+        finally:
+            if conn:
+                conn.close()
 
     def _refreshGenPreviewNames(self):
         """掃一般陳報預覽表，更新業務單位/承辦人欄。"""
         if not self.gen_table:
             return
+        conn = None
         try:
             conn = self._getConn()
             for r in range(self.gen_table.rowCount()):
@@ -367,20 +372,25 @@ class TabReport(BaseTab):
                     self.gen_table.item(r, 2).setText(dept_name)
                 if proc_name is not None:
                     self.gen_table.item(r, 4).setText(self._trimName(proc_name))
-            conn.close()
         except Exception as e:
             msgCritical("DB錯誤", f"刷新一般陳報預覽列失敗: {e}")
+        finally:
+            if conn:
+                conn.close()
 
     # ── 輔助：從 DB 載入二元組列表 ──────────────────────────
     def _loadTable(self, sql):
+        conn = None
         try:
             conn = self._getConn()
             rows = conn.execute(sql).fetchall()
-            conn.close()
             return [(r[0], r[1]) for r in rows]
         except Exception as e:
             msgCritical("DB錯誤", f"載入對照表失敗: {e}")
             return []
+        finally:
+            if conn:
+                conn.close()
 
     # ── 互填：同承辦 / 同受理 ────────────────────────────────
     def _copyProcessorToReceiver(self):
@@ -460,6 +470,7 @@ class TabReport(BaseTab):
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
             return
 
+        conn = None
         try:
             conn       = self._getConn()
             new_doc_id = nextDocId(conn, 'Document_Criminal')
@@ -473,7 +484,6 @@ class TabReport(BaseTab):
                   processor_id, subject, occ_date or None,
                   reporter or None, receiver_id))
             conn.commit()
-            conn.close()
 
             self._insertCrimRow(
                 new_doc_id, status_name,
@@ -489,6 +499,9 @@ class TabReport(BaseTab):
 
         except Exception as e:
             msgCritical("寫入失敗", str(e))
+        finally:
+            if conn:
+                conn.close()
 
     def _submitGeneral(self, report_date, sender_id):
         # cat_name 為預覽顯示用，與 Ref_General_Category.gen_cat_name 一致（皆兩字）
@@ -510,6 +523,7 @@ class TabReport(BaseTab):
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
             return
 
+        conn = None
         try:
             conn       = self._getConn()
             new_doc_id = nextDocId(conn, 'Document_General')
@@ -521,7 +535,6 @@ class TabReport(BaseTab):
             """, (new_doc_id, report_date, sender_id, dept_id, cat_id,
                   subject, processor_id))
             conn.commit()
-            conn.close()
 
             self._insertGenRow(
                 new_doc_id,
@@ -535,6 +548,9 @@ class TabReport(BaseTab):
 
         except Exception as e:
             msgCritical("寫入失敗", str(e))
+        finally:
+            if conn:
+                conn.close()
 
     # ── 插入預覽列 ───────────────────────────────────────────
     def _insertCrimRow(self, doc_id, status, casetype, subject,
@@ -617,20 +633,27 @@ class TabReport(BaseTab):
     def _deleteCrimByDocId(self, doc_id):
         if not self.crim_table:
             return
+        if not AuthManager.instance().can("delete"):
+            msgWarning("權限不足", "請先以管理者身分登入後再執行刪除。")
+            return
         if not confirmBox("確認刪除",
                           f"本筆資料將被刪除，本文號（{doc_id}）無法再被使用，確認刪除？",
                           confirm_text="刪除", confirm_danger=True, default_confirm=False):
             return
+        conn = None
         try:
             conn = self._getConn()
-            # 清空前先取 operator（陳報人）與主旨快照
-            row = conn.execute(
-                "SELECT sender_id, subject_summary FROM Document_Criminal WHERE doc_id=?",
-                (doc_id,)).fetchone()
+            # 清空前先抓整列快照：寫回收筒（誤刪可還原）＋取 operator/主旨給稽核
+            snap = snapshotRow(conn, "Document_Criminal", doc_id)
             # admin 跨庫操作與資料列的人脫鉤 → 留空；一般／歸檔管理記陳報人
             operator = (None if AuthManager.instance().is_admin()
-                        else (auditStaffName(conn, row[0]) if row else ""))
-            subject  = (row[1] if row else "") or ""
+                        else (auditStaffName(conn, snap.get("sender_id")) if snap else ""))
+            subject  = (snap.get("subject_summary") if snap else "") or ""
+            if snap:
+                writeTrash(conn, table_name="Document_Criminal", doc_id=doc_id,
+                           payload=snap, subject=subject,
+                           doc_person=auditStaffName(conn, snap.get("processor_id")),
+                           deleted_role=AuthManager.instance().current_role)
             conn.execute("""
                 UPDATE Document_Criminal SET
                     report_date=NULL, sender_id=NULL, case_type=NULL, case_status=NULL,
@@ -644,10 +667,12 @@ class TabReport(BaseTab):
                        target_id=doc_id, operator=operator,
                        detail=buildDetail("刑案", "刪除", f"主旨：{subject}"))
             conn.commit()
-            conn.close()
         except Exception as e:
             msgCritical("刪除失敗", str(e))
             return
+        finally:
+            if conn:
+                conn.close()
         for r in range(self.crim_table.rowCount()):
             lbl = self.crim_table.cellWidget(r, 1)
             if lbl and self._docIdFromLabel(lbl) == doc_id:
@@ -657,20 +682,27 @@ class TabReport(BaseTab):
     def _deleteGenByDocId(self, doc_id):
         if not self.gen_table:
             return
+        if not AuthManager.instance().can("delete"):
+            msgWarning("權限不足", "請先以管理者身分登入後再執行刪除。")
+            return
         if not confirmBox("確認刪除",
                           f"本筆資料將被刪除，本文號（{doc_id}）無法再被使用，確認刪除？",
                           confirm_text="刪除", confirm_danger=True, default_confirm=False):
             return
+        conn = None
         try:
             conn = self._getConn()
-            # 清空前先取 operator（陳報人）與主旨快照
-            row = conn.execute(
-                "SELECT sender_id, subject FROM Document_General WHERE doc_id=?",
-                (doc_id,)).fetchone()
+            # 清空前先抓整列快照：寫回收筒（誤刪可還原）＋取 operator/主旨給稽核
+            snap = snapshotRow(conn, "Document_General", doc_id)
             # admin 跨庫操作與資料列的人脫鉤 → 留空；一般／歸檔管理記陳報人
             operator = (None if AuthManager.instance().is_admin()
-                        else (auditStaffName(conn, row[0]) if row else ""))
-            subject  = (row[1] if row else "") or ""
+                        else (auditStaffName(conn, snap.get("sender_id")) if snap else ""))
+            subject  = (snap.get("subject") if snap else "") or ""
+            if snap:
+                writeTrash(conn, table_name="Document_General", doc_id=doc_id,
+                           payload=snap, subject=subject,
+                           doc_person=auditStaffName(conn, snap.get("processor_id")),
+                           deleted_role=AuthManager.instance().current_role)
             conn.execute("""
                 UPDATE Document_General SET
                     report_date=NULL, sender_id=NULL, dept_id=NULL, gen_cat_id=NULL,
@@ -683,10 +715,12 @@ class TabReport(BaseTab):
                        target_id=doc_id, operator=operator,
                        detail=buildDetail("一般", "刪除", f"主旨：{subject}"))
             conn.commit()
-            conn.close()
         except Exception as e:
             msgCritical("刪除失敗", str(e))
             return
+        finally:
+            if conn:
+                conn.close()
         for r in range(self.gen_table.rowCount()):
             lbl = self.gen_table.cellWidget(r, 1)
             if lbl and self._docIdFromLabel(lbl) == doc_id:

@@ -101,6 +101,7 @@ class DocumentManager:
         self.tabs = {}
         for idx, TabClass in self.TAB_CLASSES.items():
             tab = TabClass(self.tab_widget, self.db_path)
+            tab._manager = self          # 供 Tab 取得其他 Tab（如還原後清快取）
             tab.setup(idx)
             self.tabs[idx] = tab
 
@@ -349,6 +350,10 @@ if __name__ == "__main__":
     # 寫入自己的鎖檔並啟動心跳；正常結束時清掉（含閒置自動關）。
     _lock.write_lock(_lock_path, _machine, _user, _opened_iso,
                      _dt.now().isoformat(timespec="seconds"), _pid)
+
+    # ── 冪等確保附加式結構（建表／加欄，只增不改；失敗不擋開程式）──
+    from lib import db_schema as _schema
+    _schema.ensureSchema(db_path)
 
     # ── 平時自動備份：每日覆蓋＋每週另存（本機輪替，純靜默）──
     from lib import db_backup as _backup

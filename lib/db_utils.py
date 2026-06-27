@@ -1,6 +1,7 @@
 import sys
 import os
 import sqlite3
+import json
 import unicodedata
 import html as _html
 
@@ -49,6 +50,74 @@ def writeAudit(conn, *, role, action, detail,
             (role, action, target_table, target_id, operator, detail))
     except Exception:
         pass
+
+
+# ── 誤刪還原回收筒（Trash_Documents）─────────────────────────────
+# 主表「刪除」是清空欄位保留 doc_id（空殼列恆在）。刪除前先快照整列存進
+# 回收筒，還原即把 payload 寫回原 doc_id 那列。表結構由 db_schema.ensureSchema
+# 啟動時冪等建立；缺表的舊 DB 一律靜默跳過，不中斷業務（同 writeAudit 哲學）。
+_TRASH_TABLES = ("Document_Task", "Document_Criminal", "Document_General")
+
+
+def snapshotRow(conn, table, doc_id):
+    """回傳該列 {欄名: 值} dict（清空式刪除前呼叫）。查無回 None。
+    table 為呼叫端常數（三主表名），非使用者輸入。"""
+    if table not in _TRASH_TABLES:
+        return None
+    cur = conn.execute(f"SELECT * FROM {table} WHERE doc_id=?", (doc_id,))
+    row = cur.fetchone()
+    if row is None:
+        return None
+    cols = [d[0] for d in cur.description]
+    return dict(zip(cols, row))
+
+
+def writeTrash(conn, *, table_name, doc_id, payload,
+               subject="", doc_person="", deleted_role=""):
+    """把刪除前的整列快照寫進回收筒。用同一 conn（與清空同 transaction，
+    呼叫端統一 commit）；缺 Trash_Documents 表的舊 DB 靜默跳過。"""
+    try:
+        conn.execute(
+            "INSERT INTO Trash_Documents"
+            "(table_name, doc_id, payload, subject, doc_person, "
+            " deleted_ts, deleted_role) "
+            "VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), ?)",
+            (table_name, str(doc_id),
+             json.dumps(payload, ensure_ascii=False),
+             subject or "", doc_person or "", deleted_role or ""))
+    except Exception:
+        pass
+
+
+def restoreFromTrash(conn, trash_id):
+    """還原一筆：payload 寫回原 doc_id 空殼列，並刪該回收筒列。
+    用同一 conn，呼叫端 commit。回 (table_name, doc_id)；查無／表名不合法／
+    缺表回 None。"""
+    try:
+        r = conn.execute(
+            "SELECT table_name, doc_id, payload FROM Trash_Documents "
+            "WHERE trash_id=?", (trash_id,)).fetchone()
+    except Exception:
+        return None
+    if not r:
+        return None
+    table_name, doc_id, payload_json = r
+    if table_name not in _TRASH_TABLES:
+        return None
+    data = json.loads(payload_json)
+    # 排除 doc_id（WHERE 條件）與 last_modified：後者必須讓 AFTER UPDATE trigger
+    # 重新蓋成當下時間。若寫回快照的舊值，trigger 的 WHEN NEW.last_modified IS
+    # OLD.last_modified 不成立而不觸發，last_modified 停在舊值，瀏覽/歸檔頁的指紋
+    # （MAX(last_modified)／> since）偵測不到還原 → 清單不刷新（需手動重載）。
+    cols = [c for c in data if c not in ("doc_id", "last_modified")]
+    if not cols:
+        return None
+    set_clause = ", ".join(f"{c}=?" for c in cols)
+    vals = [data[c] for c in cols]
+    conn.execute(f"UPDATE {table_name} SET {set_clause} WHERE doc_id=?",
+                 vals + [str(doc_id)])
+    conn.execute("DELETE FROM Trash_Documents WHERE trash_id=?", (trash_id,))
+    return (table_name, doc_id)
 
 
 # ── Dialog 按鈕樣式常數 ───────────────────────────────────────
@@ -327,6 +396,12 @@ def performYearEndReset(db_path):
             conn.execute("DELETE FROM Audit_Log")
         except Exception:
             pass  # 缺表的舊 DB 跳過
+
+        # 8. 清空誤刪還原回收筒（主表已清，殘留快照無意義；缺表跳過）
+        try:
+            conn.execute("DELETE FROM Trash_Documents")
+        except Exception:
+            pass
 
         conn.commit()
     except Exception:
