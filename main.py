@@ -186,8 +186,21 @@ class DocumentManager:
 
     def _onIdleClose(self):
         # 閒置 20 分鐘自動關閉整支程式（靜默，僅 error.log 留痕）。
+        # 用 os._exit 硬關，不走 app.quit()：若此刻有 modal exec()（HELP／確認框／
+        # 編輯彈窗／原生檔案對話框）開著，quit() 只會退掉最內層那個迴圈、關不掉主程式
+        # （且 _close_timer 為 single-shot、已觸發過不再重啟＝自動關閉就此失效）。
+        # os._exit 不受巢狀事件迴圈影響，一定結束；但 aboutToQuit／atexit 不會跑到，
+        # 故結束前先手動清掉自己的鎖檔。
+        import os
         logging.error("閒置已超過 20 分鐘，自動關閉程式。")
-        QApplication.instance().quit()
+        cb = getattr(self, "_cleanup_lock_cb", None)
+        if cb:
+            try:
+                cb()
+            except Exception:
+                pass
+        logging.shutdown()
+        os._exit(0)
 
     _IDX_SETTINGS = 6          # 資料庫設定 Tab index
     _IDX_DBBROWSE = 4          # 資料庫瀏覽 Tab index
@@ -384,6 +397,7 @@ if __name__ == "__main__":
         # 進度條期間就把整個主視窗建好（含三表建表）；建完才出主選單，選完秒進。
         mgr = DocumentManager(tab_index=0, prefetch=results, progress=loading.setStep)
         _refs.append(mgr)
+        mgr._cleanup_lock_cb = _cleanup_lock   # 閒置自動關閉 os._exit 前用它清鎖檔
         loading.finishAndClose()
         if not (hasattr(mgr, 'window') and mgr.window):
             sys.exit(1)

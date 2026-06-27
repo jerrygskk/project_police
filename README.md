@@ -129,12 +129,13 @@ main.py
 兩個獨立的閒置計時器（皆在 `DocumentManager`，由全域事件過濾器 `_IdleFilter` 監聽滑鼠/鍵盤/滾輪重設）：
 
 - **閒置自動登出**：`_idle_timer`，**10 分鐘**，**僅管理者／歸檔管理**計時，到點 `logout()` 降回一般使用者（程式不關）。
-- **閒置自動關閉**：`_close_timer`，**20 分鐘**，**不分身分一律計時**，到點 `QApplication.quit()`（靜默，僅 error.log 留一行；會丟掉未送出的暫存輸入）。順序上管理者離開會先 10 分自動登出、再到 20 分整支關閉。
+- **閒置自動關閉**：`_close_timer`，**20 分鐘**，**不分身分一律計時**，到點 `_onIdleClose` 以 **`os._exit(0)` 硬關**（靜默，僅 error.log 留一行；會丟掉未送出的暫存輸入）。順序上管理者離開會先 10 分自動登出、再到 20 分整支關閉。
+  - ⚠️ **為何用 `os._exit` 而非 `app.quit()`**：到點當下若有 **modal `exec()`** 開著（HELP 視窗／`confirmBox`／編輯彈窗／原生 `QFileDialog` 等），`quit()` 只會退掉**最內層**那個對話框的事件迴圈、關不掉主程式（且 `_close_timer` 為 single-shot、已觸發就不再重啟＝自動關閉從此失效）。`os._exit` 不受巢狀事件迴圈影響，一定結束。代價是不走 Qt teardown（會在 console 印 `QThreadStorage ...` 收尾警告——無害，`--windowed` 打包版無 console 故使用者看不到），故**結束前先手動清鎖檔**（見下）。
 
 **APP 層軟性互斥（`lib/app_lock.py`）**：DB 放網路磁碟機給多台機器同時跑時，SQLite 檔案鎖不保證跨機器生效、真同時寫入可能毀損。故在 `dbfile.db` 旁維護鎖檔 `dbfile.lock`（JSON：機器名/使用者/開啟時間/心跳/PID），開啟時讀它判斷是否已有人在用：
 
 - 偵測到「新」的鎖檔（心跳未超過 `STALE_SECONDS=5 分鐘`）→ 跳 `confirmBox`：「○○○（電腦 X）自 HH:MM 起正在使用本系統」，灰字次要說明提醒「多人同時編輯可能造成資料毀損，建議稍後再開」＋「開啟後若閒置超過 20 分鐘，程式將自動關閉」（讓使用者知道何時可再回來），按鈕**仍要開啟 / 取消離開**（純勸導，預設取消）。心跳過舊＝視為當機殘留，可直接接管。
-- 開啟後寫自己的鎖檔、每 `HEARTBEAT_MS=60 秒` 更新心跳。**清鎖檔兩道**：`app.aboutToQuit`（蓋正常關窗、閒置自動關閉）＋ `atexit`（補蓋主選單離開、建表失敗等 `sys.exit` 不經 Qt quit 的路徑）；皆只刪屬於本實例者（比對機器名＋PID）、冪等靜默。**當機／強制結束／斷電**兩者皆蓋不到，靠心跳停止後 `STALE_SECONDS` 失效自癒。
+- 開啟後寫自己的鎖檔、每 `HEARTBEAT_MS=60 秒` 更新心跳。**清鎖檔三道**：`app.aboutToQuit`（蓋正常關窗）＋ `atexit`（補蓋主選單離開、建表失敗等 `sys.exit` 不經 Qt quit 的路徑）＋**閒置自動關閉的 `os._exit` 前手動呼叫**（`mgr._cleanup_lock_cb`；因 `os._exit` 不會觸發 aboutToQuit／atexit）；皆只刪屬於本實例者（比對機器名＋PID）、冪等靜默。**當機／強制結束／斷電**皆蓋不到，靠心跳停止後 `STALE_SECONDS` 失效自癒。
 - ⚠️ **是勸導不是保證**：可按「仍要開啟」硬上，corruption 風險（SMB 鎖那層）仍在。**不做唯讀模式、不擋 DB 寫入**（寫入併發由 SQLite 自身忙線鎖處理，對應「資料庫忙線中」友善訊息）。讀寫鎖檔失敗一律靜默退讓，不阻擋開程式。
 - 純邏輯（parse/format/is_stale/is_mine/lock_file_path）有單元測試 `tests/test_app_lock.py`。
 
@@ -203,7 +204,7 @@ main.py
 - **表 `Trash_Documents`**（見 §6）：`payload` 存刪除前整列 JSON 快照；`subject`/`doc_person`（承辦人）/`deleted_ts`/`deleted_role` 供清單顯示。由 `ensureSchema` 啟動冪等建立。
 - **helper（`lib/db_utils.py`，純邏輯可單測）**：`snapshotRow(conn, table, doc_id)` 清空前抓整列（table 走三主表 allowlist）；`writeTrash(...)` 寫回收筒（缺表靜默跳過，同 `writeAudit` 哲學）；`restoreFromTrash(conn, trash_id)` 把 payload 寫回原列＋刪該 trash 列（table allowlist 防注入）。測試 `tests/test_trash.py`。
 - **4 個刪除點**（瀏覽頁三表／收文／刑案／一般）清空 `UPDATE` 前一律先 `snapshotRow`＋`writeTrash`，與業務刪除同一 transaction。
-- **入口（設定 Tab6 子頁「資源回收筒」，僅 admin）**：唯讀單選表（刪除時間／文號／類別／主旨／對象人／刪除身分）＋關鍵字過濾（比對主旨＋對象人）＋「⟳ 重整」「↩ 還原」鈕。archive／user 連 nav 鈕都不顯示。還原寫一筆「還原」稽核。
+- **入口（設定 Tab6 子頁「資源回收筒」，僅 admin 可操作）**：唯讀單選表（刪除時間／文號／類別／主旨／對象人／刪除身分）＋關鍵字過濾（比對主旨＋對象人）＋「⟳ 重整」「↩ 還原」鈕。**歸檔管理（archive）看得到該 nav 鈕但反灰停用**（`setVisible(True)`＋`setEnabled(is_admin)`，配 `_NAV_INACTIVE` 的 `:disabled` 灰字樣式，與設定頁其他維護功能對 archive 的處理一致）；user 進不了設定頁故無此鈕。還原寫一筆「還原」稽核。
 - **保留策略**：永久保留，跨年度 Reset 一併清空（`performYearEndReset` 含 `DELETE FROM Trash_Documents`）。
 - **還原保留歸檔狀態**：快照含 `is_reported`／`is_electronic`，原本已歸檔的資料還原後仍為已歸檔、不回待歸清單。清空式刪除不刪實體 PDF，實體檔通常仍在；若刪除到還原間 PDF 被外部移除，還原的檔名會指到不存在的檔。
 - ⚠️ **還原後刷新（踩雷）**：`restoreFromTrash` **必須排除 `last_modified`**，讓 update trigger（`WHEN NEW.last_modified IS OLD.last_modified`）自己蓋成當下時間；若寫回快照舊值，trigger 不觸發、瀏覽／歸檔頁的指紋偵測不到。另以旗標 `_pending_reload_keys` 通知瀏覽／歸檔頁，切過去時 `on_activated` 走 `_forceReload`（`runWithBusy` popup→全量重建），符合「先切過去→popup→刷新」慣例（`main.py` 給各 tab 加 `_manager` back-ref 供 sibling 取得）。

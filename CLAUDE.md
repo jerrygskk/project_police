@@ -90,16 +90,17 @@
 4. **進版**（README §8 版本記錄列在這步補）
 5. **推上去** + 打 tag `v{版號}` + push tag
 6. **build**：onefile 全新 build（見 README §7），回報成功 / 失敗
-7. **發 GitHub Release**（三個 asset，比照歷版 v1.0.6）：
-   - **要上傳的檔案（共 3 個）**：
+7. **發 GitHub Release**（四個 asset，比照歷版 v1.0.6）：
+   - **要上傳的檔案（共 4 個）**：
      1. `Police-Document-Manager.exe`（本次 build 的 onefile，在 `dist/`）
      2. `dbfile.db`（**乾淨空殼**——⚠️ 一律從 git HEAD 取，**不要用工作區那份**，工作區常被測試蓋掉。導出：`git show HEAD:dbfile.db > 暫存/dbfile.db`，二進位用 Bash 導出才安全；可 `git hash-object` 對 `git rev-parse HEAD:dbfile.db` 驗證一致）
      3. `PACKED.zip`（= 上面 exe + dbfile.db **兩檔扁平放根目錄**，無子資料夾）
+     4. `Quick_Start.pdf`（速查卡）——⚠️ `docs/` 已 gitignore，發版前先跑 `python tools/gen_quickstart.py` 重產到 `docs/Quick_Start.pdf` 再上傳（內容單一來源為 `ui_utils/help_content.py` 的 `QUICKSTART`）
    - **打包 zip（PowerShell）**：`Compress-Archive -Path 暫存\dbfile.db,暫存\Police-Document-Manager.exe -DestinationPath 暫存\PACKED.zip -Force`
-   - **建 Release + 一次傳三檔**：
+   - **建 Release + 一次傳四檔**：
      ```
      gh release create v{版號} --title "v{版號}" --notes-file release_note_v{版號}.md \
-       "dist/Police-Document-Manager.exe" "暫存/dbfile.db" "暫存/PACKED.zip"
+       "dist/Police-Document-Manager.exe" "暫存/dbfile.db" "暫存/PACKED.zip" "docs/Quick_Start.pdf"
      ```
      （asset 多於一個時直接列在 create 後；或先 create 再 `gh release upload v{版號} <檔> --clobber`）
    - 收尾刪暫存資料夾。
