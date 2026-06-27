@@ -1,5 +1,6 @@
 ﻿HANDOVER.md
-docs/
+docs/*
+!docs/img/
 release_note_*.md
 fix_views.py
 dbfile_backup_*.db
