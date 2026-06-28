@@ -23,6 +23,8 @@
     <file alias="btn/edit.svg">buttons/edit.svg</file>
     <file alias="btn/save_order.svg">buttons/save_order.svg</file>
     <file alias="btn/export_csv.svg">buttons/export_csv.svg</file>
+    <file alias="btn/print_titles.svg">buttons/print_titles.svg</file>
+    <file alias="btn/trash.svg">buttons/trash.svg</file>
     <file alias="btn/overdue.svg">buttons/overdue.svg</file>
     <file alias="menu/dispatch.svg">buttons/menu_dispatch.svg</file>
     <file alias="menu/receive.svg">buttons/menu_receive.svg</file>

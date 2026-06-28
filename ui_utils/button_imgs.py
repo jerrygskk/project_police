@@ -19,6 +19,8 @@ BTN_IMG = {
     '✎ 修改': (':/btn/edit.svg', 76, 24),
     '💾 儲存排序': (':/btn/save_order.svg', 105, 24),
     '匯出 CSV': (':/btn/export_csv.svg', 85, 24),
+    '簽收表設定': (':/btn/print_titles.svg', 96, 24),
+    '資源回收筒': (':/btn/trash.svg', 96, 24),
     '逾期未回': (':/btn/overdue.svg', 82, 24),
     '▤ 交辦單': (':/tab/task.svg', 80, 24),
     '❐ 刑案陳報': (':/tab/crim_report.svg', 94, 24),

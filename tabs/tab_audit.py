@@ -113,8 +113,17 @@ class TabAudit(BaseTab):
             de.setDate(_BLANK_DATE)          # 預設皆不限（顯示全部）
             setupDateEditCalendarOnly(de)
 
+    def _initCombos(self):
+        self._role.addItem("全部身分", None)   # 自述首項（已移除外部「身分」標籤）
+        for code in ('admin', 'archive', 'user'):
+            self._role.addItem(ROLE_ZH[code], code)
+        self._cat.addItem("全部類別", None)     # 自述首項（已移除外部「類別」標籤）
+        for c in CATEGORIES:
+            self._cat.addItem(c, c)
+
     def _shrinkFilterFont(self):
-        # 篩選列控件統一 12pt（全域 14pt 下 10 位日期太寬會 truncate）。
+        # 篩選列控件「整排統一 12pt」：14pt 下 10 位日期＋32px 箭頭內距裝不下會
+        # truncate，與其讓日期框獨大、其餘元件大小參差，不如整排一致縮小。
         # 一律用 stylesheet 的 font-size，勿用 setFont——QFont 會被全域 theme 的
         # CSS font 蓋回 14pt（CSS 字級優先於 QFont）。只覆寫 font-size，其餘
         # border/padding 仍沿用 theme.py 的全域規則（不影響月曆／下拉清單）。
@@ -123,14 +132,6 @@ class TabAudit(BaseTab):
         self._role.setStyleSheet("QComboBox { font-size: 12pt; }")
         self._cat.setStyleSheet("QComboBox { font-size: 12pt; }")
         self._kw.setStyleSheet("QLineEdit { font-size: 12pt; }")
-
-    def _initCombos(self):
-        self._role.addItem("全部身分", None)   # 自述首項（已移除外部「身分」標籤）
-        for code in ('admin', 'archive', 'user'):
-            self._role.addItem(ROLE_ZH[code], code)
-        self._cat.addItem("全部類別", None)     # 自述首項（已移除外部「類別」標籤）
-        for c in CATEGORIES:
-            self._cat.addItem(c, c)
 
     def _initTable(self):
         t = self._table
