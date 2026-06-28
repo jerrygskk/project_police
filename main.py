@@ -46,7 +46,7 @@ def _setup_error_handler():
         # 3. 彈出錯誤視窗（QApplication 存在時）
         try:
             from PySide6.QtWidgets import QApplication
-            from lib.db_utils import msgCritical as _msgCritical
+            from ui_utils import msgCritical as _msgCritical
             from lib.db_utils import friendlyErrorMessage as _friendly
             if QApplication.instance():
                 _msgCritical("系統錯誤", _friendly(exc_type, exc_value))
@@ -63,7 +63,8 @@ from PySide6.QtGui import QFont
 
 from lib.theme import APPLE_STYLE
 from lib.version import __version__
-from lib.db_utils import getResourcePath, loadUi, msgInfo
+from lib.db_utils import getResourcePath
+from ui_utils import loadUi, msgInfo
 from lib.auth_manager import AuthManager
 from tabs     import TabDispatch, TabReceive, TabReport, TabPrint, TabDBBrowse, TabArchive, TabSettings, TabAudit
 from res import resources_rc  # 註冊 Qt resource（arrow.svg）
@@ -340,7 +341,7 @@ if __name__ == "__main__":
     # ── APP 層軟性互斥：開啟時偵測是否已有人在用（純勸導，不擋 DB）──
     from datetime import datetime as _dt
     from lib import app_lock as _lock
-    from lib.db_utils import confirmBox as _confirmBox
+    from ui_utils import confirmBox as _confirmBox
     _lock_path = _lock.lock_file_path(db_path)
     _machine, _user, _pid = _lock.current_identity()
     _opened_iso = _dt.now().isoformat(timespec="seconds")

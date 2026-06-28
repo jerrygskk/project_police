@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (
 )
 
 from lib.base_tab import BaseTab
-from lib.db_utils import getResourcePath, loadUi, msgCritical, msgInfo, confirmBox, archiveDefaultDir, getSetting, ARCHIVE_ROOT_KEY
+from lib.db_utils import getResourcePath, archiveDefaultDir, getSetting, ARCHIVE_ROOT_KEY
+from ui_utils import loadUi, msgCritical, msgInfo, confirmBox
 from lib.auth_manager import AuthManager
 from lib.archive_text import (
     _trimName, _tokenize, _parseDate, _sanitize, _pkOf,

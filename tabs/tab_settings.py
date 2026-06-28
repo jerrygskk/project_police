@@ -24,11 +24,13 @@ from PySide6.QtWidgets import (
 from lib.base_tab import BaseTab
 from lib.auth_manager import AuthManager
 from lib.db_utils import (
-    msgInfo, msgWarning, msgCritical, confirmBox,
-    BTN_CONFIRM, BTN_CANCEL,
-    loadUi, getResourcePath,
+    getResourcePath,
     performYearEndReset, getSetting, ARCHIVE_ROOT_KEY,
     getConn, writeAudit, buildDetail, restoreFromTrash,
+)
+from ui_utils import (
+    msgInfo, msgWarning, msgCritical, confirmBox,
+    BTN_CONFIRM, BTN_CANCEL, loadUi,
 )
 from ui_utils import (
     PersonnelAddDialog, PersonnelEditDialog,

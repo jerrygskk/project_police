@@ -5,7 +5,8 @@ from PySide6.QtGui  import QColor
 from PySide6.QtWidgets import QTableWidgetItem
 
 from lib.base_tab import BaseTab
-from lib.db_utils import msgInfo, msgWarning, msgCritical, confirmBox, DEBUG_MODE
+from lib.db_utils import DEBUG_MODE
+from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, refreshDeleteBtns, setDocIdLinkCell,

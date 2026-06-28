@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QScrollArea,
 )
 
-from lib.db_utils import BTN_CONFIRM, BTN_CANCEL, BTN_DANGER
+from .ui_common import BTN_CONFIRM, BTN_CANCEL, BTN_DANGER
 
 # ── 共用樣式 ───────────────────────────────────────────────────────
 _DIALOG_SS = """
@@ -173,7 +173,7 @@ class PersonnelAddDialog(QDialog):
             self._result = (self._new_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from lib.db_utils import msgCritical
+            from .ui_common import msgCritical
             msgCritical("寫入失敗", str(e), self)
 
     def get_result(self):
@@ -266,7 +266,7 @@ class PersonnelEditDialog(QDialog):
             self._result = (self.staff_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from lib.db_utils import msgCritical
+            from .ui_common import msgCritical
             msgCritical("更新失敗", str(e), self)
 
     def get_result(self):
@@ -341,7 +341,7 @@ class DeptAddDialog(QDialog):
             self._result = (self._new_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from lib.db_utils import msgCritical
+            from .ui_common import msgCritical
             msgCritical("寫入失敗", str(e), self)
 
     def get_result(self):
@@ -413,7 +413,7 @@ class DeptEditDialog(QDialog):
             self._result = (self.dept_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from lib.db_utils import msgCritical
+            from .ui_common import msgCritical
             msgCritical("更新失敗", str(e), self)
 
     def get_result(self):
@@ -488,7 +488,7 @@ class CaseTypeAddDialog(QDialog):
             self._result = (self._new_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from lib.db_utils import msgCritical
+            from .ui_common import msgCritical
             msgCritical("寫入失敗", str(e), self)
 
     def get_result(self):
@@ -560,7 +560,7 @@ class CaseTypeEditDialog(QDialog):
             self._result = (self.type_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from lib.db_utils import msgCritical
+            from .ui_common import msgCritical
             msgCritical("更新失敗", str(e), self)
 
     def get_result(self):

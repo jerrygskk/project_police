@@ -18,7 +18,8 @@ from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor
 
 from lib.base_tab import BaseTab
-from lib.db_utils import getResourcePath, loadUi, msgInfo, msgWarning
+from lib.db_utils import getResourcePath
+from ui_utils import loadUi, msgInfo, msgWarning
 from lib.auth_manager import AuthManager
 from ui_utils import setupDateEditCalendarOnly, runWithBusy, preserveScroll
 

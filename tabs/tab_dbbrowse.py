@@ -7,9 +7,10 @@ from PySide6.QtGui import QColor, QIcon, QDesktopServices
 
 from lib.base_tab import BaseTab
 from lib.db_utils import (
-    getResourcePath, loadUi, msgInfo, msgWarning, msgCritical, confirmBox,
+    getResourcePath,
     resolveArchivedPdf, getSetting, ARCHIVE_ROOT_KEY, softDeleteDoc,
 )
+from ui_utils import loadUi, msgInfo, msgWarning, msgCritical, confirmBox
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, refreshDeleteBtns, applyLinkStyle,

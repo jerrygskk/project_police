@@ -18,8 +18,8 @@ from PySide6.QtGui  import QPixmap, QImage, QPainter, QPageSize
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from lib.base_tab import BaseTab
-from lib.db_utils import (getResourcePath, loadUi, msgInfo, msgWarning,
-                          printTitle, printTitlesUnset)
+from lib.db_utils import getResourcePath, printTitle, printTitlesUnset
+from ui_utils import loadUi, msgInfo, msgWarning
 from ui_utils import runWithBusy
 
 # ── 字型（跨平台）────────────────────────────────────────

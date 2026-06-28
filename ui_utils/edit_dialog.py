@@ -12,8 +12,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFontMetrics
 
-from lib.db_utils import (BTN_CONFIRM, BTN_CANCEL, confirmBox, getConn,
+from lib.db_utils import (getConn,
                           writeAudit, buildDetail, auditStaffName)
+from .ui_common import BTN_CONFIRM, BTN_CANCEL, confirmBox
 from lib.auth_manager import AuthManager
 from ui_utils.widgets import setupFilterCombo, setupDateEditCalendarOnly
 
@@ -118,7 +119,7 @@ def _on_paper_toggled(dlg, checked):
         return  # 重新勾選紙本不擾民
     if not dlg._arch_fname or dlg._arch_clear_pending:
         return  # 無電子檔、或 PDF 已標記清除 → 無需連動
-    from lib.db_utils import msgWarning
+    from .ui_common import msgWarning
     msgWarning("取消紙本歸檔", "取消紙本將同步取消 PDF 歸檔。")
     dlg._arch_clear_pending = True
     _refresh_arch_name(dlg)
@@ -434,7 +435,7 @@ class TaskEditDialog(_BaseEditDialog):
             self._deadline_stack.setCurrentIndex(1)
 
     def _on_save(self):
-        from lib.db_utils import msgWarning, msgCritical
+        from .ui_common import msgWarning, msgCritical
         recv_date = self.w_recv_date.date().toString("yyyy-MM-dd")
         recv_id   = self.w_recv_id.currentData()
         dept_id   = self.w_dept.currentData()
@@ -719,7 +720,7 @@ QRadioButton:checked {
         _load_arch_status(self, is_reported, is_electronic)
 
     def _on_save(self):
-        from lib.db_utils import msgWarning, msgCritical
+        from .ui_common import msgWarning, msgCritical
         report_date = self.w_report_date.date().toString("yyyy-MM-dd")
         sender_id   = self.w_sender.currentData()
         case_type   = self.w_casetype.currentData()
@@ -939,7 +940,7 @@ class GeneralEditDialog(_BaseEditDialog):
         _load_arch_status(self, is_reported, is_electronic)
 
     def _on_save(self):
-        from lib.db_utils import msgWarning, msgCritical
+        from .ui_common import msgWarning, msgCritical
         report_date = self.w_report_date.date().toString("yyyy-MM-dd")
         sender_id   = self.w_sender.currentData()
         dept_id     = self.w_dept.currentData()

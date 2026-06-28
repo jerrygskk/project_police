@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
-from lib.db_utils import msgCritical, getConn
+from lib.db_utils import getConn
+from ui_utils import msgCritical
 from lib.archive_text import _trimName as _archiveTrimName
 
 

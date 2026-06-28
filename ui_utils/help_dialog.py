@@ -16,7 +16,8 @@ from PySide6.QtGui import QIcon, QFont
 # 只能在字型物件上設；CJK 內文加一點點字距較好讀。要調鬆／緊改這裡。
 _LETTER_SPACING = 92
 
-from lib.db_utils import BTN_CONFIRM, getResourcePath
+from lib.db_utils import getResourcePath
+from .ui_common import BTN_CONFIRM
 from .help_content import HELP_HTML, HELP_TITLES, HELP_TIPS
 
 
