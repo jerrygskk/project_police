@@ -9,6 +9,7 @@
 - **目標環境**：Windows，顯示縮放 **125%**，全域字體 **14pt**
 - **打包**：PyInstaller 打成單一 exe（`--onefile`）
 - **資料**：軟刪除（清空欄位、保留 `doc_id`），不做真 DELETE
+- **文件分工**（2026-06-28 起）：`README.md`＝**使用者門面**（簡介／省時／功能／部署／FAQ，含 `docs/img/` 截圖）；`DEVELOPER.md`＝**技術文件**（架構／踩雷／打包／DB 結構／版本記錄，即原 README 內容）；`CLAUDE.md`＝協作規則（本檔）；`docs/handover.md`＝跨對話交接（不入庫）
 
 ## 動手前先做這幾件事
 
