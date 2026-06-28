@@ -453,6 +453,17 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 - **欄內文字換行用真實字型度量**（`_text_width_pt`，dpi=72 的 `RendererAgg`，像素即點）：`_wrap_clamp` 不再用「中文字當滿格 size＋0.86 經驗係數」估算——該估算偏窄，會害欄寬還夠的主旨／案類**提早折行**（臨界長度最明顯）。可用寬＝欄寬扣約 1.2×PAD。⚠️ 編號欄的 `_fit_font` 仍用舊估算（單行自動縮字、影響小，未在此改）。
 - **刑案類型欄固定 10pt**（`_draw_page` 中 `is_crim and cidx==2`）：刑案案類名稱長短不一，短的 12pt／長的縮 10pt 會大小參差又壓迫，故刑案此欄一律 10pt（長案類縮後大小當天花板）。**一般陳報「業務單位」欄與交辦不受影響**，維持 12→10 自動縮。
 
+### 簽收表標題自訂（tab_print／tab_settings／settings_dialogs）
+
+簽收表 PDF 的三張表標題與現行犯註記**可由管理者自訂**，免改 code、免重 build。
+
+- **存** `App_Settings` 四個 key：`print_title_task`／`print_title_crim`／`print_title_gen`／`print_note_current`（不需新表）。常數與預設集中在 `db_utils.PRINT_TITLE_KEYS`／`PRINT_TITLE_DEFAULTS`；列印一律 `db_utils.printTitle(db_path, which)`，**未設定回 `○○…` 預設**（舊庫零升級、空殼免改、PDF 不致空白）。預設機關名以 **`○○`** 佔位，不留真名。
+- **入口**：設定頁（Tab6）左側 nav「**簽收表設定**」鈕 → `PrintTitleDialog`（四格整句可編輯＋「恢復預設」＋儲存）。**僅 admin**（`_onSetPrintTitles` 內 `is_admin` guard；`_applyRolePermissions` 對 archive `setEnabled(False)`，按鈕樣式含 `:disabled` 才會反灰，見 §2 雷）。儲存有變寫一筆 `CONFIG` 稽核。
+- **字數上限**（`PrintTitleDialog._TITLE_MAX=36`／`_NOTE_MAX=14`）：實量 PDF 版面得出——標題列寬→36；現行犯註記在窄的簽收欄→14（註記 14 字已是版面極限）。配合「換行用真實字型度量」一起，標題不溢出頁面。
+- **未設定警示**：任一 key 為空＝未設定（`db_utils.printTitlesUnset`）。列印頁（Tab3）頂部紅字「⚠ 簽收表標題未設定…」（`_refresh_title_warn`，`on_activated` 切入時刷新），純勸導、不擋產生（同歸檔哲學）。
+- **跨年度重置不清這四個 key**（機關名稱是單位永久設定，`performYearEndReset` 只清 `archive_*`）。
+- 純邏輯測試 `tests/test_print_titles.py`（預設 fallback／round-trip／未設定旗標）。
+
 ### 跨年度重置（Reset，tab_settings.py）
 
 位置：設定 Tab 左側 nav 底部「跨年度重置」鈕（紅字，管理者登入後才可操作）。屬**破壞性操作**。

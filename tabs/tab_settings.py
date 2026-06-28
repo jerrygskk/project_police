@@ -34,7 +34,7 @@ from ui_utils import (
     PersonnelAddDialog, PersonnelEditDialog,
     DeptAddDialog, DeptEditDialog,
     CaseTypeAddDialog, CaseTypeEditDialog,
-    ChangePasswordDialog, ResetDialog, ArchiveRootDialog,
+    ChangePasswordDialog, ResetDialog, ArchiveRootDialog, PrintTitleDialog,
     preserveScroll,
 )
 
@@ -193,6 +193,8 @@ class TabSettings(BaseTab):
         btn_logout     = inner.findChild(QPushButton, "btn_logout")
         btn_archive_root = inner.findChild(QPushButton, "btn_archive_root")
         self._btn_archive_root = btn_archive_root
+        btn_print_titles = inner.findChild(QPushButton, "btn_print_titles")
+        self._btn_print_titles = btn_print_titles
 
         # 三子頁的表格、新增/修改/儲存排序按鈕
         self.tbl_personnel = inner.findChild(QTableWidget, "tbl_personnel")
@@ -230,6 +232,11 @@ class TabSettings(BaseTab):
         btn_logout.setStyleSheet(_NAV_BOTTOM)
         if btn_archive_root:
             btn_archive_root.setStyleSheet(_NAV_BOTTOM)
+        if btn_print_titles:
+            # 含 :disabled 灰字（歸檔管理反灰需要，見 §2 雷：無 :disabled 不會變灰）
+            btn_print_titles.setStyleSheet(
+                _NAV_BOTTOM
+                + "QPushButton:disabled { color: #c5c5c9; background-color: transparent; }")
 
         # ── 綁定 signal ──
         self.w_password.returnPressed.connect(self._doLogin)
@@ -241,6 +248,8 @@ class TabSettings(BaseTab):
         btn_logout.clicked.connect(self._doLogout)
         if btn_archive_root:
             btn_archive_root.clicked.connect(self._onSetArchiveRoot)
+        if btn_print_titles:
+            btn_print_titles.clicked.connect(self._onSetPrintTitles)
 
         # ── 初始化三頁的表格與排序暫存狀態 ──
         self._initRefPage("personnel", self.tbl_personnel,
@@ -464,6 +473,10 @@ class TabSettings(BaseTab):
         if self._btn_year_reset:
             self._btn_year_reset.setEnabled(is_admin)
 
+        # 簽收表標題設定（僅 admin；歸檔管理可見但反灰）
+        if getattr(self, "_btn_print_titles", None):
+            self._btn_print_titles.setEnabled(is_admin)
+
         # 資源回收筒：admin 可用；歸檔管理可見但停用（反灰，與其他維護功能一致）
         if self._nav_btns[self._PAGE_TRASH]:
             self._nav_btns[self._PAGE_TRASH].setVisible(True)
@@ -506,6 +519,13 @@ class TabSettings(BaseTab):
     def _onSetArchiveRoot(self):
         """設定/更新瀏覽頁開啟電子檔用的歸檔資料夾（年度層 UNC + 刑案/一般子夾名）。"""
         ArchiveRootDialog(self.db_path, self.tab_widget).exec()
+
+    # ── 簽收表標題設定（僅 admin）──────────────────────────────────
+    def _onSetPrintTitles(self):
+        """自訂簽收表 PDF 標題列／現行犯註記文字。"""
+        if not AuthManager.instance().is_admin():
+            return
+        PrintTitleDialog(self.db_path, self.tab_widget).exec()
 
     # ── 跨年度重置 ──────────────────────────────────────────────
     def _doReset(self):

@@ -920,3 +920,151 @@ class ArchiveRootDialog(QDialog):
             except Exception:
                 pass
         self.accept()
+
+
+# ══════════════════════════════════════════════════════════════════
+# 簽收表標題設定（列印頁 PDF 標題列／現行犯註記，使用者可整句自訂）
+#   存 App_Settings：print_title_task / _crim / _gen / print_note_current
+#   未設定→列印走 ○○ 預設＋列印頁紅字提醒；跨年度重置不清這些 key
+# ══════════════════════════════════════════════════════════════════
+class PrintTitleDialog(QDialog):
+    # 字數上限（全形字）：實量 PDF 版面得出。標題列寬→36；現行犯註記在窄的簽收欄→14。
+    _TITLE_MAX = 36
+    _NOTE_MAX  = 14
+
+    def __init__(self, db_path, parent=None):
+        super().__init__(parent)
+        self.db_path = db_path
+        self.setWindowTitle("設定簽收表標題")
+        self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN + 60)
+        self.setStyleSheet(_DIALOG_SS)
+        self._build()
+
+    def _fields(self):
+        # (key, 標籤, maxLength)
+        from lib.db_utils import PRINT_TITLE_KEYS
+        return [
+            (PRINT_TITLE_KEYS["task"], "交辦單標題", self._TITLE_MAX),
+            (PRINT_TITLE_KEYS["crim"], "刑案陳報標題", self._TITLE_MAX),
+            (PRINT_TITLE_KEYS["gen"],  "一般陳報標題", self._TITLE_MAX),
+            (PRINT_TITLE_KEYS["note"], "現行犯免簽收註記", self._NOTE_MAX),
+        ]
+
+    def _build(self):
+        from lib.db_utils import getSetting, PRINT_TITLE_DEFAULTS
+
+        v = QVBoxLayout(self)
+        v.setSpacing(6)
+        v.setContentsMargins(24, 18, 24, 14)
+
+        # 視窗標題已說明用途，內文不再重複大標；一句話帶過（去壓迫）
+        hint = QLabel("設定列印簽收單的標題及相關設定")
+        hint.setStyleSheet("color: #6b6b6e;")
+        v.addWidget(hint)
+        v.addSpacing(4)
+
+        field_w = _FIELD_W + 60
+        self._edits = {}
+        self._counters = {}
+        for key, label, maxlen in self._fields():
+            # 標籤自成一列（靠左）
+            lab = QLabel(label)
+            lab.setStyleSheet("color: #3a3a3c;")
+            v.addWidget(lab)
+
+            # 輸入框列：輸入框 + 同一水平線右側的即時字數「N / 上限」
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(10)
+            le = QLineEdit()
+            le.setMaxLength(maxlen)
+            le.setFixedWidth(field_w)
+            # placeholder 僅在整格清空時當範例；初始值直接帶入（見下）
+            le.setPlaceholderText(PRINT_TITLE_DEFAULTS.get(key, ""))
+            # 初始值：已設定→存值；未設定→帶入預設字串當可編輯文字（非 placeholder）
+            cur = getSetting(self.db_path, key, "")
+            le.setText(cur if cur else PRINT_TITLE_DEFAULTS.get(key, ""))
+            cnt = QLabel()
+            cnt.setAlignment(Qt.AlignVCenter)
+            le.textChanged.connect(
+                lambda _t, c=cnt, e=le, m=maxlen: self._upd_counter(c, e, m))
+            row.addWidget(le)
+            row.addWidget(cnt)
+            row.addStretch()
+            v.addLayout(row)
+            v.addSpacing(2)
+            self._edits[key] = le
+            self._counters[key] = (cnt, maxlen)
+            self._upd_counter(cnt, le, maxlen)
+
+        # 現行犯註記用途說明（小灰字，可換行）
+        note = QLabel("因現行犯卷宗通常隨案移送，此欄位僅提醒收案人本案無卷宗可供簽收。")
+        note.setStyleSheet("color: #8e8e93; font-size: 11pt;")
+        note.setWordWrap(True)
+        note.setFixedWidth(field_w)
+        v.addWidget(note)
+        v.addSpacing(6)
+
+        # 按鈕列：左「恢復預設」、右「取消／儲存」
+        row = QHBoxLayout()
+        btn_reset = QPushButton("恢復預設")
+        btn_reset.setStyleSheet(BTN_CANCEL)
+        btn_reset.clicked.connect(self._restore_defaults)
+        row.addWidget(btn_reset)
+        row.addStretch()
+        btn_cancel = QPushButton("取消")
+        btn_ok     = QPushButton("儲存")
+        btn_cancel.setStyleSheet(BTN_CANCEL)
+        btn_ok.setStyleSheet(BTN_CONFIRM)
+        btn_cancel.clicked.connect(self.reject)
+        btn_ok.clicked.connect(self._save)
+        btn_cancel.setAutoDefault(False); btn_cancel.setDefault(False)
+        btn_ok.setAutoDefault(True);      btn_ok.setDefault(True)
+        row.addWidget(btn_cancel)
+        row.addWidget(btn_ok)
+        v.addLayout(row)
+
+    @staticmethod
+    def _upd_counter(cnt_label, le, maxlen):
+        """更新「N / 上限」即時字數；逼近上限(≥90%)橘、到頂紅。"""
+        from PySide6.QtWidgets import QLineEdit
+        n = len(le.text()) if isinstance(le, QLineEdit) else 0
+        cnt_label.setText(f"{n} / {maxlen}")
+        if n >= maxlen:
+            color = "#e74c3c"      # 到頂（再多打不進去）
+        elif n >= maxlen * 0.9:
+            color = "#e67e22"      # 逼近
+        else:
+            color = "#8e8e93"      # 一般
+        # 只動顏色、不設字級（沿用全域字級，不擅自縮放）
+        cnt_label.setStyleSheet(f"color: {color};")
+
+    def _restore_defaults(self):
+        """把四格填回預設字串（不立即寫 DB，按儲存才生效）。"""
+        from lib.db_utils import PRINT_TITLE_DEFAULTS
+        for key, le in self._edits.items():
+            le.setText(PRINT_TITLE_DEFAULTS.get(key, ""))
+
+    def _save(self):
+        from lib.db_utils import setSetting, getSetting, getConn
+        changed = False
+        for key, le in self._edits.items():
+            new = le.text().strip()
+            old = (getSetting(self.db_path, key, "") or "").strip()
+            if new != old:
+                changed = True
+            setSetting(self.db_path, key, new)
+        if changed:
+            try:
+                from lib.auth_manager import AuthManager
+                from lib.db_utils import writeAudit, buildDetail
+                am = AuthManager.instance()
+                conn = getConn(self.db_path)
+                writeAudit(conn, role=am.current_role, action="CONFIG",
+                           operator=am.actor_name(),
+                           detail=buildDetail("系統", "修改", "簽收表標題已變更"))
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+        self.accept()

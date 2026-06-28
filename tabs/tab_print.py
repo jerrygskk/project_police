@@ -18,7 +18,8 @@ from PySide6.QtGui  import QPixmap, QImage, QPainter, QPageSize
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from lib.base_tab import BaseTab
-from lib.db_utils import getResourcePath, loadUi, msgInfo, msgWarning
+from lib.db_utils import (getResourcePath, loadUi, msgInfo, msgWarning,
+                          printTitle, printTitlesUnset)
 from ui_utils import runWithBusy
 
 # ── 字型（跨平台）────────────────────────────────────────
@@ -188,7 +189,7 @@ SCHEMES = {
 
 def _draw_page(side_label, table_title, print_date, disp_date,
                headers, col_ratios, rows, fill_to, is_crim=False,
-               page_num=1, total_pages=1, scheme='task'):
+               page_num=1, total_pages=1, scheme='task', note_text=NOTE):
     fig = plt.figure(figsize=(A4_W, A4_H))
     ax  = fig.add_axes([0, 0, 1, 1])
     ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
@@ -271,7 +272,7 @@ def _draw_page(side_label, table_title, print_date, disp_date,
             # 各欄設定
             # 0=編號, 1=日期, 2=類型/業務, 3=承辦人, 4=主旨, 5=簽收
             if cidx == sign_idx and is_current:
-                text  = NOTE
+                text  = note_text
                 color = '#C00000'
                 font  = fp(10)
                 ha    = 'center'
@@ -389,17 +390,23 @@ def generate_pages(db_path, date_str):
             r = list(r); r[1] = _fmt_date(r[1]); out.append(tuple(r))
         return out
 
+    # 標題／現行犯註記：使用者可自訂（App_Settings），未設定走 ○○ 預設
+    title_task = printTitle(db_path, 'task')
+    title_crim = printTitle(db_path, 'crim')
+    title_gen  = printTitle(db_path, 'gen')
+    note_text  = printTitle(db_path, 'note')
+
     sections = []
     if task:
-        sections.append(('交辦單發文', '龍興派出所交辦單發文簽收表',
+        sections.append(('交辦單發文', title_task,
             ['編號','陳報日期','業務單位','承辦人','陳報主旨','簽收'],
             [0.07, 0.146, 0.13, 0.15, 0.234, 0.27], fmt(task), False))
     if crim:
-        sections.append(('刑案陳報單發文', '龍興派出所刑案陳報單發文簽收表',
+        sections.append(('刑案陳報單發文', title_crim,
             ['編號','陳報日期','刑案類型','承辦人','陳報主旨','簽收'],
             [0.07, 0.146, 0.13, 0.15, 0.234, 0.27], fmt(crim), True))
     if gen:
-        sections.append(('一般陳報單發文', '龍興派出所一般陳報單發文簽收表',
+        sections.append(('一般陳報單發文', title_gen,
             ['編號','陳報日期','業務單位','承辦人','陳報主旨','簽收'],
             [0.07, 0.146, 0.13, 0.15, 0.234, 0.27], fmt(gen), False))
 
@@ -426,7 +433,7 @@ def generate_pages(db_path, date_str):
             fig = _draw_page(side, title, print_date, disp_date,
                              headers, ratios, chunk, per, is_crim,
                              page_num=page_num, total_pages=section_total,
-                             scheme=sk)
+                             scheme=sk, note_text=note_text)
             section_figs.append(fig)
 
         figs.extend(section_figs)
@@ -482,6 +489,11 @@ class TabPrint(BaseTab):
 
         lay = QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0)
+        # 簽收表標題未設定（仍為 ○○ 預設）→ 頂部紅字提醒去設定頁（比照歸檔未設定）
+        self._title_warn = QLabel("⚠ 簽收表標題未設定，請至「資料庫設定 → 簽收表設定」更新")
+        self._title_warn.setStyleSheet("color:#e74c3c; font-size:11pt; padding:4px 10px;")
+        self._title_warn.setVisible(False)
+        lay.addWidget(self._title_warn)
         lay.addWidget(inner)
 
         # 取得 UI 元件
@@ -518,6 +530,48 @@ class TabPrint(BaseTab):
 
         self._pdf_bytes  = None
         self._print_pngs = None
+        self._gen_sig    = None     # 上次「產生」當下的標題指紋，供偵測過期
+        self._refresh_title_warn()
+
+        # ⚠️ main._onTabChanged 不會對列印頁呼叫 on_activated（只對設定/瀏覽頁），
+        # 故自行掛 currentChanged：切回本頁時重算紅字＋清掉過期預覽。
+        self._tab_index = tab_index
+        try:
+            self.tab_widget.currentChanged.connect(self._onShown)
+        except Exception:
+            pass
+
+    def _titles_sig(self):
+        """目前四段標題/註記的指紋，用來判斷產生後是否被改過。"""
+        return tuple(printTitle(self.db_path, w)
+                     for w in ("task", "crim", "gen", "note"))
+
+    def _refresh_title_warn(self):
+        """簽收表標題未設定（仍 ○○ 預設）時顯示頂部紅字。"""
+        w = getattr(self, "_title_warn", None)
+        if w is not None:
+            w.setVisible(printTitlesUnset(self.db_path))
+
+    def _onShown(self, idx):
+        """切回列印頁：重算紅字；若標題在設定頁改過，作廢過期預覽要求重產。"""
+        if idx != getattr(self, "_tab_index", -1):
+            return
+        self._refresh_title_warn()
+        if (self._print_pngs and self._gen_sig is not None
+                and self._gen_sig != self._titles_sig()):
+            self._clear()
+            self._pdf_bytes = None
+            self._print_pngs = None
+            if self.btn_download:
+                self.btn_download.setEnabled(False)
+            if self.btn_print:
+                self.btn_print.setEnabled(False)
+            if self.status_lbl:
+                self.status_lbl.setText("標題已更新，請重新產生")
+
+    def on_activated(self):
+        # 切入列印頁時刷新「標題未設定」提醒（保險：若框架日後改為會呼叫）
+        self._refresh_title_warn()
 
     def _on_generate(self):
         # 前景產生＋modal「產生中」popup：matplotlib 走全域狀態，不宜在背景執行緒
@@ -546,6 +600,7 @@ class TabPrint(BaseTab):
     def _on_done(self, png_list, pdf_bytes, print_pngs):
         self._pdf_bytes  = pdf_bytes
         self._print_pngs = print_pngs
+        self._gen_sig    = self._titles_sig()   # 記下產生當下的標題，供切回時偵測過期
         self.btn_gen.setEnabled(True)
         self.btn_download.setEnabled(True)
         self.btn_print.setEnabled(True)

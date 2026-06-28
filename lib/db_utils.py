@@ -507,6 +507,42 @@ def setSetting(db_path, key, value):
 ARCHIVE_ROOT_KEY = "archive_root"
 _ARCH_SUBDIR_KEY = {"crim": "archive_subdir_crim", "gen": "archive_subdir_gen"}
 
+
+# ══════════════════════════════════════════════════════════════════
+# 簽收表標題（使用者可自訂；存 App_Settings，未設定走預設）
+# ──────────────────────────────────────────────────────────────────
+# 機關名稱以「○○」佔位（不留真名）；列印一律 getSetting(key, 預設)。
+# 跨年度重置不清這些 key（機關名稱是單位永久設定，見 performYearEndReset）。
+PRINT_TITLE_KEYS = {
+    "task": "print_title_task",
+    "crim": "print_title_crim",
+    "gen":  "print_title_gen",
+    "note": "print_note_current",
+}
+PRINT_TITLE_DEFAULTS = {
+    "print_title_task": "○○派出所交辦單發文簽收表",
+    "print_title_crim": "○○派出所刑案陳報單發文簽收表",
+    "print_title_gen":  "○○派出所一般陳報單發文簽收表",
+    "print_note_current": "＜現行犯已隨案移送免簽收＞",
+}
+
+
+def printTitle(db_path, which):
+    """取簽收表標題／註記文字。which ∈ {task,crim,gen,note}；未設定回預設。"""
+    key = PRINT_TITLE_KEYS.get(which)
+    if not key:
+        return ""
+    return getSetting(db_path, key, "") or PRINT_TITLE_DEFAULTS.get(key, "")
+
+
+def printTitlesUnset(db_path):
+    """四個標題／註記是否「皆未設定」（任一為空即視為未設定，供列印頁紅字警示）。
+    回 True＝有未設定項。"""
+    for key in PRINT_TITLE_DEFAULTS:
+        if not (getSetting(db_path, key, "") or "").strip():
+            return True
+    return False
+
 _PDF_INDEX_CACHE = {}   # base_dir -> {nfc(檔名): 完整路徑}
 
 

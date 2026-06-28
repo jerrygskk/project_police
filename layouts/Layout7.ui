@@ -161,6 +161,11 @@
             </widget>
            </item>
            <item>
+            <widget class="QPushButton" name="btn_print_titles">
+             <property name="text"><string>簽收表設定</string></property>
+            </widget>
+           </item>
+           <item>
             <widget class="QPushButton" name="btn_change_pwd">
              <property name="text"><string>變更密碼</string></property>
             </widget>
