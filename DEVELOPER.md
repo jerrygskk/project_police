@@ -183,6 +183,7 @@ main.py
   - 瀏覽頁刪除僅 admin → 一律留空。
   - 參照表／系統類 → 記登入身分（`actor_name()`）。
 - **刪除取值時機**：清空式 UPDATE **之前**先 SELECT operator＋主旨（清空後拿不到）。
+- **四處刪除共用一個 helper**：收文／陳報(刑案/一般)／瀏覽四處的「快照→回收筒→清空→稽核」收斂為 `db_utils.softDeleteDoc(conn, *, table, doc_id, role, is_admin, audit_operator=True)`（清空 SQL、主旨欄、對象人欄、operator 來源欄集中於該檔的 `_DELETE_CLEAR_SQL`／`_DELETE_META`）。業務頁照預設（非 admin 記資料列的人）；瀏覽頁僅 admin、傳 `audit_operator=False` 讓 operator 恆留空。⚠️ **收文／陳報頁一般使用者可刪**（更正剛輸入的錯列，符合 §3 權限矩陣）；舊版誤把這兩頁刪除擋成僅 admin（已移除過嚴守門與沒人用的 `AuthManager.can()`）。純邏輯測試 `tests/test_soft_delete.py`。
 - **已接上的事件**：收文／刑案／一般／瀏覽頁刪除、發文改承辦（限 `source='dispatch'` 且 processor 變動）、參照表新增／改名／停用啟用（排序不記）、歸檔取消（電子／紙本；歸檔本身不記，只記取消）、跨年度重置、變更密碼（不記密碼內容）、歸檔路徑變更、登入失敗（不記輸入的密碼）。
 - **Reset 與 log**：①先寫 Reset log（含清除筆數）②整庫自動備份（歷史 log 隨備份保存）③`performYearEndReset` 清空主表時**含 `Audit_Log`**（當前庫歸零、歷史在備份檔）。
 - ⚠️ **DB 須含本表才會寫稽核**：自 v1.1.0 起**入庫／Release 的空殼已內建 `Audit_Log`＋兩組密碼**（建置時預跑 `fix_audit_setup.py` 烤入），全新安裝直接可用。**僅現場既有舊庫升級**才需另跑 `fix_audit_setup.py` 補表，否則程式照跑但稽核一筆都不寫（靜默退化成單一 admin、無 log）。`fix_audit_setup.py` 為一次性工具、**不入庫**。
@@ -443,6 +444,7 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 
 ### 列印（tab_print.py）
 
+- **簽收表產生走前景＋modal「產生中」popup**（`runWithBusy`），非背景執行緒。matplotlib 靠全域狀態運作，在背景 `QThread` 與主執行緒搶用會偶發崩潰／圖面錯亂，故 `generate_pages` 一律於主執行緒同步畫、期間以 popup 擋互動（單機 1～2 秒可接受）。⚠️ 勿改回背景執行緒跑 matplotlib。
 - 用 **`QPrintPreviewDialog`**（PySide6.QtPrintSupport）跳原生預覽 + 列印選項視窗
 - 不碰 PDF 檔案關聯（避免 WinError 1155），頁面以 **300 DPI 點陣化**送印（`_paint_pages` 把 PNG 畫到 QPrinter）
 - 「儲存 PDF」按鈕仍走 matplotlib `backend_pdf`（向量），與列印獨立

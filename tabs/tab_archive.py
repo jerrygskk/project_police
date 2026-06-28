@@ -1035,16 +1035,19 @@ class TabArchive(BaseTab):
                 informative=f"主旨：{subj or '（無）'}\n掃描檔仍未歸檔，待後續補登。",
                 confirm_text="標記紙本", default_confirm=True):
             return
+        conn = None
         try:
             conn = self._getConn()
             conn.execute(
                 f"UPDATE {meta['base']} SET is_reported=1 WHERE doc_id=?",
                 (doc_id,))
             conn.commit()
-            conn.close()
         except Exception as e:
             msgCritical("寫入資料庫失敗", str(e))
             return
+        finally:
+            if conn:
+                conn.close()
         # 成功不跳提示（僅失敗才提示）；不清空 PK 搜尋：差異更新待歸檔＋刷新候選 PDF
         self._diffDocs(key)
         self._rematch(key)
@@ -1103,13 +1106,13 @@ class TabArchive(BaseTab):
             return
 
         # 2) 寫回 is_electronic = 新檔名；同時標記紙本已歸（電子檔已歸，紙本理當視為已歸）
+        conn = None
         try:
             conn = self._getConn()
             conn.execute(
                 f"UPDATE {meta['base']} SET is_electronic=?, is_reported=1 WHERE doc_id=?",
                 (new_name, pk))
             conn.commit()
-            conn.close()
         except Exception as e:
             try:
                 os.rename(new_path, old_path)   # DB 失敗→還原檔名
@@ -1117,6 +1120,9 @@ class TabArchive(BaseTab):
                 pass
             msgCritical("寫入資料庫失敗", str(e))
             return
+        finally:
+            if conn:
+                conn.close()
 
         # 成功不跳提示（僅失敗才提示）
         # 該 PDF 已改名；該筆已歸檔 → 重載未歸檔清單、清空預覽、重新比對

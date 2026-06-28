@@ -323,6 +323,7 @@ class TabDispatch(BaseTab):
             f'SET dispatch_date=?, sender_id=?, timestamp=? '
             f'WHERE doc_id=?'
         )
+        conn = None
         try:
             conn = self._getConn()
             for seq, (row_idx, doc_id) in enumerate(pending):
@@ -347,7 +348,9 @@ class TabDispatch(BaseTab):
                 self.table.setItem(row_idx, 7, status_item)
 
             conn.commit()
-            conn.close()
             msgInfo("完成", f"已成功更新 {len(pending)} 筆發文日期（{dispatch_day}）")
         except Exception as e:
             msgCritical("更新失敗", str(e))
+        finally:
+            if conn:
+                conn.close()

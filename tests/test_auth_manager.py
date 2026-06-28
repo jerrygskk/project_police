@@ -1,8 +1,7 @@
 """lib/auth_manager.py 權限 / 密碼邏輯單元測試（暫存 sqlite，無 GUI）。
 
 涵蓋：
-  - can() 權限矩陣（admin 全可、user 只能 edit）
-  - is_admin()
+  - 便捷身分判斷 is_admin() / is_manager() / is_archive()
   - login 正確/錯誤密碼、登出
   - change_password 舊密碼驗證 + 寫回 round-trip
 
@@ -52,16 +51,17 @@ class TestPermissions(_AuthBase):
         self.assertEqual(self.auth.current_role, "user")
         self.assertFalse(self.auth.is_admin())
 
-    def test_user_can_only_edit(self):
-        self.assertTrue(self.auth.can("edit"))
-        self.assertFalse(self.auth.can("delete"))
-        self.assertFalse(self.auth.can("ref"))
+    def test_user_is_not_manager(self):
+        # 一般使用者非管理身分（便捷判斷取代已移除的 can()）
+        self.assertFalse(self.auth.is_admin())
+        self.assertFalse(self.auth.is_archive())
+        self.assertFalse(self.auth.is_manager())
 
-    def test_admin_can_everything(self):
+    def test_admin_is_top_role(self):
         self.auth.login("admin", self.db_path)
         self.assertTrue(self.auth.is_admin())
-        for action in ("edit", "delete", "ref", "anything"):
-            self.assertTrue(self.auth.can(action))
+        self.assertTrue(self.auth.is_manager())
+        self.assertFalse(self.auth.is_archive())
 
 
 class TestLogin(_AuthBase):

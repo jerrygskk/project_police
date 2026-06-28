@@ -6,13 +6,13 @@ auth_manager.py — 權限控管
   - 啟動時 current_role 永遠是 'user'
   - 設定 Tab 呼叫 login(password, db_path) 驗證，成功後升為 'admin'
   - 離開設定 Tab 時呼叫 logout()，降回 'user'
-  - 各 Tab 需要判斷權限時，查 AuthManager.instance().can(action)
+  - 各 Tab 需要判斷權限時，用便捷判斷 is_admin() / is_manager() / is_archive()
 
 使用範例：
     from lib.auth_manager import AuthManager
 
     def _deleteSomething(self, doc_id):
-        if not AuthManager.instance().can("delete"):
+        if not AuthManager.instance().is_admin():
             msgWarning("權限不足", "請先登入管理者帳號")
             return
         ...
@@ -75,16 +75,6 @@ class AuthManager(QObject):
     def actor_name(self) -> str:
         """回傳當前身分的中文名（稽核 log 的 operator 用）。"""
         return {'admin': '管理者', 'archive': '歸檔管理'}.get(self._role, '一般使用者')
-
-    def can(self, action: str) -> bool:
-        """
-        回傳當前身份是否有權執行 action。
-        admin 可做一切，user 不能 delete / ref。
-        """
-        if self._role == 'admin':
-            return True
-        USER_ALLOWED = {'edit'}
-        return action in USER_ALLOWED
 
     # ── 登入 / 登出（由設定 Tab 呼叫）────────────────────
     def login(self, password: str, db_path: str) -> bool:

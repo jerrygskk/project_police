@@ -8,8 +8,7 @@ from PySide6.QtGui import QColor, QIcon, QDesktopServices
 from lib.base_tab import BaseTab
 from lib.db_utils import (
     getResourcePath, loadUi, msgInfo, msgWarning, msgCritical, confirmBox,
-    resolveArchivedPdf, getSetting, ARCHIVE_ROOT_KEY,
-    writeAudit, buildDetail, snapshotRow, writeTrash, auditStaffName,
+    resolveArchivedPdf, getSetting, ARCHIVE_ROOT_KEY, softDeleteDoc,
 )
 from lib.auth_manager import AuthManager
 from ui_utils import (
@@ -599,14 +598,6 @@ class TabDBBrowse(BaseTab):
         if _sb:
             QTimer.singleShot(0, lambda b=_sb, v=_scroll_pos: b.setValue(min(v, b.maximum())))
 
-    def _dbNow(self):
-        """取資料庫端的當前時間字串，與 trigger 寫入的 last_modified 同基準。"""
-        conn = self._getConn()
-        try:
-            return conn.execute("SELECT datetime('now','localtime')").fetchone()[0]
-        finally:
-            conn.close()
-
     def _applyMode(self, key):
         """只改欄位可見性與欄寬，不動資料。精簡↔完整切換走這裡，瞬間完成。"""
         meta = TABLE_META[key]
@@ -876,32 +867,7 @@ class TabDBBrowse(BaseTab):
             else:
                 u["hint"].setText("")
 
-    # ── 刪除（清空式 UPDATE，比照陳報/收文頁）────────────────
-    _CLEAR_SQL = {
-        "task": (
-            "UPDATE Document_Task SET receive_date=NULL, receive_id=NULL, "
-            "dept_id=NULL, subject=NULL, processor_id=NULL, deadline=NULL, "
-            "dispatch_date=NULL, sender_id=NULL, timestamp=NULL WHERE doc_id=?"),
-        "crim": (
-            "UPDATE Document_Criminal SET report_date=NULL, sender_id=NULL, "
-            "case_type=NULL, case_status=NULL, processor_id=NULL, "
-            "subject_summary=NULL, occurrence_date=NULL, reporter_name=NULL, "
-            "receiver_id=NULL, is_reported=0, is_electronic='' WHERE doc_id=?"),
-        "gen": (
-            "UPDATE Document_General SET report_date=NULL, sender_id=NULL, "
-            "dept_id=NULL, gen_cat_id=NULL, subject=NULL, processor_id=NULL, "
-            "is_reported=0, is_electronic='' WHERE doc_id=?"),
-    }
-
-    # 瀏覽頁刪除稽核取值：(類別, 主旨欄, 主表名)
-    # operator 不寫入——瀏覽頁刪除一定是 admin 跨庫操作，與資料列的人脫鉤，
-    # 記資料列的人反而誤導。role=admin 已足夠辨識。
-    _AUDIT_DEL = {
-        "task": ("交辦", "subject",         "Document_Task"),
-        "crim": ("刑案", "subject_summary", "Document_Criminal"),
-        "gen":  ("一般", "subject",         "Document_General"),
-    }
-
+    # ── 刪除（清空式 UPDATE，與收文/陳報頁共用 db_utils.softDeleteDoc）──────
     def _onDeleteCell(self, key, row, col, del_col):
         """cellClicked handler：攔截文字型 ✕ 欄的點擊觸發刪除。"""
         if col != del_col or not AuthManager.instance().is_admin():
@@ -926,29 +892,22 @@ class TabDBBrowse(BaseTab):
                 f"本筆資料將被刪除，本文號（{doc_id}）無法再被使用，確認刪除？",
                 confirm_text="刪除", confirm_danger=True, default_confirm=False):
             return
+        am = AuthManager.instance()
+        conn = None
         try:
             conn = self._getConn()
-            # 清空前先抓整列快照：寫回收筒（誤刪可還原）＋取主旨給稽核。
-            # operator 不寫入稽核（見 _AUDIT_DEL 註）；回收筒對象人取承辦人。
-            cat, subj_col, tbl = self._AUDIT_DEL[key]
-            snap = snapshotRow(conn, tbl, doc_id)
-            subject = (snap.get(subj_col) if snap else "") or ""
-            if snap:
-                writeTrash(conn, table_name=tbl, doc_id=doc_id, payload=snap,
-                           subject=subject,
-                           doc_person=auditStaffName(conn, snap.get("processor_id")),
-                           deleted_role=AuthManager.instance().current_role)
-            conn.execute(self._CLEAR_SQL[key], (doc_id,))
-            writeAudit(conn,
-                       role=AuthManager.instance().current_role,
-                       action="DELETE", target_table=tbl, target_id=doc_id,
-                       operator=None,
-                       detail=buildDetail(cat, "刪除", f"主旨：{subject}"))
+            # 瀏覽頁刪除僅 admin、與資料列的人脫鉤 → operator 一律留空
+            # （audit_operator=False）；回收筒對象人仍取承辦人（helper 內處理）。
+            softDeleteDoc(conn, table=TABLE_META[key]["base"], doc_id=doc_id,
+                          role=am.current_role, is_admin=am.is_admin(),
+                          audit_operator=False)
             conn.commit()
-            conn.close()
         except Exception as e:
             msgCritical("刪除失敗", str(e))
             return
+        finally:
+            if conn:
+                conn.close()
         # 差異更新：清空後該列會被判定為 emptied → 自動移除。
         # 捲動位置由 _diffUpdate 內的 preserveScroll 保留。
         self._diffUpdate(key)

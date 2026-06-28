@@ -13,12 +13,13 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QLabel,
     QPushButton, QScrollArea, QWidget, QDateEdit, QFileDialog,
 )
-from PySide6.QtCore import Qt, QDate, QThread, Signal
+from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui  import QPixmap, QImage, QPainter, QPageSize
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from lib.base_tab import BaseTab
 from lib.db_utils import getResourcePath, loadUi, msgInfo, msgWarning
+from ui_utils import runWithBusy
 
 # ── 字型（跨平台）────────────────────────────────────────
 def _find_cjk_fonts():
@@ -442,27 +443,6 @@ def generate_pages(db_path, date_str):
     return png_list, pdf_bytes, print_pngs
 
 
-# ── 背景執行緒 ────────────────────────────────────────────
-class _PdfWorker(QThread):
-    done   = Signal(object, bytes, object)   # (png_list, pdf_bytes, print_pngs)
-    failed = Signal(str)
-
-    def __init__(self, db_path, date_str):
-        super().__init__()
-        self.db_path  = db_path
-        self.date_str = date_str
-
-    def run(self):
-        try:
-            png_list, pdf_bytes, print_pngs = generate_pages(self.db_path, self.date_str)
-            if png_list is None:
-                self.failed.emit('查無資料')
-            else:
-                self.done.emit(png_list, pdf_bytes, print_pngs)
-        except Exception as e:
-            self.failed.emit(str(e))
-
-
 # ── Tab 3 UI ──────────────────────────────────────────────
 class TabPrint(BaseTab):
 
@@ -513,22 +493,32 @@ class TabPrint(BaseTab):
         if self._layout:
             self._layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
 
-        self._worker     = None
         self._pdf_bytes  = None
         self._print_pngs = None
 
     def _on_generate(self):
-        if self._worker and self._worker.isRunning():
-            return
+        # 前景產生＋modal「產生中」popup：matplotlib 走全域狀態，不宜在背景執行緒
+        # 跑（會與主執行緒搶用而偶發崩潰）。改在主執行緒同步畫，期間以 popup 擋住
+        # 互動，畫完即關（單機 1～2 秒可接受）。
         date_str = self.date_edit.date().toString('yyyy-MM-dd')
         self.btn_gen.setEnabled(False)
-        self.status_lbl.setText('產生中…')
         self._clear()
+        try:
+            result = runWithBusy(
+                self.tab_widget,
+                lambda: generate_pages(self.db_path, date_str),
+                text='產生簽收表中，請稍候…')
+        except Exception as e:
+            self._on_fail(str(e))
+            return
+        finally:
+            self.btn_gen.setEnabled(True)
 
-        self._worker = _PdfWorker(self.db_path, date_str)
-        self._worker.done.connect(self._on_done)
-        self._worker.failed.connect(self._on_fail)
-        self._worker.start()
+        png_list, pdf_bytes, print_pngs = result
+        if png_list is None:
+            self._on_fail('查無資料')
+        else:
+            self._on_done(png_list, pdf_bytes, print_pngs)
 
     def _on_done(self, png_list, pdf_bytes, print_pngs):
         self._pdf_bytes  = pdf_bytes

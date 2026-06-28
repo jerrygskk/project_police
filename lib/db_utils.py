@@ -89,6 +89,66 @@ def writeTrash(conn, *, table_name, doc_id, payload,
         pass
 
 
+# ── 軟刪除單一公文（快照→回收筒→清空→稽核，四處共用）─────────────
+# 主表「刪除」一律清空式 UPDATE 保留 doc_id。各頁差異以參數帶入，避免四份重複。
+# 各主表的清空 SQL（清掉所有內容欄、保留 doc_id；歸檔旗標一併歸零）。
+_DELETE_CLEAR_SQL = {
+    "Document_Task": (
+        "UPDATE Document_Task SET receive_date=NULL, receive_id=NULL, "
+        "dept_id=NULL, subject=NULL, processor_id=NULL, deadline=NULL, "
+        "dispatch_date=NULL, sender_id=NULL, timestamp=NULL WHERE doc_id=?"),
+    "Document_Criminal": (
+        "UPDATE Document_Criminal SET report_date=NULL, sender_id=NULL, "
+        "case_type=NULL, case_status=NULL, processor_id=NULL, "
+        "subject_summary=NULL, occurrence_date=NULL, reporter_name=NULL, "
+        "receiver_id=NULL, is_reported=0, is_electronic='' WHERE doc_id=?"),
+    "Document_General": (
+        "UPDATE Document_General SET report_date=NULL, sender_id=NULL, "
+        "dept_id=NULL, gen_cat_id=NULL, subject=NULL, processor_id=NULL, "
+        "is_reported=0, is_electronic='' WHERE doc_id=?"),
+}
+
+# 各主表稽核取值：(類別中文, 主旨欄, 對象人欄, 「記誰刪的」operator 來源欄)
+# operator 規則：admin 跨庫操作與資料列的人脫鉤 → 一律留空；非 admin 記 operator 欄
+# 的人。瀏覽頁刪除僅 admin，故 operator_col 給 None（恆留空）。
+_DELETE_META = {
+    "Document_Task":     ("交辦", "subject",         "processor_id", "receive_id"),
+    "Document_Criminal": ("刑案", "subject_summary", "processor_id", "sender_id"),
+    "Document_General":  ("一般", "subject",         "processor_id", "sender_id"),
+}
+
+
+def softDeleteDoc(conn, *, table, doc_id, role, is_admin, audit_operator=True):
+    """軟刪除一筆公文：快照存回收筒 → 清空式 UPDATE → 寫稽核。用同一 conn，
+    呼叫端統一 commit。回傳被刪那筆的主旨字串（供呼叫端顯示用，查無回 ''）。
+
+    table          三主表名（Document_Task / Criminal / General）
+    role           當前登入身分（current_role），寫入稽核 / 回收筒
+    is_admin       是否 admin（決定稽核 operator 是否留空）
+    audit_operator False＝operator 一律留空（瀏覽頁刪除僅 admin、與資料列脫鉤）
+    """
+    if table not in _DELETE_META:
+        return ""
+    category, subj_col, person_col, op_col = _DELETE_META[table]
+    snap = snapshotRow(conn, table, doc_id)
+    subject = (snap.get(subj_col) if snap else "") or ""
+    # operator：admin 或瀏覽頁 → 留空；非 admin 業務頁 → 記 op_col 的人
+    if not audit_operator or is_admin:
+        operator = None
+    else:
+        operator = auditStaffName(conn, snap.get(op_col)) if snap else ""
+    if snap:
+        writeTrash(conn, table_name=table, doc_id=doc_id, payload=snap,
+                   subject=subject,
+                   doc_person=auditStaffName(conn, snap.get(person_col)),
+                   deleted_role=role)
+    conn.execute(_DELETE_CLEAR_SQL[table], (doc_id,))
+    writeAudit(conn, role=role, action="DELETE", target_table=table,
+               target_id=doc_id, operator=operator,
+               detail=buildDetail(category, "刪除", f"主旨：{subject}"))
+    return subject
+
+
 def restoreFromTrash(conn, trash_id):
     """還原一筆：payload 寫回原 doc_id 空殼列，並刪該回收筒列。
     用同一 conn，呼叫端 commit。回 (table_name, doc_id)；查無／表名不合法／

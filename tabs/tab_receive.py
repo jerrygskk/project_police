@@ -7,9 +7,7 @@ from PySide6.QtWidgets import (
 
 from lib.base_tab import BaseTab
 from lib.db_utils import (getResourcePath, loadUi, nextDocId, DEBUG_MODE,
-                          msgWarning, msgCritical, confirmBox,
-                          writeAudit, buildDetail, auditStaffName,
-                          snapshotRow, writeTrash)
+                          msgWarning, msgCritical, confirmBox, softDeleteDoc)
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
@@ -251,10 +249,7 @@ class TabReceive(BaseTab):
     def _deleteByDocId(self, doc_id):
         if not self.recv_table:
             return
-        if not AuthManager.instance().can("delete"):
-            msgWarning("權限不足", "請先以管理者身分登入後再執行刪除。")
-            return
-
+        # 收文頁開放一般使用者刪除（更正剛輸入的錯列）；稽核記實際刪除者。
         reply = confirmBox(
             "確認刪除",
             f"本筆資料將被刪除，本文號（{doc_id}）無法再被使用，確認刪除？",
@@ -263,32 +258,12 @@ class TabReceive(BaseTab):
         if not reply:
             return
 
+        am = AuthManager.instance()
         conn = None
         try:
             conn = self._getConn()
-            # 清空前先抓整列快照：寫回收筒（誤刪可還原）＋取 operator/主旨給稽核
-            snap = snapshotRow(conn, "Document_Task", doc_id)
-            # admin 跨庫操作與資料列的人脫鉤 → 留空；一般／歸檔管理記收文者
-            operator = (None if AuthManager.instance().is_admin()
-                        else (auditStaffName(conn, snap.get("receive_id")) if snap else ""))
-            subject  = (snap.get("subject") if snap else "") or ""
-            if snap:
-                writeTrash(conn, table_name="Document_Task", doc_id=doc_id,
-                           payload=snap, subject=subject,
-                           doc_person=auditStaffName(conn, snap.get("processor_id")),
-                           deleted_role=AuthManager.instance().current_role)
-            conn.execute("""
-                UPDATE Document_Task SET
-                    receive_date=NULL, receive_id=NULL, dept_id=NULL,
-                    subject=NULL, processor_id=NULL, deadline=NULL,
-                    dispatch_date=NULL, sender_id=NULL, timestamp=NULL
-                WHERE doc_id=?
-            """, (doc_id,))
-            writeAudit(conn,
-                       role=AuthManager.instance().current_role,
-                       action="DELETE", target_table="Document_Task",
-                       target_id=doc_id, operator=operator,
-                       detail=buildDetail("交辦", "刪除", f"主旨：{subject}"))
+            softDeleteDoc(conn, table="Document_Task", doc_id=doc_id,
+                          role=am.current_role, is_admin=am.is_admin())
             conn.commit()
         except Exception as e:
             msgCritical("刪除失敗", str(e))
