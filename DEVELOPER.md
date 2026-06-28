@@ -450,6 +450,8 @@ from db_utils import msgInfo, msgWarning, msgCritical, confirmBox
 - 「儲存 PDF」按鈕仍走 matplotlib `backend_pdf`（向量），與列印獨立
 - 跨版本相容：`setPageSize` 用 `QPageSize` 物件、頁面範圍用 `painter.viewport()`（避開 6.x enum 命名空間差異）
 - **預設彩色＋長邊雙面**（v1.0.7）：開列印預覽前對 `QPrinter` 設 `setColorMode(QPrinter.Color)` + `setDuplex(QPrinter.DuplexLongSide)`，使用者仍可於預覽視窗改；實際支援取決於印表機
+- **欄內文字換行用真實字型度量**（`_text_width_pt`，dpi=72 的 `RendererAgg`，像素即點）：`_wrap_clamp` 不再用「中文字當滿格 size＋0.86 經驗係數」估算——該估算偏窄，會害欄寬還夠的主旨／案類**提早折行**（臨界長度最明顯）。可用寬＝欄寬扣約 1.2×PAD。⚠️ 編號欄的 `_fit_font` 仍用舊估算（單行自動縮字、影響小，未在此改）。
+- **刑案類型欄固定 10pt**（`_draw_page` 中 `is_crim and cidx==2`）：刑案案類名稱長短不一，短的 12pt／長的縮 10pt 會大小參差又壓迫，故刑案此欄一律 10pt（長案類縮後大小當天花板）。**一般陳報「業務單位」欄與交辦不受影響**，維持 12→10 自動縮。
 
 ### 跨年度重置（Reset，tab_settings.py）
 

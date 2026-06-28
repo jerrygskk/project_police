@@ -84,35 +84,53 @@ def _fmt_date(d):
 def _today():
     return date.today().strftime('%Y/%m/%d')
 
+_A4_PT = 595.3   # A4 寬（pt），1 inch=72pt × 8.27 ≈ 595.3
+
+_MEASURE_RENDERER = None
+def _text_width_pt(text, prop):
+    """以 matplotlib 實際字型度量回傳字串寬度(pt)。
+    用 dpi=72 的 RendererAgg → 回傳像素數即等於點數（pt）。
+    取代舊版「中文字當滿格 size + 0.86 經驗係數」的估算，避免欄寬還夠卻提早換行
+    （臨界長度的主旨最容易被誤折，見 v1.1.x 修正）。"""
+    global _MEASURE_RENDERER
+    if _MEASURE_RENDERER is None:
+        from matplotlib.backends.backend_agg import RendererAgg
+        _MEASURE_RENDERER = RendererAgg(1, 1, 72)
+    w, _h, _d = _MEASURE_RENDERER.get_text_width_height_descent(text or "", prop, False)
+    return w
+
+
 def _wrap_clamp(text, col_width_norm, max_lines=2, pad=PAD, fixed_size=None):
     """
     fixed_size=None（預設）：12pt先試，超過縮10pt，還超過截斷加…
     fixed_size=N：固定N pt不縮小，超過直接截斷加…
     回傳 (wrapped_text, font_prop)
+
+    換行寬度以 matplotlib 真實字型度量計（_text_width_pt），不再用估算係數。
     """
     if not text:
         return '', fp(fixed_size or 12)
 
-    A4_PT    = 595.3
-    max_w_pt = (col_width_norm - pad * 2) * A4_PT * 0.86
+    A4_PT    = _A4_PT
+    # 可用寬＝欄寬扣左右內距（保留約 1.2×PAD 邊距，文字不貼欄線）。
+    max_w_pt = (col_width_norm - pad * 1.2) * A4_PT
 
     def wrap(t, size):
-        def cw(ch): return size if ord(ch) > 0x2E80 else size * 0.6
-        lines, line, lw = [], '', 0.0
+        prop = fp(size)
+        lines, line = [], ''
         for ch in t:
-            w = cw(ch)
-            if lw + w > max_w_pt and line:
-                lines.append(line); line, lw = ch, w
+            if line and _text_width_pt(line + ch, prop) > max_w_pt:
+                lines.append(line); line = ch
             else:
-                line += ch; lw += w
+                line += ch
         if line: lines.append(line)
         return lines
 
     def truncate(lines, size):
         lines = lines[:max_lines]
-        def cw(ch): return size if ord(ch) > 0x2E80 else size * 0.6
+        prop = fp(size)
         last = lines[-1]
-        while last and sum(cw(c) for c in last + '…') > max_w_pt:
+        while last and _text_width_pt(last + '…', prop) > max_w_pt:
             last = last[:-1]
         lines[-1] = last + '…'
         return '\n'.join(lines), fp(size)
@@ -286,7 +304,12 @@ def _draw_page(side_label, table_title, print_date, disp_date,
             # 長文字欄：業務/案類(2) 超2行縮10pt再截斷；主旨(4) 直接12pt截斷
             if cidx in (2, 4) and not (cidx == sign_idx and is_current):
                 if cidx == 2:
-                    text, font = _wrap_clamp(text, TABLE_W * ratio, max_lines=2)
+                    # 刑案類型名稱本身長、長短不一會大小參差又壓迫：刑案此欄固定 10pt
+                    # （＝長案類縮後的大小當天花板，整欄一致）。一般陳報的業務單位欄
+                    #   不受影響，維持 12→10 自動縮。
+                    cat_fs = 10 if is_crim else None
+                    text, font = _wrap_clamp(text, TABLE_W * ratio, max_lines=2,
+                                             fixed_size=cat_fs)
                     ha = 'center'   # 業務/案類置中
                 else:  # cidx == 4 主旨
                     text, font = _wrap_clamp(text, TABLE_W * ratio, max_lines=2, fixed_size=12)
