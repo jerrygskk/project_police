@@ -224,5 +224,24 @@ class TestResolveArchivedPdf(_DbTestBase):
         self.assertEqual(os.path.normpath(path), os.path.normpath(target))
 
 
+class TestToUncPath(unittest.TestCase):
+    """toUncPath 純分支（已是 UNC／空值）。磁碟機代號解析需 Windows 網路環境，
+    不在此測；這裡只測與平台無關的決定性分支。"""
+
+    def test_already_unc_passthrough(self):
+        self.assertEqual(db_utils.toUncPath(r"\\srv\share\歸檔\2026"),
+                         r"\\srv\share\歸檔\2026")
+
+    def test_unc_trailing_slash_trimmed(self):
+        self.assertEqual(db_utils.toUncPath("\\\\srv\\share\\"), r"\\srv\share")
+
+    def test_forward_slash_unc_normalized(self):
+        self.assertEqual(db_utils.toUncPath("//srv/share/a"), r"\\srv\share\a")
+
+    def test_empty_returns_none(self):
+        self.assertIsNone(db_utils.toUncPath(""))
+        self.assertIsNone(db_utils.toUncPath(None))
+
+
 if __name__ == "__main__":
     unittest.main()

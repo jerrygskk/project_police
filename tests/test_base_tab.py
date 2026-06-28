@@ -31,5 +31,42 @@ class TestBaseTabTrimName(unittest.TestCase):
             self.assertEqual(BaseTab._trimName(s), archive_trimName(s))
 
 
+class TestBaseTabFmtDate(unittest.TestCase):
+    """_fmtDate：YYYY-MM-DD → MM-DD-YYYY（僅預覽顯示用）。"""
+
+    def test_normal(self):
+        self.assertEqual(BaseTab._fmtDate("2026-06-28"), "06-28-2026")
+
+    def test_empty_and_none(self):
+        self.assertEqual(BaseTab._fmtDate(""), "")
+        self.assertEqual(BaseTab._fmtDate(None), "")
+
+    def test_bad_format_returns_original(self):
+        # 解析不了就原樣回傳字串，不拋例外
+        self.assertEqual(BaseTab._fmtDate("2026/06/28"), "2026/06/28")
+        self.assertEqual(BaseTab._fmtDate("abc"), "abc")
+
+
+class _FakeLabel:
+    def __init__(self, html):
+        self._html = html
+    def text(self):
+        return self._html
+
+
+class TestBaseTabDocIdFromLabel(unittest.TestCase):
+    """_docIdFromLabel：從 QLabel 的 HTML 取 href 中的 doc_id。"""
+
+    def test_extracts_href(self):
+        lbl = _FakeLabel('<a href="765" style="color:#000">765</a>')
+        self.assertEqual(BaseTab._docIdFromLabel(lbl), "765")
+
+    def test_no_href_returns_none(self):
+        self.assertIsNone(BaseTab._docIdFromLabel(_FakeLabel("純文字 765")))
+
+    def test_none_label_returns_none(self):
+        self.assertIsNone(BaseTab._docIdFromLabel(None))
+
+
 if __name__ == "__main__":
     unittest.main()
