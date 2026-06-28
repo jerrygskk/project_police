@@ -90,6 +90,7 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 
 - **「進版」** = 跑 `python tools/bump_version.py <版號>`（機制見上「版本號」節）+ 打 git tag `v{版本號}` + DEVELOPER.md §8 補一列版本記錄
 - **「push上去」、「推上去」** = 把改動 commit + push。**逐檔 add**（當輪或上次 push 後改動的檔案逐一 add，**不要一次全加**，跳過 `dbfile.db`）；**叫你推才推**，沒說不要問「要推嗎？」
+  - ⚠️ 根目錄 `fix_*.py`／`seed_*.py` 刻意**不入庫**（現場交付 / 壓測丟棄腳本），逐檔 add 時跳過、勿 git add、勿誤刪。
   - ⚠️ **多行 commit 訊息用 Bash tool 的 heredoc**（`git commit -F - <<'EOF' … EOF`），**不要用 PowerShell here-string `@'…'@`**——它在 Bash 不被解析，`@` 會被當訊息第一行黏進 subject。（這個雷踩過多次）
 - ⚠️ **push 前必確認無真實人名／個資**：要 commit／push 的內容（含測試 fixture 檔名、文件範例、`dbfile.db`）不得含真實人名，有則先替換成虛構佔位名才能推。`dbfile.db` 只能是**乾淨空殼**（人員僅佔位、無公文），且提交前先 `VACUUM`（刪除的資料會殘留在 slack space，strings 掃得到）。
   - 自動防呆：`tests/test_no_pii.py` 會比對本機 `tests/pii_denylist.local.txt`（真名清單，已 gitignore 不入庫）掃描 git 追蹤內容＋已提交的 `dbfile.db` blob，命中即 fail。**push 前跑一次 `python -m unittest tests.test_no_pii`**；有新進真名就補進該清單。
@@ -104,21 +105,7 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 4. **進版**（DEVELOPER.md §8 版本記錄列在這步補）
 5. **推上去** + 打 tag `v{版號}` + push tag
 6. **build**：onefile 全新 build（見 DEVELOPER.md §7），回報成功 / 失敗
-7. **發 GitHub Release**（四個 asset，比照歷版 v1.0.6）：
-   - **要上傳的檔案（共 4 個）**：
-     1. `Police-Document-Manager.exe`（本次 build 的 onefile，在 `dist/`）
-     2. `dbfile.db`（**乾淨空殼**——⚠️ 一律從 git HEAD 取，**不要用工作區那份**，工作區常被測試蓋掉。導出：`git show HEAD:dbfile.db > 暫存/dbfile.db`，二進位用 Bash 導出才安全；可 `git hash-object` 對 `git rev-parse HEAD:dbfile.db` 驗證一致）
-     3. `PACKED.zip`（= 上面 exe + dbfile.db **兩檔扁平放根目錄**，無子資料夾）
-     4. `Quick_Start.pdf`（速查卡）——⚠️ `docs/` 已 gitignore，發版前先跑 `python tools/gen_quickstart.py` 重產到 `docs/Quick_Start.pdf` 再上傳（內容單一來源為 `ui_utils/help_content.py` 的 `QUICKSTART`）
-   - **打包 zip（PowerShell）**：`Compress-Archive -Path 暫存\dbfile.db,暫存\Police-Document-Manager.exe -DestinationPath 暫存\PACKED.zip -Force`
-   - **建 Release + 一次傳四檔**：
-     ```
-     gh release create v{版號} --title "v{版號}" --notes-file release_note_v{版號}.md \
-       "dist/Police-Document-Manager.exe" "暫存/dbfile.db" "暫存/PACKED.zip" "docs/Quick_Start.pdf"
-     ```
-     （asset 多於一個時直接列在 create 後；或先 create 再 `gh release upload v{版號} <檔> --clobber`）
-   - 收尾刪暫存資料夾。
-   - **gh 環境**：已裝（本機 `C:\Program Files\GitHub CLI\gh.exe`，新 shell PATH 沒帶到就用全路徑），帳號 `jerrygskk` 已登入（token 存 keyring）。`gh auth login` 是互動式、非互動 shell driver 不了——若日後登出需重登，由維護者本機自己跑
+7. **發 GitHub Release**（4 個 asset：exe／乾淨空殼 `dbfile.db`／`PACKED.zip`／`Quick_Start.pdf`）。**完整指令、各 asset 取得方式（`dbfile.db` 一律從 git HEAD 取、`Quick_Start.pdf` 先跑 `gen_quickstart.py`）、`Compress-Archive` 打包與 gh 環境，見 [DEVELOPER.md](DEVELOPER.md) §7「發 GitHub Release」。**
 
 > ⚠️ **順序鐵則**：DEVELOPER.md（及有改到的 README）/ release note 要在「進版 commit」**之前**寫好，tag 才會直接指向含完整文件的 commit。別先進版打 tag、事後才補 DEVELOPER.md——那樣得退版重做。
 > ⚠️ tag 已 push 後要移動：本地 `git tag -f` 後，遠端**先刪再推**（`git push origin :refs/tags/v{版號}` 再 `git push origin v{版號}`），否則遠端 tag 仍指舊 commit。
@@ -165,17 +152,18 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 
 #### 6. SVG／icon
 - **Material icon 白邊太多／在按鈕裡偏一邊** → 裁 viewBox 到圖案實際 bounding box 並置中、移除非對稱裝飾，width/height 統一 512px（`0 -960 960 960` 圖案只佔中央 70%）。
+- **HELP 新增按鈕顯示破圖佔位符** → `tools/gen_buttons.py` 只產 SVG、**不會自動登記 qrc**；新增 key 後須手動在 `res/resources.qrc` 補 `<file alias="btn/<key>.svg">buttons/<key>.svg</file>` 再 `pyside6-rcc res/resources.qrc -o res/resources_rc.py` 重編。
 
 #### 7. 資料／SQL
 - **`ORDER BY sort_order` 新項跑到最前** → 新增時給 `sort_order = MIN(sort_order)-1`（空表 fallback 1）；NULL 會被 SQLite 排最前。
 - **軟刪除空殼出現在待歸檔清單** → `_queryUnarchived`/`_tableSignature` 排除底層案由欄為 NULL 者；**任何「待處理」查詢都要排除軟刪除空殼**。
 - **可空下拉的 NULL 舊資料被靜默改成清單第一項** → 建檔可為 NULL 的下拉，建時與編輯時都 `addItem("", None)` 空白哨兵（見 `edit_dialog.py`）；否則 `_set_combo_value(None)` 停在第一項、存回真 id 連必填都騙過。
 - **編號欄超連結＋純文字重疊** → `setDocIdLinkCell` 切換前互清：連結分支先 `takeItem`、純文字分支先 `removeCellWidget`（item 與 cellWidget 兩套獨立儲存）。
+- **瀏覽頁搜尋整個沒反應／取到錯列** → ① `_allRows[key]`／`_docorder[key]` 必須與表格列嚴格 1:1（`_diffUpdate` 每次 pop/append 兩者同步維護）；② `_applyRowVisibility`／歸檔 `_rematch` 的 `setUpdatesEnabled(False…True)` **必用 try/finally**（中途丟例外會把表格卡在不更新＝所有 `setRowHidden` 失效，持續到下次整表重建）。
+- **參照表 rename 後瀏覽／歸檔頁不更新** → 指紋只看公文表 `last_modified`，碰不到參照改名；rename 必走 `_ref_changed` 旗標路徑（`_refreshRefCells`／重載小清單），不能靠指紋偵測。
 
 #### 8. 歸檔檔名解析（`lib/archive_text.py`）
-- **斷詞漏字（日期黏主旨如 `1150101匿名竊盜案`）** → 用 `re.findall([^一-鿿]+)` 抽中文段再 2 字滑動切詞（`_tokenize` 含數字片段不符純中文判斷會整段漏切）。
-- **PK 為 1xx 時日期解析空白** → 日期 token 用 `(?<!\d)(1\d{2})(\d{2})(\d{2})(?!\d)`（舊正則把 PK「103」當民國年）。
-- **歸檔預覽主旨退回 DB 主旨（檔名無 `-`）** → `_parseSubject` 補「無 `-`」分支：去開頭日期＋從尾端剝人名，中間即主旨。
+- **動斷詞／日期／主旨解析前** → 三條解析雷（斷詞漏字、PK 1xx 日期、無 `-` 主旨）詳述已搬至 **DEVELOPER.md §3「歸檔檔名解析的雷」**，動 `archive_text.py` 前先翻。
 
 #### 9. 打包／重啟
 - **重置後重啟、打包版跳 `Failed to load Python DLL`／`unicodedata` 缺** → 啟動新程序前設 `PYINSTALLER_RESET_ENVIRONMENT=1`（新程序沿用舊 `_MEI` 所致；見 `tab_settings._restartApp()`，別用 cmd ping 延遲歪招）。
