@@ -238,6 +238,7 @@
             <item>
              <widget class="QTableWidget" name="tbl_personnel">
               <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+              <column><property name="text"><string/></property></column>
               <column><property name="text"><string>序號</string></property></column>
               <column><property name="text"><string>姓名</string></property></column>
               <column><property name="text"><string>別名</string></property></column>
@@ -290,6 +291,7 @@
             <item>
              <widget class="QTableWidget" name="tbl_dept">
               <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+              <column><property name="text"><string/></property></column>
               <column><property name="text"><string>序號</string></property></column>
               <column><property name="text"><string>部門名稱</string></property></column>
               <column><property name="text"><string>狀態</string></property></column>
@@ -341,6 +343,7 @@
             <item>
              <widget class="QTableWidget" name="tbl_casetype">
               <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+              <column><property name="text"><string/></property></column>
               <column><property name="text"><string>序號</string></property></column>
               <column><property name="text"><string>案件類型名稱</string></property></column>
               <column><property name="text"><string>狀態</string></property></column>

@@ -21,7 +21,7 @@ from lib.archive_text import (
 )
 from ui_utils import (
     applyLinkStyle,
-    RowHoverFilter, RowHoverDelegate, TwoLineElideLabel,
+    RowHoverFilter, RowHoverDelegate, LinkCursorFilter, TwoLineElideLabel,
     CriminalEditDialog, GeneralEditDialog, runWithBusy, preserveScroll,
 )
 
@@ -463,6 +463,10 @@ class TabArchive(BaseTab):
                 lf = _LinkClickFilter(self, key, table, link_col)
                 table.viewport().installEventFilter(lf)
                 table._link_filter = lf      # 防 GC
+                # 編號欄滑過顯示手指游標（純 item 頁，零建表成本）
+                lcf = LinkCursorFilter(table, link_col)
+                table.viewport().installEventFilter(lcf)
+                table._link_cursor = lcf     # 防 GC
             self._linkBound.add(key)
 
         self._docrows = getattr(self, "_docrows", {})

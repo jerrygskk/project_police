@@ -11,7 +11,7 @@ from .sticky_scroll import attachStickyScroll
 from .widgets import (
     setupFilterCombo, setupDateEditToToday, setupDateEditCalendarOnly,
     refreshFilterCombo, runWithBusy, preserveScroll,
-    RowHoverFilter, RowHoverDelegate, TwoLineElideLabel,
+    RowHoverFilter, RowHoverDelegate, LinkCursorFilter, TwoLineElideLabel,
 )
 from .table   import (
     setupPreviewTable,
@@ -47,6 +47,7 @@ __all__ = [
     "preserveScroll",
     "RowHoverFilter",
     "RowHoverDelegate",
+    "LinkCursorFilter",
     "TwoLineElideLabel",
     "setupPreviewTable",
     "autoResizeTable",

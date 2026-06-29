@@ -135,7 +135,7 @@ class PersonnelAddDialog(QDialog):
         form.addRow("姓名：", self.w_name)
 
         self.w_alias = QLineEdit()
-        self.w_alias.setPlaceholderText("綽號/簡稱，半形逗號分隔（可空）")
+        self.w_alias.setPlaceholderText("綽號/簡稱，半形逗號分隔")
         self.w_alias.setFixedWidth(_FIELD_W)
         form.addRow("別名：", self.w_alias)
 
@@ -225,7 +225,7 @@ class PersonnelEditDialog(QDialog):
         except Exception:
             pass
         self.w_alias = QLineEdit(cur_alias)
-        self.w_alias.setPlaceholderText("綽號/簡稱，半形逗號分隔（可空）")
+        self.w_alias.setPlaceholderText("綽號/簡稱，半形逗號分隔")
         self.w_alias.setFixedWidth(_FIELD_W)
         form.addRow("別名：", self.w_alias)
 

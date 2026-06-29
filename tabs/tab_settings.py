@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView,
     QWidget, QApplication, QFileDialog,
+    QStyledItemDelegate, QStyle,
 )
 
 from lib.base_tab import BaseTab
@@ -67,6 +68,15 @@ _NAV_DANGER = (
     "QPushButton:disabled { color: #c5c5c9; background-color: transparent; }"
 )
 
+class _NoFocusDelegate(QStyledItemDelegate):
+    """移除「目前儲存格」焦點外框（Windows 樣式點擊後會在該格畫框）。
+    僅去焦點框，保留列選取底色（拖拉排序需要 currentRow）。"""
+    def paint(self, painter, option, index):
+        if option.state & QStyle.State_HasFocus:
+            option.state &= ~QStyle.State_HasFocus
+        super().paint(painter, option, index)
+
+
 class _RowDragFilter(QObject):
     """攔截 QTableWidget viewport 的 Drop 事件，實作整列拖拉（Qt InternalMove 只移格，不移列）。"""
     def __init__(self, tbl, callback):
@@ -94,6 +104,7 @@ _TABLE_SS = """
         border: none;
         border-top: 1px solid #c6c6c8;
         font-size: 13pt;
+        outline: 0;
     }
     QHeaderView::section {
         background-color: #f2f2f7;
@@ -330,10 +341,14 @@ class TabSettings(BaseTab):
         tbl.setShowGrid(False)
         tbl.verticalHeader().setDefaultSectionSize(36)
         tbl.setStyleSheet(_TABLE_SS)
+        # 去掉點擊後「目前儲存格」焦點外框（保留列選取底色，拖拉需 currentRow）
+        tbl.setItemDelegate(_NoFocusDelegate(tbl))
         hdr = tbl.horizontalHeader()
         name_c, alias_c, status_c = self._refCols(key)
-        hdr.setSectionResizeMode(0, QHeaderView.Fixed)
-        tbl.setColumnWidth(0, 80)
+        hdr.setSectionResizeMode(self._HANDLE_COL, QHeaderView.Fixed)
+        tbl.setColumnWidth(self._HANDLE_COL, 36)
+        hdr.setSectionResizeMode(self._SEQ_COL, QHeaderView.Fixed)
+        tbl.setColumnWidth(self._SEQ_COL, 64)
         hdr.setSectionResizeMode(status_c, QHeaderView.Fixed)
         tbl.setColumnWidth(status_c, 80)
         hdr.setSectionResizeMode(name_c, QHeaderView.Stretch)
@@ -376,6 +391,14 @@ class TabSettings(BaseTab):
         it = QTableWidgetItem(str(text) if text is not None else "")
         it.setTextAlignment(Qt.AlignCenter)
         it.setForeground(QColor(color if color else "#1c1c1e"))
+        return it
+
+    def _handleItem(self):
+        """拖拉把手格（⠿）：灰色、置中、提示可拖拉整列。"""
+        it = QTableWidgetItem("⠿")
+        it.setTextAlignment(Qt.AlignCenter)
+        it.setForeground(QColor("#8e8e93"))   # 次要灰，把手用色（非 disabled 淡灰）
+        it.setToolTip("按住可拖拉整列以調整排序")
         return it
 
     def _selected_row(self, table):
@@ -668,13 +691,18 @@ class TabSettings(BaseTab):
         "casetype":  ("Ref_CaseTypes",    "case_type_id", "case_type_name", "啟用", "停用"),
     }
 
+    # 排序表固定前兩欄：col0＝拖拉把手、col1＝序號（顯示排序位置）
+    _HANDLE_COL = 0
+    _SEQ_COL    = 1
+
     def _refCols(self, key):
         """回傳該頁的欄索引 (name, alias, status)；alias 為 None 表無別名欄。
-        人員頁：編號0 / 姓名1 / 別名2 / 狀態3
-        部門/案類：編號0 / 名稱1 / 狀態2"""
+        前兩欄固定為把手(0)／序號(1)，故名稱欄自 2 起算。
+        人員頁：把手0 / 序號1 / 姓名2 / 別名3 / 狀態4
+        部門/案類：把手0 / 序號1 / 名稱2 / 狀態3"""
         if key == "personnel":
-            return 1, 2, 3
-        return 1, None, 2
+            return 2, 3, 4
+        return 2, None, 3
 
     def _loadRefGeneric(self, key):
         """從 DB 依 sort_order 撈進記憶體，清掉暫存 dirty，重繪表格"""
@@ -724,8 +752,9 @@ class TabSettings(BaseTab):
                 tbl.insertRow(r)
                 color  = None if active else _COLOR_INACTIVE
                 status = word_on if active else word_off
-                # col0 顯示「序號」＝目前列位置（r+1），非內部 PK；rid 仍存記憶體供存檔
-                tbl.setItem(r, 0,        self._item(r + 1,  color))
+                # col0 拖拉把手；col1 顯示「序號」＝目前列位置（r+1），非內部 PK；rid 仍存記憶體供存檔
+                tbl.setItem(r, self._HANDLE_COL, self._handleItem())
+                tbl.setItem(r, self._SEQ_COL,    self._item(r + 1,  color))
                 tbl.setItem(r, name_c,   self._item(rname,  color))
                 if alias_c is not None:
                     alias = (row[3] if len(row) > 3 and row[3] else "")

@@ -110,6 +110,8 @@ def applyLinkStyle(item, clickable=True):
     f = item.font()
     f.setUnderline(clickable)
     item.setFont(f)
+    # 可點擊時提示開啟修改；還原時清掉（手指游標由 LinkCursorFilter 於 viewport 處理）
+    item.setToolTip("點擊編號可開啟修改視窗" if clickable else "")
 
 
 def setDocIdLinkCell(table, row, col, doc_id, on_click, clickable=True):
@@ -128,6 +130,8 @@ def setDocIdLinkCell(table, row, col, doc_id, on_click, clickable=True):
         lbl = QLabel(f'<a href="{doc_id}" style="color:{LINK_COLOR};text-decoration:underline;">{doc_id}</a>')
         lbl.setAlignment(Qt.AlignCenter)
         lbl.setOpenExternalLinks(False)
+        lbl.setCursor(Qt.PointingHandCursor)        # 提示可點擊
+        lbl.setToolTip("點擊編號可開啟修改視窗")
         lbl.linkActivated.connect(lambda link, r=row: on_click(r, link))
         table.setCellWidget(row, col, lbl)
     else:

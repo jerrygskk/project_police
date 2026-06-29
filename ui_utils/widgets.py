@@ -240,6 +240,34 @@ class RowHoverDelegate(QStyledItemDelegate):
         super().paint(painter, opt, index)
 
 
+class LinkCursorFilter(QObject):
+    """純 item 連結欄（資料庫瀏覽／歸檔的編號欄）的滑鼠游標處理：
+    滑到「可點擊的編號格」顯示手指游標，離開還原箭頭。
+    可否點擊以該格字型是否帶底線判定（與 applyLinkStyle 同一來源），
+    故權限切換 clickable 後游標自動跟著對，不需另外同步狀態。
+    需存成屬性防 GC；在 table.viewport() 上 installEventFilter。"""
+    def __init__(self, table, link_col):
+        super().__init__(table)
+        self._table = table
+        self._col = link_col
+
+    def eventFilter(self, obj, event):
+        t = self._table
+        if obj is t.viewport():
+            if event.type() == QEvent.MouseMove:
+                idx = t.indexAt(event.pos())
+                hand = False
+                if idx.isValid() and idx.column() == self._col:
+                    it = t.item(idx.row(), self._col)
+                    if it is not None and it.text() and it.font().underline():
+                        hand = True
+                t.viewport().setCursor(
+                    Qt.PointingHandCursor if hand else Qt.ArrowCursor)
+            elif event.type() == QEvent.Leave:
+                t.viewport().setCursor(Qt.ArrowCursor)
+        return False
+
+
 class TwoLineElideLabel(QLabel):
     """固定 2 行高度的標籤：
     - 一般文字 1～2 行正常顯示（中文逐字、長英數任意位置皆可斷行）

@@ -15,6 +15,7 @@ from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, refreshDeleteBtns, applyLinkStyle,
     TaskEditDialog, CriminalEditDialog, GeneralEditDialog, runWithBusy, preserveScroll,
+    LinkCursorFilter,
 )
 
 
@@ -238,6 +239,14 @@ class TabDBBrowse(BaseTab):
             vp.installEventFilter(fitter)
             self._wm_fitters = getattr(self, "_wm_fitters", [])
             self._wm_fitters.append(fitter)   # 存參考防 GC
+            # 編號欄滑過顯示手指游標（純 item 頁，零建表成本）
+            link_col = next((i for i, c in enumerate(TABLE_META[key]["cols"])
+                             if c.get("link")), None)
+            if link_col is not None:
+                lcf = LinkCursorFilter(tbl, link_col)
+                vp.installEventFilter(lcf)
+                self._link_cursors = getattr(self, "_link_cursors", [])
+                self._link_cursors.append(lcf)   # 存參考防 GC
 
         # 填充範圍下拉、綁定事件
         for key in ("task", "crim", "gen"):
