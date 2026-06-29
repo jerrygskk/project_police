@@ -316,20 +316,11 @@ self.setStyleSheet("""
 
 ### 可空白日期框（setupNullableDateEdit）
 
-「`specialValueText` + `minimumDate` 哨兵」是表達「日期可空白／不限」的作法，但純哨兵有兩個互動雷，欄位**又要讓使用者鍵盤輸入**時會踩到：
+`setupDateEditCalendarOnly`（純 `specialValueText`＋`minimumDate` 哨兵）只適合「靠月曆挑、不需鍵盤輸入」的欄位。只要欄位**還要讓使用者用鍵盤打日期**，改用 `setupNullableDateEdit`——純哨兵在這情境有兩個互動雷：①停在 `minimumDate`（空白）時 `QDateEdit` 顯示特殊文字、收不到數字鍵編輯；②若以 `dateChanged → setStyleSheet` 換色，每次變動重建內部 `QLineEdit`、打斷進行中的鍵盤編輯。機制與決策見 `widgets.py` 兩函式的 docstring。
 
-1. **空白時鍵盤打不動** — 欄位停在 `minimumDate` 時 `QDateEdit` 顯示的是特殊文字（非 `年/月/日` 三段），Qt 在特殊值狀態收不到數字鍵編輯，必須先離開特殊值才打得動。
-2. **亂點跳回空白＋編輯被打斷** — 值退回 `minimumDate`（或開月曆沒選、按 Esc、點框外）就吸附回空白；且若用 `dateChanged → setStyleSheet` 換色，每次變動都重建內部 `QLineEdit`、打斷正在進行的鍵盤編輯。
-
-`setupNullableDateEdit(date_edit, special_text, on_blank_changed=None)` 統一收斂這兩點：
-
-- **鍵盤離開特殊值**：裝事件過濾器，空白時攔數字／上下／翻頁鍵與滾輪，先 `setDate(今天)` 離開特殊值再正常編輯（數字鍵 forward 落到段位、步進鍵 consume 避免再 ±1）。決策抽成純函式 `nullableDateKeyAction(is_blank, key, text)`，有單元測試 `tests/test_nullable_date.py`。
-- **換色不打斷編輯**：`on_blank_changed(is_blank)` 只在「空白↔有值」切換時呼叫一次，且 `QTimer.singleShot(0,…)` 延遲到當下按鍵處理完才換樣式（不再每鍵重建 `QLineEdit`）。
-- 內部已含 `setupDateEditCalendarOnly`（空白時月曆導今天月份），呼叫端不需再另設。需自訂 `minimumDate`（如稽核頁 `QDate(2000,1,1)`）者，呼叫前先 `setMinimumDate`。
+`setupNullableDateEdit(date_edit, special_text, on_blank_changed=None)` 收斂這兩點：空白時攔數字／上下／翻頁鍵與滾輪先跳今天離開特殊值（決策抽成純函式 `nullableDateKeyAction`，測試 `tests/test_nullable_date.py`）；換色只在「空白↔有值」切換時延遲回呼 `on_blank_changed`。內部已含 `setupDateEditCalendarOnly`，呼叫端不需再另設；需自訂 `minimumDate`（如稽核頁 `QDate(2000,1,1)`）者呼叫前先 `setMinimumDate`。
 
 用處：三表/刑案頁查獲日期 `crim_occdate`（搭 `on_blank_changed` 切灰/正常字色）、稽核查詢頁 `_from`／`_to`（無換色，`on_blank_changed=None`）。
-
-> ⚠️ 純哨兵（`setupDateEditCalendarOnly`）僅適合「不需鍵盤輸入、只靠月曆挑」的欄位；只要欄位要鍵盤輸入，一律用 `setupNullableDateEdit`。
 
 ### 通用彈窗（ui_utils）
 
