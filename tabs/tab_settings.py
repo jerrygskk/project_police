@@ -792,6 +792,23 @@ class TabSettings(BaseTab):
     def _hasUnsavedSort(self):
         return any(s["dirty"] for s in self._sort_state.values())
 
+    def _reloadPreservingOrder(self, key):
+        """新增／修改後重載：取 DB 最新資料，但把進動作前的記憶體暫存順序
+        重新套回去（新增的列＝不在舊順序中 → 排到最前），dirty 狀態原樣保留。
+
+        如此拖拉排序撐得過新增／修改、不被重載洗掉（原 bug：新項以 MIN-1 插最前、
+        重載丟棄未存順序，已拖好的前一新項被擠回上方）；且因沒寫 DB、沒清 dirty，
+        沒按「儲存排序」前離開頁面仍可放棄（反悔路徑保留）。"""
+        st = self._sort_state[key]
+        old_order = [r[0] for r in st["rows"]]      # 動作前的暫存 id 順序
+        was_dirty = st["dirty"]
+        self._loadRefGeneric(key)                    # 取最新資料（含新列/改後值），會清 dirty
+        pos = {rid: i for i, rid in enumerate(old_order)}
+        st["rows"].sort(key=lambda r: pos.get(r[0], -1))   # 新 id 不在舊順序→-1 排最前
+        st["dirty"] = was_dirty
+        st["save_btn"].setEnabled(was_dirty)
+        self._renderSortTable(key)
+
     def _promptUnsaved(self, context="edit"):
         """有未存排序時詢問。
         context='edit'  ：取消=保留排序、中止動作（回 False）
@@ -834,7 +851,7 @@ class TabSettings(BaseTab):
         dlg = PersonnelAddDialog(self.db_path, self.tab_widget)
         if dlg.exec():
             self._ref_dirty = True
-            self._loadPersonnel()
+            self._reloadPreservingOrder("personnel")   # 保留未存拖拉順序
 
     def _editPersonnel(self, row=None):
         if not self._refEditable():
@@ -848,13 +865,11 @@ class TabSettings(BaseTab):
         sid    = srow[0]              # 真 PK，給 UPDATE 用
         sname  = srow[1]
         active = bool(srow[2])
-        if not self._promptUnsaved():
-            return
         dlg = PersonnelEditDialog(self.db_path, sid, row + 1, sname, active, self.tab_widget)
         if dlg.exec():
             if dlg.get_result():
                 self._ref_dirty = True
-                self._loadPersonnel()
+                self._reloadPreservingOrder("personnel")   # 保留未存拖拉順序
 
     # ════════════════════════════════════════════════════════════
     # 部門管理
@@ -868,7 +883,7 @@ class TabSettings(BaseTab):
         dlg = DeptAddDialog(self.db_path, self.tab_widget)
         if dlg.exec():
             self._ref_dirty = True
-            self._loadDept()
+            self._reloadPreservingOrder("dept")        # 保留未存拖拉順序
 
     def _editDept(self, row=None):
         if not self._refEditable():
@@ -882,13 +897,11 @@ class TabSettings(BaseTab):
         did    = drow[0]             # 真 PK，給 UPDATE 用
         dname  = drow[1]
         active = bool(drow[2])
-        if not self._promptUnsaved():
-            return
         dlg = DeptEditDialog(self.db_path, did, row + 1, dname, active, self.tab_widget)
         if dlg.exec():
             if dlg.get_result():
                 self._ref_dirty = True
-                self._loadDept()
+                self._reloadPreservingOrder("dept")        # 保留未存拖拉順序
 
     # ════════════════════════════════════════════════════════════
     # 案件類型管理
@@ -902,7 +915,7 @@ class TabSettings(BaseTab):
         dlg = CaseTypeAddDialog(self.db_path, self.tab_widget)
         if dlg.exec():
             self._ref_dirty = True
-            self._loadCaseType()
+            self._reloadPreservingOrder("casetype")    # 保留未存拖拉順序
 
     def _editCaseType(self, row=None):
         if not self._refEditable():
@@ -916,13 +929,11 @@ class TabSettings(BaseTab):
         tid    = trow[0]             # 真 PK，給 UPDATE 用
         tname  = trow[1]
         active = bool(trow[2])
-        if not self._promptUnsaved():
-            return
         dlg = CaseTypeEditDialog(self.db_path, tid, row + 1, tname, active, self.tab_widget)
         if dlg.exec():
             if dlg.get_result():
                 self._ref_dirty = True
-                self._loadCaseType()
+                self._reloadPreservingOrder("casetype")    # 保留未存拖拉順序
 
     # ── 資源回收筒（誤刪還原，僅 admin）────────────────────────────
     @staticmethod
