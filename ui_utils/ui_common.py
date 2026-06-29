@@ -38,6 +38,21 @@ def msgCritical(title, text, parent=None):
     _makeMsg(QMessageBox.Critical, title, text, parent)
 
 
+def reportError(title, exc, parent=None):
+    """except 區塊統一錯誤處理：寫 error.log（完整 traceback）＋彈白話視窗。
+
+    取代散落各處的 msgCritical(title, str(e))——舊寫法既漏記 error.log，
+    又把 SQLite 英文原文（如 attempt to write a readonly database）丟給使用者。
+    （延遲 import 維持本模組「module 級不依賴專案其他模組」的原則。）
+    """
+    import logging
+    import traceback
+    from lib.db_utils import friendlyErrorMessage
+    logging.error("".join(
+        traceback.format_exception(type(exc), exc, exc.__traceback__)))
+    msgCritical(title, friendlyErrorMessage(type(exc), exc), parent)
+
+
 # ── 通用確認彈窗 ───────────────────────────────────────────────
 def confirmBox(title, text, confirm_text="確認", cancel_text="取消",
                confirm_danger=False, default_confirm=True, parent=None,

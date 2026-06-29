@@ -10,7 +10,7 @@ from lib.db_utils import (
     getResourcePath,
     resolveArchivedPdf, getSetting, ARCHIVE_ROOT_KEY, softDeleteDoc,
 )
-from ui_utils import loadUi, msgInfo, msgWarning, msgCritical, confirmBox
+from ui_utils import loadUi, msgInfo, msgWarning, msgCritical, confirmBox, reportError
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, refreshDeleteBtns, applyLinkStyle,
@@ -913,7 +913,7 @@ class TabDBBrowse(BaseTab):
                           audit_operator=False)
             conn.commit()
         except Exception as e:
-            msgCritical("刪除失敗", str(e))
+            reportError("刪除失敗", e)
             return
         finally:
             if conn:

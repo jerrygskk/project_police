@@ -3,7 +3,7 @@
 # 不論內部如何拆分，這裡都不需要改動外部呼叫端
 
 from .ui_common import (
-    msgInfo, msgWarning, msgCritical, confirmBox, loadUi,
+    msgInfo, msgWarning, msgCritical, reportError, confirmBox, loadUi,
     BTN_CONFIRM, BTN_DANGER, BTN_CANCEL,
 )
 from .status  import calcOverdue, colorForStatus
@@ -35,7 +35,7 @@ from .settings_dialogs import (
 )
 
 __all__ = [
-    "msgInfo", "msgWarning", "msgCritical", "confirmBox", "loadUi",
+    "msgInfo", "msgWarning", "msgCritical", "reportError", "confirmBox", "loadUi",
     "BTN_CONFIRM", "BTN_DANGER", "BTN_CANCEL",
     "calcOverdue",
     "colorForStatus",

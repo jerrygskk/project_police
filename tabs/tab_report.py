@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 
 from lib.base_tab import BaseTab
 from lib.db_utils import getResourcePath, nextDocId, DEBUG_MODE, softDeleteDoc
-from ui_utils import loadUi, msgWarning, msgCritical, confirmBox
+from ui_utils import loadUi, msgWarning, msgCritical, confirmBox, reportError
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
@@ -492,7 +492,7 @@ class TabReport(BaseTab):
                 self._formClear()
 
         except Exception as e:
-            msgCritical("寫入失敗", str(e))
+            reportError("寫入失敗", e)
         finally:
             if conn:
                 conn.close()
@@ -541,7 +541,7 @@ class TabReport(BaseTab):
                 self._formClear()
 
         except Exception as e:
-            msgCritical("寫入失敗", str(e))
+            reportError("寫入失敗", e)
         finally:
             if conn:
                 conn.close()
@@ -640,7 +640,7 @@ class TabReport(BaseTab):
                           role=am.current_role, is_admin=am.is_admin())
             conn.commit()
         except Exception as e:
-            msgCritical("刪除失敗", str(e))
+            reportError("刪除失敗", e)
             return
         finally:
             if conn:
@@ -667,7 +667,7 @@ class TabReport(BaseTab):
                           role=am.current_role, is_admin=am.is_admin())
             conn.commit()
         except Exception as e:
-            msgCritical("刪除失敗", str(e))
+            reportError("刪除失敗", e)
             return
         finally:
             if conn:

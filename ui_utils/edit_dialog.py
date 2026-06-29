@@ -435,7 +435,7 @@ class TaskEditDialog(_BaseEditDialog):
             self._deadline_stack.setCurrentIndex(1)
 
     def _on_save(self):
-        from .ui_common import msgWarning, msgCritical
+        from .ui_common import msgWarning, msgCritical, reportError
         recv_date = self.w_recv_date.date().toString("yyyy-MM-dd")
         recv_id   = self.w_recv_id.currentData()
         dept_id   = self.w_dept.currentData()
@@ -498,7 +498,7 @@ class TaskEditDialog(_BaseEditDialog):
             conn.commit()
             conn.close()
         except Exception as e:
-            msgCritical("儲存失敗", str(e))
+            reportError("儲存失敗", e)
             return
 
         self.accept()
@@ -720,7 +720,7 @@ QRadioButton:checked {
         _load_arch_status(self, is_reported, is_electronic)
 
     def _on_save(self):
-        from .ui_common import msgWarning, msgCritical
+        from .ui_common import msgWarning, msgCritical, reportError
         report_date = self.w_report_date.date().toString("yyyy-MM-dd")
         sender_id   = self.w_sender.currentData()
         case_type   = self.w_casetype.currentData()
@@ -772,7 +772,7 @@ QRadioButton:checked {
             conn.commit()
             conn.close()
         except Exception as e:
-            msgCritical("儲存失敗", str(e))
+            reportError("儲存失敗", e)
             return
 
         self.accept()
@@ -940,7 +940,7 @@ class GeneralEditDialog(_BaseEditDialog):
         _load_arch_status(self, is_reported, is_electronic)
 
     def _on_save(self):
-        from .ui_common import msgWarning, msgCritical
+        from .ui_common import msgWarning, msgCritical, reportError
         report_date = self.w_report_date.date().toString("yyyy-MM-dd")
         sender_id   = self.w_sender.currentData()
         dept_id     = self.w_dept.currentData()
@@ -984,7 +984,7 @@ class GeneralEditDialog(_BaseEditDialog):
             conn.commit()
             conn.close()
         except Exception as e:
-            msgCritical("儲存失敗", str(e))
+            reportError("儲存失敗", e)
             return
 
         self.accept()

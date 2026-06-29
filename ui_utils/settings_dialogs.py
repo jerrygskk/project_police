@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QScrollArea,
 )
 
-from .ui_common import BTN_CONFIRM, BTN_CANCEL, BTN_DANGER
+from .ui_common import BTN_CONFIRM, BTN_CANCEL, BTN_DANGER, reportError
 
 # ── 共用樣式 ───────────────────────────────────────────────────────
 _DIALOG_SS = """
@@ -43,6 +43,9 @@ _DIALOG_SS = """
 _LABEL_W = 100
 _FIELD_W = 280
 _MARGIN  = 40
+
+# 輸入框驗證失敗（必填留空）的紅框樣式
+_ERR_BORDER_SS = "border: 1px solid #e74c3c; border-radius: 4px; padding: 4px 8px;"
 
 
 def _add_buttons(dlg, layout, confirm_text='儲存', danger=False, default_confirm=True):
@@ -76,6 +79,12 @@ def _next_id(conn, table, id_col, prefix, digits=2):
             nums.append(int(m.group(1)))
     nxt = (max(nums) + 1) if nums else 1
     return f"{prefix}{nxt:0{digits}d}"
+
+
+def _next_sort(conn, table):
+    """新增參照項的 sort_order：取最小值-1（排到最前）；空表 fallback 1。"""
+    row = conn.execute(f"SELECT MIN(sort_order) FROM {table}").fetchone()
+    return (row[0] - 1) if row and row[0] is not None else 1
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -154,13 +163,11 @@ class PersonnelAddDialog(QDialog):
         alias     = self.w_alias.text().strip()
         is_active = 0 if self.w_retired.isChecked() else 1
         if not name:
-            self.w_name.setStyleSheet(
-                "border: 1px solid #e74c3c; border-radius: 4px; padding: 4px 8px;")
+            self.w_name.setStyleSheet(_ERR_BORDER_SS)
             return
         try:
             conn = sqlite3.connect(self.db_path)
-            row = conn.execute("SELECT MIN(sort_order) FROM Ref_Personnel").fetchone()
-            new_sort = (row[0] - 1) if row and row[0] is not None else 1
+            new_sort = _next_sort(conn, 'Ref_Personnel')
             conn.execute(
                 "INSERT INTO Ref_Personnel (staff_id, staff_name, is_active, sort_order) VALUES (?,?,?,?)",
                 (self._new_id, name, is_active, new_sort))
@@ -173,8 +180,7 @@ class PersonnelAddDialog(QDialog):
             self._result = (self._new_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from .ui_common import msgCritical
-            msgCritical("寫入失敗", str(e), self)
+            reportError("寫入失敗", e, self)
 
     def get_result(self):
         return self._result
@@ -244,8 +250,7 @@ class PersonnelEditDialog(QDialog):
         alias     = self.w_alias.text().strip()
         is_active = 0 if self.w_retired.isChecked() else 1
         if not name:
-            self.w_name.setStyleSheet(
-                "border: 1px solid #e74c3c; border-radius: 4px; padding: 4px 8px;")
+            self.w_name.setStyleSheet(_ERR_BORDER_SS)
             return
         try:
             conn = sqlite3.connect(self.db_path)
@@ -266,8 +271,7 @@ class PersonnelEditDialog(QDialog):
             self._result = (self.staff_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from .ui_common import msgCritical
-            msgCritical("更新失敗", str(e), self)
+            reportError("更新失敗", e, self)
 
     def get_result(self):
         return self._result
@@ -325,13 +329,11 @@ class DeptAddDialog(QDialog):
         name      = self.w_name.text().strip()
         is_active = 0 if self.w_retired.isChecked() else 1
         if not name:
-            self.w_name.setStyleSheet(
-                "border: 1px solid #e74c3c; border-radius: 4px; padding: 4px 8px;")
+            self.w_name.setStyleSheet(_ERR_BORDER_SS)
             return
         try:
             conn = sqlite3.connect(self.db_path)
-            row = conn.execute("SELECT MIN(sort_order) FROM Ref_Departments").fetchone()
-            new_sort = (row[0] - 1) if row and row[0] is not None else 1
+            new_sort = _next_sort(conn, 'Ref_Departments')
             conn.execute(
                 "INSERT INTO Ref_Departments (dept_id, dept_name, is_active, sort_order) VALUES (?,?,?,?)",
                 (self._new_id, name, is_active, new_sort))
@@ -341,8 +343,7 @@ class DeptAddDialog(QDialog):
             self._result = (self._new_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from .ui_common import msgCritical
-            msgCritical("寫入失敗", str(e), self)
+            reportError("寫入失敗", e, self)
 
     def get_result(self):
         return self._result
@@ -394,8 +395,7 @@ class DeptEditDialog(QDialog):
         name      = self.w_name.text().strip()
         is_active = 0 if self.w_retired.isChecked() else 1
         if not name:
-            self.w_name.setStyleSheet(
-                "border: 1px solid #e74c3c; border-radius: 4px; padding: 4px 8px;")
+            self.w_name.setStyleSheet(_ERR_BORDER_SS)
             return
         try:
             conn = sqlite3.connect(self.db_path)
@@ -413,8 +413,7 @@ class DeptEditDialog(QDialog):
             self._result = (self.dept_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from .ui_common import msgCritical
-            msgCritical("更新失敗", str(e), self)
+            reportError("更新失敗", e, self)
 
     def get_result(self):
         return self._result
@@ -472,13 +471,11 @@ class CaseTypeAddDialog(QDialog):
         name      = self.w_name.text().strip()
         is_active = 0 if self.w_retired.isChecked() else 1
         if not name:
-            self.w_name.setStyleSheet(
-                "border: 1px solid #e74c3c; border-radius: 4px; padding: 4px 8px;")
+            self.w_name.setStyleSheet(_ERR_BORDER_SS)
             return
         try:
             conn = sqlite3.connect(self.db_path)
-            row = conn.execute("SELECT MIN(sort_order) FROM Ref_CaseTypes").fetchone()
-            new_sort = (row[0] - 1) if row and row[0] is not None else 1
+            new_sort = _next_sort(conn, 'Ref_CaseTypes')
             conn.execute(
                 "INSERT INTO Ref_CaseTypes (case_type_id, case_type_name, is_active, sort_order) VALUES (?,?,?,?)",
                 (self._new_id, name, is_active, new_sort))
@@ -488,8 +485,7 @@ class CaseTypeAddDialog(QDialog):
             self._result = (self._new_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from .ui_common import msgCritical
-            msgCritical("寫入失敗", str(e), self)
+            reportError("寫入失敗", e, self)
 
     def get_result(self):
         return self._result
@@ -541,8 +537,7 @@ class CaseTypeEditDialog(QDialog):
         name      = self.w_name.text().strip()
         is_active = 0 if self.w_retired.isChecked() else 1
         if not name:
-            self.w_name.setStyleSheet(
-                "border: 1px solid #e74c3c; border-radius: 4px; padding: 4px 8px;")
+            self.w_name.setStyleSheet(_ERR_BORDER_SS)
             return
         try:
             conn = sqlite3.connect(self.db_path)
@@ -560,8 +555,7 @@ class CaseTypeEditDialog(QDialog):
             self._result = (self.type_id, name, bool(is_active))
             self.accept()
         except Exception as e:
-            from .ui_common import msgCritical
-            msgCritical("更新失敗", str(e), self)
+            reportError("更新失敗", e, self)
 
     def get_result(self):
         return self._result

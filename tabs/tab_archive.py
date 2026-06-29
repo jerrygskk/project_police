@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 
 from lib.base_tab import BaseTab
 from lib.db_utils import getResourcePath, archiveDefaultDir, getSetting, ARCHIVE_ROOT_KEY
-from ui_utils import loadUi, msgCritical, msgInfo, confirmBox
+from ui_utils import loadUi, msgCritical, msgInfo, confirmBox, reportError
 from lib.auth_manager import AuthManager
 from lib.archive_text import (
     _trimName, _tokenize, _parseDate, _sanitize, _pkOf,
@@ -1048,7 +1048,7 @@ class TabArchive(BaseTab):
                 (doc_id,))
             conn.commit()
         except Exception as e:
-            msgCritical("寫入資料庫失敗", str(e))
+            reportError("寫入資料庫失敗", e)
             return
         finally:
             if conn:
@@ -1117,7 +1117,7 @@ class TabArchive(BaseTab):
                 return
             os.rename(old_path, new_path)
         except Exception as e:
-            msgCritical("重新命名失敗", str(e))
+            reportError("重新命名失敗", e)
             return
 
         # 2) 寫回 is_electronic = 新檔名；同時標記紙本已歸（電子檔已歸，紙本理當視為已歸）
@@ -1133,7 +1133,7 @@ class TabArchive(BaseTab):
                 os.rename(new_path, old_path)   # DB 失敗→還原檔名
             except Exception:
                 pass
-            msgCritical("寫入資料庫失敗", str(e))
+            reportError("寫入資料庫失敗", e)
             return
         finally:
             if conn:

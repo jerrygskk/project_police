@@ -30,7 +30,7 @@ from lib.db_utils import (
     getConn, writeAudit, buildDetail, restoreFromTrash,
 )
 from ui_utils import (
-    msgInfo, msgWarning, msgCritical, confirmBox,
+    msgInfo, msgWarning, msgCritical, confirmBox, reportError,
     BTN_CONFIRM, BTN_CANCEL, loadUi,
 )
 from ui_utils import (
@@ -727,7 +727,7 @@ class TabSettings(BaseTab):
                     f"ORDER BY sort_order"
                 ).fetchall()
         except Exception as e:
-            msgCritical("DB錯誤", str(e))
+            reportError("DB錯誤", e)
             return
         finally:
             if conn:
@@ -778,7 +778,7 @@ class TabSettings(BaseTab):
                     (i, row[0]))
             conn.commit()
         except Exception as e:
-            msgCritical("儲存失敗", str(e))
+            reportError("儲存失敗", e)
             return
         finally:
             if conn:

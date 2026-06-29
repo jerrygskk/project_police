@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QTableWidgetItem
 
 from lib.base_tab import BaseTab
 from lib.db_utils import DEBUG_MODE
-from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox
+from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, reportError
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, refreshDeleteBtns, setDocIdLinkCell,
@@ -117,7 +117,7 @@ class TabDispatch(BaseTab):
             row  = conn.execute(sql, (serial,)).fetchone()
             conn.close()
         except Exception as e:
-            msgCritical("SQL 錯誤", str(e))
+            reportError("SQL 錯誤", e)
             return
 
         if row:
@@ -351,7 +351,7 @@ class TabDispatch(BaseTab):
             conn.commit()
             msgInfo("完成", f"已成功更新 {len(pending)} 筆發文日期（{dispatch_day}）")
         except Exception as e:
-            msgCritical("更新失敗", str(e))
+            reportError("更新失敗", e)
         finally:
             if conn:
                 conn.close()
