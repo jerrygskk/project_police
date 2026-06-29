@@ -642,16 +642,10 @@ class ChangePasswordDialog(QDialog):
         ok = am.change_password(old, new, self.db_path)
         if ok:
             # 變更密碼事件稽核（不記密碼內容）
-            try:
-                from lib.db_utils import writeAudit, buildDetail, getConn
-                conn = getConn(self.db_path)
-                writeAudit(conn, role=am.current_role, action="PWD",
+            from lib.db_utils import writeAuditSafe, buildDetail
+            writeAuditSafe(self.db_path, role=am.current_role, action="PWD",
                            operator=actor,
                            detail=buildDetail("系統", "修改", f"{actor}變更密碼"))
-                conn.commit()
-                conn.close()
-            except Exception:
-                pass
             self.accept()
         else:
             self.lbl_err.setText("目前密碼錯誤")
@@ -901,18 +895,13 @@ class ArchiveRootDialog(QDialog):
         clearPdfIndexCache()
         # 歸檔路徑變更稽核（路徑實際改變才記）
         if root != old_root:
-            try:
-                from lib.auth_manager import AuthManager
-                am = AuthManager.instance()
-                conn = getConn(self.db_path)
-                writeAudit(conn, role=am.current_role, action="CONFIG",
+            from lib.auth_manager import AuthManager
+            from lib.db_utils import writeAuditSafe
+            am = AuthManager.instance()
+            writeAuditSafe(self.db_path, role=am.current_role, action="CONFIG",
                            operator=am.actor_name(),
                            detail=buildDetail("系統", "修改",
                                               f"歸檔路徑：{old_root or '（未設定）'} → {root}"))
-                conn.commit()
-                conn.close()
-            except Exception:
-                pass
         self.accept()
 
 
@@ -1049,16 +1038,10 @@ class PrintTitleDialog(QDialog):
                 changed = True
             setSetting(self.db_path, key, new)
         if changed:
-            try:
-                from lib.auth_manager import AuthManager
-                from lib.db_utils import writeAudit, buildDetail
-                am = AuthManager.instance()
-                conn = getConn(self.db_path)
-                writeAudit(conn, role=am.current_role, action="CONFIG",
+            from lib.auth_manager import AuthManager
+            from lib.db_utils import writeAuditSafe, buildDetail
+            am = AuthManager.instance()
+            writeAuditSafe(self.db_path, role=am.current_role, action="CONFIG",
                            operator=am.actor_name(),
                            detail=buildDetail("系統", "修改", "簽收表標題已變更"))
-                conn.commit()
-                conn.close()
-            except Exception:
-                pass
         self.accept()

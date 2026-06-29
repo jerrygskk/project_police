@@ -15,7 +15,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from lib.db_utils import buildDetail, auditStaffName, writeAudit
+from lib.db_utils import buildDetail, auditStaffName, writeAudit, writeAuditSafe
 
 
 _AUDIT_DDL = """
@@ -110,6 +110,29 @@ class TestWriteAudit(_DbBase):
         self.conn.rollback()
         n = self.conn.execute("SELECT COUNT(*) FROM Audit_Log").fetchone()[0]
         self.assertEqual(n, 0)
+
+
+class TestWriteAuditSafe(_DbBase):
+    """writeAuditSafe：自開連線寫獨立事件 → commit → close，全程吞例外。"""
+
+    def test_roundtrip_commits(self):
+        writeAuditSafe(self.db, role="admin", action="PWD",
+                       operator="林志明",
+                       detail=buildDetail("系統", "修改", "admin變更密碼"))
+        # 另開連線確認已 commit 落地（非靠 self.conn）
+        c2 = sqlite3.connect(self.db)
+        try:
+            row = c2.execute(
+                "SELECT role, action, operator, detail FROM Audit_Log").fetchone()
+        finally:
+            c2.close()
+        self.assertEqual(
+            row, ("admin", "PWD", "林志明", "[系統][修改]admin變更密碼"))
+
+    def test_bad_path_does_not_raise(self):
+        # 路徑不可寫 / 缺表一律靜默，不中斷呼叫端
+        writeAuditSafe("/no/such/dir/x.db", role="user",
+                       action="LOGIN_FAIL", detail="x")
 
 
 if __name__ == "__main__":

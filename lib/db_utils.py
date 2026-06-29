@@ -47,6 +47,24 @@ def writeAudit(conn, *, role, action, detail,
         pass
 
 
+def writeAuditSafe(db_path, *, role, action, detail,
+                   target_table=None, target_id=None, operator=None):
+    """獨立稽核事件：自開連線寫一筆 → commit → close，全程吞例外。
+
+    給 PWD／CONFIG／LOGIN_FAIL 這類「單獨記一筆、與業務操作不在同一
+    transaction」的呼叫端用，免各處重抄 getConn→writeAudit→commit→close→
+    try/except。需與業務操作同 transaction 者仍直接用 writeAudit(conn, ...)。"""
+    try:
+        conn = getConn(db_path)
+        writeAudit(conn, role=role, action=action, detail=detail,
+                   target_table=target_table, target_id=target_id,
+                   operator=operator)
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 # ── 誤刪還原回收筒（Trash_Documents）─────────────────────────────
 # 主表「刪除」是清空欄位保留 doc_id（空殼列恆在）。刪除前先快照整列存進
 # 回收筒，還原即把 payload 寫回原 doc_id 那列。表結構由 db_schema.ensureSchema

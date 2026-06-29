@@ -27,7 +27,7 @@ from lib.auth_manager import AuthManager
 from lib.db_utils import (
     getResourcePath,
     performYearEndReset, getSetting, ARCHIVE_ROOT_KEY,
-    getConn, writeAudit, buildDetail, restoreFromTrash,
+    getConn, writeAudit, writeAuditSafe, buildDetail, restoreFromTrash,
 )
 from ui_utils import (
     msgInfo, msgWarning, msgCritical, confirmBox, reportError,
@@ -452,18 +452,10 @@ class TabSettings(BaseTab):
             self._maybeWarnArchiveRoot()
         else:
             # 登入失敗稽核（不記輸入內容）
-            conn = None
-            try:
-                conn = getConn(self.db_path)
-                writeAudit(conn, role=AuthManager.instance().current_role,
+            writeAuditSafe(self.db_path,
+                           role=AuthManager.instance().current_role,
                            action="LOGIN_FAIL", operator=None,
                            detail=buildDetail("系統", "登入失敗", ""))
-                conn.commit()
-            except Exception:
-                pass
-            finally:
-                if conn:
-                    conn.close()
             self.lbl_login_err.setText("密碼錯誤，請再試一次")
             self.w_password.clear()
             self.w_password.setFocus()
