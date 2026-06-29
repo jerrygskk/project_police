@@ -248,11 +248,17 @@ class DocumentManager:
         self._prev_tab_index = index
 
         def _resize():
+            # 150ms 內若已切到別的 Tab，放棄（避免 resize 到舊 Tab）
+            if self.tab_widget.currentIndex() != index:
+                return
             for t in tab_obj.get_tables():
                 if t and t.columnCount() > 0:
                     autoResizeTable(t)
 
         def _setFocus():
+            # 同上守門：延遲期間切走則不搶焦點
+            if self.tab_widget.currentIndex() != index:
+                return
             w = tab_obj.get_focus_widget()
             if w:
                 w.setFocus()
