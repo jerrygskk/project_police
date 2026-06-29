@@ -21,7 +21,7 @@ from lib.base_tab import BaseTab
 from lib.db_utils import getResourcePath
 from ui_utils import loadUi, msgInfo, msgWarning
 from lib.auth_manager import AuthManager
-from ui_utils import setupDateEditCalendarOnly, runWithBusy, preserveScroll
+from ui_utils import setupNullableDateEdit, runWithBusy, preserveScroll
 
 
 # 身分碼 → 中文
@@ -108,10 +108,8 @@ class TabAudit(BaseTab):
     # ── 初始化 ────────────────────────────────────────────────
     def _initDateEdits(self):
         for de in (self._from, self._to):
-            de.setMinimumDate(_BLANK_DATE)
-            de.setSpecialValueText(" ")      # 空白＝不限
-            de.setDate(_BLANK_DATE)          # 預設皆不限（顯示全部）
-            setupDateEditCalendarOnly(de)
+            de.setMinimumDate(_BLANK_DATE)   # 空白哨兵＝此最小日期
+            setupNullableDateEdit(de, " ")   # 空白＝不限；含鍵盤離開特殊值修正
 
     def _initCombos(self):
         self._role.addItem("全部身分", None)   # 自述首項（已移除外部「身分」標籤）

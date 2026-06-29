@@ -12,7 +12,7 @@ from ui_utils import loadUi, msgWarning, msgCritical, confirmBox
 from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
-    setupFilterCombo, setupDateEditToToday, setupDateEditCalendarOnly, refreshFilterCombo,
+    setupFilterCombo, setupDateEditToToday, setupNullableDateEdit, refreshFilterCombo,
     CriminalEditDialog, GeneralEditDialog, attachStickyScroll,
 )
 
@@ -202,16 +202,12 @@ class TabReport(BaseTab):
             self.rpt_date.setDate(QDate.currentDate())
             setupDateEditToToday(self.rpt_date)
         if self.crim_occdate:
-            self.crim_occdate.setSpecialValueText("下拉選擇日期")
-            self.crim_occdate.setDate(self.crim_occdate.minimumDate())
-            setupDateEditCalendarOnly(self.crim_occdate)
-            self.crim_occdate.dateChanged.connect(
-                lambda d: self.crim_occdate.setStyleSheet(
-                    "QDateEdit { color: #a0a0a0; }" if d == self.crim_occdate.minimumDate()
+            def _occColor(is_blank, de=self.crim_occdate):
+                de.setStyleSheet(
+                    "QDateEdit { color: #a0a0a0; }" if is_blank
                     else "QDateEdit { color: #1c1c1e; }"
                 )
-            )
-            self.crim_occdate.setStyleSheet("QDateEdit { color: #a0a0a0; }")
+            setupNullableDateEdit(self.crim_occdate, "下拉選擇日期", _occColor)
 
         # ── 載入參照表 ────────────────────────────────────
         self._personnel, self._depts = self._loadRef()

@@ -115,6 +115,78 @@ def setupDateEditCalendarOnly(date_edit):
     cal._calef = ef   # 防止被 GC 回收
 
 
+def nullableDateKeyAction(is_blank, key, text):
+    """可空白 QDateEdit 的鍵盤事件決策（純邏輯，便於單測）。
+
+    欄位停在 minimumDate（空白）時，QDateEdit 顯示 specialValueText、收不到
+    數字鍵編輯，使用者體感「鍵盤打不動」。本函式判斷該如何讓它離開特殊值：
+      'forward' = 先跳今天，再讓此鍵落到段位上繼續編輯（數字鍵）
+      'consume' = 先跳今天並消化此鍵，避免在今天之上再 ±1（上下／翻頁鍵）
+      None      = 不介入（已有值，或非編輯鍵，照 Qt 原行為）
+    """
+    if not is_blank:
+        return None
+    if text and text.isdigit():
+        return 'forward'
+    if key in (Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown):
+        return 'consume'
+    return None
+
+
+def setupNullableDateEdit(date_edit, special_text, on_blank_changed=None):
+    """設定「可空白」QDateEdit，修掉空白哨兵的兩個互動雷：
+
+    1. 空白（date==minimumDate）時鍵盤打不動 → 裝事件過濾器攔截數字／上下／
+       翻頁鍵與滾輪，先跳今天離開特殊值再正常編輯，使用者怎麼亂點都不會卡死。
+    2. 每次 dateChanged 都 setStyleSheet 重設樣式會重建內部 QLineEdit、打斷
+       正在進行的鍵盤編輯 → 改成只在「空白↔有值」切換時才回呼 on_blank_changed
+       （且延遲到事件處理完才換樣式，不干擾當下按鍵）。
+
+    呼叫前若需自訂 minimumDate（如稽核頁 QDate(2000,1,1)），先自行 setMinimumDate。
+    on_blank_changed(is_blank)：可選，由呼叫端據以換色／樣式（會在初始化先呼叫一次）。
+    """
+    date_edit.setSpecialValueText(special_text)
+    date_edit.setDate(date_edit.minimumDate())   # 起始空白
+    setupDateEditCalendarOnly(date_edit)         # 空白時開月曆導到今天月份
+
+    # ── 只在「空白↔有值」切換時換樣式（避免每鍵重建 QLineEdit）──
+    state = {'blank': date_edit.date() == date_edit.minimumDate()}
+
+    def _onChanged(*_):
+        is_blank = date_edit.date() == date_edit.minimumDate()
+        if is_blank != state['blank']:
+            state['blank'] = is_blank
+            if on_blank_changed:
+                # 延遲到當前事件處理完再換樣式，避免重建 QLineEdit 打斷按鍵
+                QTimer.singleShot(0, lambda b=is_blank: on_blank_changed(b))
+
+    date_edit.dateChanged.connect(_onChanged)
+    if on_blank_changed:
+        on_blank_changed(state['blank'])   # 初始狀態先上色
+
+    # ── 鍵盤／滾輪離開特殊值 ──
+    class _BlankEntryFilter(QObject):
+        def eventFilter(self, obj, event):
+            et = event.type()
+            is_blank = date_edit.date() == date_edit.minimumDate()
+            if et == QEvent.Type.KeyPress:
+                action = nullableDateKeyAction(is_blank, event.key(), event.text())
+                if action == 'forward':
+                    date_edit.setDate(QDate.currentDate())
+                    return False   # 讓數字鍵落到今天的段位上
+                if action == 'consume':
+                    date_edit.setDate(QDate.currentDate())
+                    return True    # 消化掉，避免再 ±1
+            elif et == QEvent.Type.Wheel and is_blank:
+                date_edit.setDate(QDate.currentDate())
+                return True
+            return False
+
+    ef = _BlankEntryFilter(date_edit)
+    date_edit.installEventFilter(ef)
+    date_edit._blankef = ef   # 防止被 GC 回收
+
+
 def setupFilterCombo(combo, data_list):
     """
     設定 QComboBox 為可輸入即時篩選模式。
