@@ -16,7 +16,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from lib import db_utils
+from lib import db_utils, db_schema
 from lib.db_utils import (
     nextDocId, listInactiveRefItems, performYearEndReset,
     getSetting, setSetting, resolveArchivedPdf, ARCHIVE_ROOT_KEY,
@@ -24,28 +24,9 @@ from lib.db_utils import (
 
 
 def _build_schema(conn):
-    conn.executescript(
-        """
-        CREATE TABLE Seq_DocId (table_name TEXT PRIMARY KEY, last_id INTEGER);
-        CREATE TABLE App_Settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-        CREATE TABLE Ref_Personnel (
-            staff_id TEXT PRIMARY KEY, staff_name TEXT, alias TEXT,
-            is_active INTEGER, sort_order INTEGER);
-        CREATE TABLE Ref_Departments (
-            dept_id TEXT PRIMARY KEY, dept_name TEXT,
-            is_active INTEGER, sort_order INTEGER);
-        CREATE TABLE Ref_CaseTypes (
-            case_type_id TEXT PRIMARY KEY, case_type_name TEXT,
-            is_active INTEGER, sort_order INTEGER);
-        CREATE TABLE Document_Task (doc_id TEXT PRIMARY KEY);
-        CREATE TABLE Document_Criminal (doc_id TEXT PRIMARY KEY);
-        CREATE TABLE Document_General (doc_id TEXT PRIMARY KEY);
-        CREATE TABLE Trash_Documents (
-            trash_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            table_name TEXT, doc_id TEXT, payload TEXT, subject TEXT,
-            doc_person TEXT, deleted_ts TEXT, deleted_role TEXT);
-        """
-    )
+    # 直接套用正式 schema 的「程式碼唯一來源」，避免測試自刻假 schema 與正式走鐘。
+    # 不播種子（種子在 db_seed），測試自行塞所需資料列。
+    db_schema.applySchema(conn)
 
 
 class _DbTestBase(unittest.TestCase):
@@ -76,7 +57,8 @@ class TestNextDocId(_DbTestBase):
 class TestListInactive(_DbTestBase):
     def test_only_inactive_sorted(self):
         self.conn.executemany(
-            "INSERT INTO Ref_Personnel VALUES(?,?,?,?,?)",
+            "INSERT INTO Ref_Personnel(staff_id,staff_name,alias,is_active,sort_order) "
+            "VALUES(?,?,?,?,?)",
             [("P01", "在職甲", "", 1, 1),
              ("P02", "離職乙", "", 0, 3),
              ("P03", "離職丙", "", 0, 2)])
@@ -93,13 +75,14 @@ class TestListInactive(_DbTestBase):
 class TestYearEndReset(_DbTestBase):
     def _seed(self):
         c = self.conn
-        c.execute("INSERT INTO Document_Task VALUES('T1')")
-        c.execute("INSERT INTO Document_Criminal VALUES('C1')")
-        c.execute("INSERT INTO Document_General VALUES('G1')")
+        c.execute("INSERT INTO Document_Task(doc_id) VALUES('T1')")
+        c.execute("INSERT INTO Document_Criminal(doc_id) VALUES('C1')")
+        c.execute("INSERT INTO Document_General(doc_id) VALUES('G1')")
         c.execute("INSERT INTO Seq_DocId VALUES('Document_Task', 42)")
         # 人員：故意讓 sort_order 與 id 不同序，且含一個停用
         c.executemany(
-            "INSERT INTO Ref_Personnel VALUES(?,?,?,?,?)",
+            "INSERT INTO Ref_Personnel(staff_id,staff_name,alias,is_active,sort_order) "
+            "VALUES(?,?,?,?,?)",
             [("P05", "甲", "", 1, 2),
              ("P09", "乙", "", 1, 1),
              ("P03", "丙停用", "", 0, 3)])

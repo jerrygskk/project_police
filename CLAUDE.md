@@ -105,7 +105,7 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 4. **進版**（DEVELOPER.md §8 版本記錄列在這步補）
 5. **推上去** + 打 tag `v{版號}` + push tag
 6. **build**：onefile 全新 build（見 DEVELOPER.md §7），回報成功 / 失敗
-7. **發 GitHub Release**（4 個 asset：exe／乾淨空殼 `dbfile.db`／`PACKED.zip`／`Quick_Start.pdf`）。**完整指令、各 asset 取得方式（`dbfile.db` 一律從 git HEAD 取、`Quick_Start.pdf` 先跑 `gen_quickstart.py`）、`Compress-Archive` 打包與 gh 環境，見 [DEVELOPER.md](DEVELOPER.md) §7「發 GitHub Release」。**
+7. **發 GitHub Release**（4 個 asset：exe／乾淨空殼 `dbfile.db`／`PACKED.zip`／`Quick_Start.pdf`）。**完整指令、各 asset 取得方式（`dbfile.db` 改用 `python tools/gen_shell_db.py <暫存路徑>` 產生——schema／種子唯一來源在 `lib/db_schema.py`＋`lib/db_seed.py`；`Quick_Start.pdf` 先跑 `gen_quickstart.py`）、`Compress-Archive` 打包與 gh 環境，見 [DEVELOPER.md](DEVELOPER.md) §7「發 GitHub Release」。**
 
 > ⚠️ **順序鐵則**：DEVELOPER.md（及有改到的 README）/ release note 要在「進版 commit」**之前**寫好，tag 才會直接指向含完整文件的 commit。別先進版打 tag、事後才補 DEVELOPER.md——那樣得退版重做。
 > ⚠️ tag 已 push 後要移動：本地 `git tag -f` 後，遠端**先刪再推**（`git push origin :refs/tags/v{版號}` 再 `git push origin v{版號}`），否則遠端 tag 仍指舊 commit。

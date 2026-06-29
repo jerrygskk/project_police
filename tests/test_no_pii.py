@@ -1,9 +1,9 @@
 """個資防呆：push 前確認 git 追蹤/已提交的內容不含真實人名。
 
 設計重點：
-  - 只掃「git 追蹤/已提交」的內容，不掃工作樹的本機真實資料。
-    dbfile.db 設了 skip-worktree（本機可換成真資料），故讀「已提交的 blob」
-    (git show HEAD:dbfile.db) 比對，避免本機真資料造成誤報。
+  - 只掃「git 追蹤」的文字內容，不掃工作樹的本機真實資料（你的髒 dbfile.db）。
+    dbfile.db 自此不入庫（schema/種子改為程式碼唯一來源），故改為
+    「臨時產一份乾淨空殼」(tools/gen_shell_db) 掃其位元組，驗證 db_seed 不含真名。
   - 比對清單 tests/pii_denylist.local.txt 為本機檔（已 gitignore，不入庫，
     才不會把真名又帶進 repo）；清單不存在時自動 skip（別人 clone/CI 不會壞）。
   - 命中即 fail，並列出檔名與名字，提醒「替換後才能 push」。
@@ -62,17 +62,27 @@ class TestNoPII(unittest.TestCase):
             hits, [],
             "git 追蹤檔含真實人名，替換後才能 push：\n  " + "\n  ".join(hits))
 
-    def test_committed_dbfile_clean(self):
-        """已提交的 dbfile.db（含 slack space）不得含 denylist 真名。
-        VACUUM 過的乾淨空殼應通過；誤提交真資料 DB 會被擋下。"""
-        blob = _git("show", "HEAD:dbfile.db")
-        if not blob:
-            self.skipTest("HEAD 無 dbfile.db")
+    def test_generated_shell_clean(self):
+        """臨時產一份乾淨空殼（schema＋db_seed），其位元組不得含 denylist 真名。
+        驗證 db_seed 的種子資料（佔位人員等）皆為虛構名，不會把真名帶進發版空殼。"""
+        import sys, tempfile
+        sys.path.insert(0, _ROOT)
+        from tools import gen_shell_db
+        fd, tmp = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        os.remove(tmp)   # build 會自行建立
+        try:
+            gen_shell_db.build(tmp)
+            with open(tmp, "rb") as f:
+                blob = f.read()
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
         hits = [name for name in self.deny if name.encode("utf-8") in blob]
         self.assertEqual(
             hits, [],
-            "已提交的 dbfile.db 含真實人名（可能未 VACUUM 或誤提交真資料），"
-            "替換為乾淨空殼後才能 push：\n  " + "\n  ".join(hits))
+            "產生的空殼含真實人名（db_seed 種子資料有真名），替換為虛構佔位名："
+            "\n  " + "\n  ".join(hits))
 
 
 if __name__ == "__main__":

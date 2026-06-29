@@ -3,8 +3,10 @@ docs/*
 !docs/img/
 release_note_*.md
 fix_views.py
+dbfile.db
 dbfile_backup_*.db
 backups/
+_shell/
 tests/pii_denylist.local.txt
 dbfile.db-journal
 dbfile.lock

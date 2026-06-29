@@ -220,14 +220,14 @@ main.py
 專案根/
 ├── main.py          進入點（從專案根目錄啟動）
 ├── lib/             核心模組（package）：db_utils／base_tab／auth_manager／app_lock／
-│                    db_backup／db_schema／archive_text／theme／version／loading_screen
+│                    db_backup／db_schema／db_seed／archive_text／theme／version／loading_screen
 ├── layouts/         所有 .ui（Layout1~7、main_menu）
 ├── res/             圖片／SVG／qrc（package）：resources.qrc／resources_rc.py／buttons／tabs
 ├── tabs/            各 Tab
 ├── ui_utils/        共用 UI 工具（table／widgets／status／sticky_scroll／edit_dialog／
 │                    settings_dialogs／help_dialog／help_content／ui_common／button_imgs）
 ├── tools/           開發／維運工具（入庫，從專案根執行；不被核心模組 import）：
-│                    bump_version／gen_buttons／gen_quickstart
+│                    bump_version／gen_buttons／gen_quickstart／gen_shell_db
 └── tests/           純邏輯單元測試（unittest）
 ```
 
@@ -256,10 +256,13 @@ main.py
 
 ## 5. 操作手冊（要改特定東西時查）
 
-### 結構變更原則（附加式走 ensureSchema、破壞式才手動）
+### 結構變更原則（schema 程式碼為唯一來源；附加式走 ensureSchema、破壞式才手動）
 
-- **附加式（建表／加欄，只增不改）→ 啟動冪等 `ensureSchema`**（`lib/db_schema.py`）：開程式時 `CREATE TABLE IF NOT EXISTS`／「缺欄才 `ADD COLUMN`」，各語句獨立 try、失敗只記 log、絕不擋開程式。新表／新欄登記進 `_TABLES`／`_COLUMNS`，全新安裝與舊庫第一次開都自動長齊。目前註冊 `Audit_Log`、`Trash_Documents`。在 `main.py`（鎖檔後、自動備份前）呼叫一次。**forward-only**：不回溯自愈
-- **破壞式（改型別／改既有資料／改 View）→ 一次性手動**：`ALTER TABLE`／資料修補／`DROP VIEW…CREATE VIEW` 走手動腳本對 `dbfile.db` 執行，不寫進啟動流程
+- **schema 唯一來源 = `lib/db_schema.py`**：全部資料表（`_TABLES`）、三 View（`_VIEWS`）、六 trigger（`_TRIGGERS`）的 DDL 都集中在此，皆 `CREATE … IF NOT EXISTS`。三方共用：①啟動 `ensureSchema`（既有庫＝no-op）②`tools/gen_shell_db.py` 產乾淨空殼 ③單元測試 `test_db_utils._build_schema` 直接 `applySchema(conn)` 建表。**不再有第二份手刻 schema**（舊測試假 schema 已移除），徹底消除走鐘
+- **種子資料唯一來源 = `lib/db_seed.py`**：參照資料（人員佔位／部門／案類／案件狀態／一般分類）＋預設密碼 hash＋Seq 歸零＋簽收表四 key（空值）。`seedFreshDb()` 走 `INSERT OR IGNORE`，**只由 `gen_shell_db.py` 在建空殼時呼叫**，刻意不掛進啟動 `ensureSchema`（避免對既有庫重塞參照資料）
+- **附加式（建表／加欄，只增不改）→ 登記進 `db_schema._TABLES`／`_COLUMNS`**：開程式時 `ensureSchema` 自動套用（`CREATE TABLE IF NOT EXISTS`／「缺欄才 `ADD COLUMN`」），各語句獨立 try、失敗只記 log、絕不擋開程式。在 `main.py`（鎖檔後、自動備份前）呼叫一次。**forward-only**：不回溯自愈
+- **破壞式（改型別／改既有資料／改 View 定義）→ 一次性手動**：`IF NOT EXISTS` 不會更新既有 View／表，故改 View 定義要 `DROP VIEW…CREATE VIEW`、改型別要 `ALTER`／資料修補，走手動腳本對現場 `dbfile.db` 執行，不寫進啟動流程（同時也要更新 `db_schema.py` 的對應 DDL，讓新空殼一致）
+- ⚠️ **動過 schema／種子後**：跑 `python tools/gen_shell_db.py` 重產空殼，並由維護者重新 commit 根目錄 `dbfile.db`（git HEAD 空殼是 no-pii 測試掃描對象，須與程式碼同步）
 - 程式碼讀寫可能尚未存在的欄位前，用 **PRAGMA 缺欄退路**保護（現行 alias 欄即如此，見 `ui_utils/settings_dialogs.py` 的 `_has_alias_col`）
 
 ### 新增 Tab 的標準流程
@@ -488,7 +491,7 @@ del /q Police-Document-Manager.spec 2>nul & rmdir /s /q build dist 2>nul & pyins
 CLAUDE.md 發布流程第 7 步的執行細節。4 個 asset：
 
 1. `Police-Document-Manager.exe`（本次 build 的 onefile，在 `dist/`）
-2. `dbfile.db`（**乾淨空殼**——⚠️ 一律從 git HEAD 取，**不要用工作區那份**，工作區常被測試蓋掉。導出 `git show HEAD:dbfile.db > 暫存/dbfile.db`，二進位用 Bash 導出才安全；可 `git hash-object` 對 `git rev-parse HEAD:dbfile.db` 驗證一致）
+2. `dbfile.db`（**乾淨空殼**——⚠️ 自此**改用 `python tools/gen_shell_db.py <暫存路徑>` 產生**，不再從 git HEAD 取二進位。schema 來自 `lib/db_schema.py`、種子來自 `lib/db_seed.py`，兩者是唯一來源，產出即與程式碼一致。例：`python tools/gen_shell_db.py 暫存/dbfile.db --force`。**不要用工作區根目錄那份**（真實測試資料）。⚠️ 動過 schema／種子後，git HEAD 的 `dbfile.db` 也要由維護者用本腳本重產並重新 commit，讓 no-pii 測試掃描的空殼與程式碼同步）
 3. `PACKED.zip`（= exe + dbfile.db **兩檔扁平放根目錄**，無子資料夾）
 4. `Quick_Start.pdf`（速查卡）——⚠️ `docs/` 已 gitignore，發版前先跑 `python tools/gen_quickstart.py` 重產到 `docs/Quick_Start.pdf` 再上傳（內容單一來源 `ui_utils/help_content.py` 的 `QUICKSTART`）
 
