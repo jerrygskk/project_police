@@ -21,9 +21,21 @@ auth_manager.py — 權限控管
 """
 
 import hashlib
+import secrets
 import sqlite3
 
 from PySide6.QtCore import QObject, Signal
+
+
+def _hash_eq(stored, candidate_hash: str) -> bool:
+    """常數時間比對兩個 hash 字串（防時序攻擊）。
+
+    stored 可能為 None（key 不存在）；以空字串墊底並回 False。
+    secrets.compare_digest 兩參數須等長且皆為 str，故先確認 stored 是字串。
+    """
+    if not isinstance(stored, str):
+        return False
+    return secrets.compare_digest(stored, candidate_hash)
 
 
 class AuthManager(QObject):
@@ -90,11 +102,11 @@ class AuthManager(QObject):
                 "WHERE key IN ('admin_password_hash','archive_password_hash')"
             ).fetchall())
             conn.close()
-            if rows.get('admin_password_hash') == h:
+            if _hash_eq(rows.get('admin_password_hash'), h):
                 self._role = 'admin'
                 self.role_changed.emit(self._role)
                 return True
-            if rows.get('archive_password_hash') == h:
+            if _hash_eq(rows.get('archive_password_hash'), h):
                 self._role = 'archive'
                 self.role_changed.emit(self._role)
                 return True
@@ -124,7 +136,7 @@ class AuthManager(QObject):
             row   = conn.execute(
                 "SELECT value FROM App_Settings WHERE key=?", (key,)
             ).fetchone()
-            if not row or row[0] != old_h:
+            if not row or not _hash_eq(row[0], old_h):
                 conn.close()
                 return False
             new_h = hashlib.sha256(new_password.encode()).hexdigest()

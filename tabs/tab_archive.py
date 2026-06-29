@@ -1100,6 +1100,16 @@ class TabArchive(BaseTab):
                             f"新檔名：{new_name}",
                 confirm_text="歸檔", default_confirm=True, min_width=560):
             return
+        # 防禦縱深：確認新路徑仍落在原 PDF 所在資料夾內（new_name 已過 _sanitize 清掉
+        # 路徑分隔字元，理應如此；此處再以 commonpath 二次驗證，杜絕任何路徑穿越）。
+        base_dir = os.path.abspath(os.path.dirname(old_path))
+        try:
+            in_base = os.path.commonpath([base_dir, os.path.abspath(new_path)]) == base_dir
+        except ValueError:           # 跨磁碟機等無共同前綴
+            in_base = False
+        if not in_base:
+            msgCritical("歸檔失敗", "產生的檔名不安全，已中止歸檔。")
+            return
         # 1) 重新命名實體檔案
         try:
             if os.path.exists(new_path) and os.path.abspath(new_path) != os.path.abspath(old_path):

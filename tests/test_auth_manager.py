@@ -18,11 +18,25 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from lib.auth_manager import AuthManager
+from lib.auth_manager import AuthManager, _hash_eq
 
 
 def _hash(p):
     return hashlib.sha256(p.encode()).hexdigest()
+
+
+class TestHashEq(unittest.TestCase):
+    def test_equal(self):
+        self.assertTrue(_hash_eq(_hash("admin"), _hash("admin")))
+
+    def test_not_equal(self):
+        self.assertFalse(_hash_eq(_hash("admin"), _hash("0000")))
+
+    def test_none_stored(self):
+        self.assertFalse(_hash_eq(None, _hash("admin")))
+
+    def test_non_str_stored(self):
+        self.assertFalse(_hash_eq(123, _hash("admin")))
 
 
 class _AuthBase(unittest.TestCase):
