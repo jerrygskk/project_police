@@ -88,26 +88,26 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 
 #### 用語約定（他會用簡稱，要對上）
 
-- **「進版」** = 跑 `python tools/bump_version.py <版號>`（機制見上「版本號」節）+ 打 git tag `v{版本號}` + DEVELOPER.md §8 補一列版本記錄
+- **「進版」** = ⚠️ 維護者說「進版」＝**要求走完整發布流程，直到 GitHub Release 上架（4 asset）才算結束**（等同「發布版本」，見下方標準流程，含 build＋發 Release）。**別只做「bump＋tag＋§8」就回報完成**——那只是流程中的一步。其中「跑 `python tools/bump_version.py <版號>`（機制見上「版本號」節）＋打 git tag `v{版本號}`＋DEVELOPER.md §8 補一列版本記錄」這組機械動作另稱「**版號進版**」（流程第 4 步）
 - **「push上去」、「推上去」** = 把改動 commit + push。**逐檔 add**（當輪或上次 push 後改動的檔案逐一 add，**不要一次全加**，跳過 `dbfile.db`）；**叫你推才推**，沒說不要問「要推嗎？」
   - ⚠️ 根目錄 `fix_*.py`／`seed_*.py` 刻意**不入庫**（現場交付 / 壓測丟棄腳本），逐檔 add 時跳過、勿 git add、勿誤刪。
   - ⚠️ **多行 commit 訊息用 Bash tool 的 heredoc**（`git commit -F - <<'EOF' … EOF`），**不要用 PowerShell here-string `@'…'@`**——它在 Bash 不被解析，`@` 會被當訊息第一行黏進 subject。（這個雷踩過多次）
 - ⚠️ **push 前必確認無真實人名／個資**：要 commit／push 的內容（含測試 fixture 檔名、文件範例、`dbfile.db`）不得含真實人名，有則先替換成虛構佔位名才能推。`dbfile.db` 只能是**乾淨空殼**（人員僅佔位、無公文），且提交前先 `VACUUM`（刪除的資料會殘留在 slack space，strings 掃得到）。
   - 自動防呆：`tests/test_no_pii.py` 會比對本機 `tests/pii_denylist.local.txt`（真名清單，已 gitignore 不入庫）掃描 git 追蹤內容＋已提交的 `dbfile.db` blob，命中即 fail。**push 前跑一次 `python -m unittest tests.test_no_pii`**；有新進真名就補進該清單。
 - **release note** = 給 `.md` 檔（`release_note_v{版號}.md`，比照前版**不入庫**，留著貼 GitHub Release）。**不要直接打在對話裡**（會被渲染、無法複製原始碼）；內容寫給使用者看（功能 / 改進 / 修正），技術細節留 DEVELOPER.md
-- **「發布版本」、「出一版」** = 見下方標準流程
+- **「發布版本」、「出一版」、「進版」** = 見下方標準流程（三者同義，皆走完整流程到 GitHub Release 上架才算結束）
 
-#### 發布版本標準流程（他講「發布版本」「出一版」時，照順序；各步用語見上「用語約定」）
+#### 發布版本標準流程（他講「發布版本」「出一版」「進版」時，照順序做到底；各步用語見上「用語約定」）
 
 1. **寫文件內文**：技術章節補進 **DEVELOPER.md** 對應章節（不只 §8 版本記錄列）；若是使用者有感的功能 / 操作改動，**README**（使用者門面）也一併同步
 2. **寫 handover**（跨對話需交接才寫，否則略過）
 3. **寫 release note**
-4. **進版**（DEVELOPER.md §8 版本記錄列在這步補）
+4. **版號進版**（跑 `python tools/bump_version.py <版號>`；DEVELOPER.md §8 版本記錄列在這步補）
 5. **推上去** + 打 tag `v{版號}` + push tag
 6. **build**：onefile 全新 build（見 DEVELOPER.md §7），回報成功 / 失敗
 7. **發 GitHub Release**（4 個 asset：exe／乾淨空殼 `dbfile.db`／`PACKED.zip`／`Quick_Start.pdf`）。**完整指令、各 asset 取得方式（`dbfile.db` 改用 `python tools/gen_shell_db.py <暫存路徑>` 產生——schema／種子唯一來源在 `lib/db_schema.py`＋`lib/db_seed.py`；`Quick_Start.pdf` 先跑 `gen_quickstart.py`）、`Compress-Archive` 打包與 gh 環境，見 [DEVELOPER.md](DEVELOPER.md) §7「發 GitHub Release」。**
 
-> ⚠️ **順序鐵則**：DEVELOPER.md（及有改到的 README）/ release note 要在「進版 commit」**之前**寫好，tag 才會直接指向含完整文件的 commit。別先進版打 tag、事後才補 DEVELOPER.md——那樣得退版重做。
+> ⚠️ **順序鐵則**：DEVELOPER.md（及有改到的 README）/ release note 要在「版號進版 commit」**之前**寫好，tag 才會直接指向含完整文件的 commit。別先進版打 tag、事後才補 DEVELOPER.md——那樣得退版重做。
 > ⚠️ tag 已 push 後要移動：本地 `git tag -f` 後，遠端**先刪再推**（`git push origin :refs/tags/v{版號}` 再 `git push origin v{版號}`），否則遠端 tag 仍指舊 commit。
 
 #### 打包（PyInstaller）
