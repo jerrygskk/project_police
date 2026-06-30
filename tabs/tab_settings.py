@@ -392,13 +392,19 @@ class TabSettings(BaseTab):
 
     def _onDragDrop(self, key, src_row, dst_row):
         """整列移動：記憶體 rows 重排，重繪表格，選中移動後的列"""
+        self._moveRow(key, src_row, dst_row)
+
+    def _moveRow(self, key, src, dst):
+        """共用搬移邏輯：記憶體 rows 重排＋設 dirty＋亮儲存排序鈕＋重繪＋選取目標列。
+        拖拉（_onDragDrop）、序號欄編輯（_onSeqItemChanged，Task 3）、
+        新增指定位置（_addPersonnel 等，Task 4）共用同一套搬移邏輯。"""
         st   = self._sort_state[key]
         rows = st["rows"]
-        rows.insert(dst_row, rows.pop(src_row))
+        rows.insert(dst, rows.pop(src))
         st["dirty"] = True
         st["save_btn"].setEnabled(True)
         self._renderSortTable(key)
-        st["table"].selectRow(dst_row)
+        st["table"].selectRow(dst)
 
     def _item(self, text, color=None):
         it = QTableWidgetItem(str(text) if text is not None else "")
