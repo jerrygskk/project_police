@@ -11,6 +11,24 @@ def getConn(db_path):
     return sqlite3.connect(db_path)
 
 
+# ── 開機磁碟空間檢查（C 槽空間不足軟性提醒用）──────────────────────
+# 門檻 = 單次執行期間暫存佔用實測峰值（PyInstaller onefile 解壓等）
+#        + DB 現有大小 ×2（本體 + 每日/每週備份各一份）+ 安全餘裕。
+# 220MB/250MB 二擇一時改選 250MB：開機前後 fsutil 實測一次峰值約 216MB，
+# 多留量測誤差緩衝（2026-07 與維護者議定，未重複量測取最大值，故保守抓高）。
+DISK_RUNTIME_FOOTPRINT = 250 * 1024 ** 2   # 250MB
+DISK_SAFETY_MARGIN     = 50 * 1024 ** 2    # 50MB
+
+
+def diskSpaceThreshold(db_path):
+    """回傳開機磁碟空間檢查門檻（bytes）。DB 不存在時當作 0 算。"""
+    try:
+        db_size = os.path.getsize(db_path)
+    except OSError:
+        db_size = 0
+    return DISK_RUNTIME_FOOTPRINT + db_size * 2 + DISK_SAFETY_MARGIN
+
+
 # ── 稽核紀錄（Audit_Log）─────────────────────────────────────────
 def buildDetail(category, action, content=""):
     """組稽核 detail 字串：`[類別][動作]內容`。
@@ -199,6 +217,22 @@ def restoreFromTrash(conn, trash_id):
 _GENERIC_ERROR = ("程式發生未預期的錯誤，已記錄至 error.log。\n"
                   "請將該檔案提供維護人員協助處理。")
 
+# 磁碟空間不足時 error.log 本身也可能寫不進去（log 機制需要磁碟空間），
+# 故獨立判斷成專屬訊息，不依賴 log 也能讓使用者立刻知道原因。
+_DISK_FULL_MARKERS = (
+    "disk full", "disk image is full", "database or disk is full",
+    "no space left on device",
+)
+
+
+def isDiskFullError(exc_value):
+    """判斷例外是否為「磁碟空間不足」（SQLite 或作業系統層級）。純邏輯，可單測。"""
+    if isinstance(exc_value, OSError) and getattr(exc_value, "errno", None) == 28:
+        return True  # ENOSPC
+    low = str(exc_value or "").lower()
+    return any(m in low for m in _DISK_FULL_MARKERS)
+
+
 def friendlyErrorMessage(exc_type, exc_value):
     """依例外型別回傳白話、可行動的錯誤訊息（不含技術細節）。
 
@@ -207,6 +241,10 @@ def friendlyErrorMessage(exc_type, exc_value):
     name = getattr(exc_type, "__name__", "") or type(exc_value).__name__
     text = str(exc_value or "")
     low = text.lower()
+
+    if isDiskFullError(exc_value):
+        return ("C 槽（或資料庫所在磁碟）空間不足，操作未完成。\n"
+                "請清理磁碟空間後再試一次；本次錯誤可能未留下紀錄。")
 
     # SQLite：忙線鎖定 / 缺表 / 檔案損毀
     if name in ("OperationalError",) or "operationalerror" in low:

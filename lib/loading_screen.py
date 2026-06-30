@@ -41,12 +41,21 @@ class LoadWorker(QThread):
     """
     step_done = Signal(str, int)   # (步驟說明, %)
     finished  = Signal(object)     # 載入完成，回傳結果 dict
+    failed    = Signal(object, object)   # (exc_type, exc_value)，背景執行緒例外（如磁碟空間不足）
 
     def __init__(self, db_path):
         super().__init__()
         self.db_path = db_path
 
     def run(self):
+        # QThread 內未捕捉例外不保證乾淨走到 sys.excepthook（容易把整支程式悶死、
+        # 不留任何紀錄），故全段包一層，失敗改用訊號回主執行緒乾淨顯示訊息再結束。
+        try:
+            self._run()
+        except Exception as exc:
+            self.failed.emit(type(exc), exc)
+
+    def _run(self):
         import time
         # ⚠️ DEBUG 用：每個步驟至少停 2 秒，方便觀察進度條
         # 正式上線前把 DEBUG_DELAY 改為 0
@@ -135,6 +144,7 @@ class LoadingScreen(QWidget):
       建表期間呼叫 setStep 更新進度條，全部完成後呼叫 finishAndClose 關閉。
     """
     dataReady = Signal(object)
+    loadFailed = Signal(object, object)   # (exc_type, exc_value)，背景載入失敗轉發給呼叫端
 
     WIN_W = 700
     WIN_H = 319   # 圖片等比例高度 279 + 進度區 40
@@ -231,7 +241,12 @@ class LoadingScreen(QWidget):
         self.worker = LoadWorker(self.db_path)
         self.worker.step_done.connect(self._on_step)
         self.worker.finished.connect(self._on_finished)
+        self.worker.failed.connect(self._on_failed)
         self.worker.start()
+
+    def _on_failed(self, exc_type, exc_value):
+        self.close()
+        self.loadFailed.emit(exc_type, exc_value)
 
     def _on_step(self, desc, percent):
         self.progress_bar.setValue(percent)

@@ -226,5 +226,56 @@ class TestToUncPath(unittest.TestCase):
         self.assertIsNone(db_utils.toUncPath(None))
 
 
+class TestIsDiskFullError(unittest.TestCase):
+    def test_oserror_enospc(self):
+        exc = OSError(28, "No space left on device")
+        self.assertTrue(db_utils.isDiskFullError(exc))
+
+    def test_sqlite_disk_image_full(self):
+        exc = sqlite3.OperationalError("database or disk is full")
+        self.assertTrue(db_utils.isDiskFullError(exc))
+
+    def test_unrelated_oserror_not_disk_full(self):
+        exc = OSError(13, "Permission denied")
+        self.assertFalse(db_utils.isDiskFullError(exc))
+
+    def test_unrelated_exception_not_disk_full(self):
+        self.assertFalse(db_utils.isDiskFullError(ValueError("foo")))
+
+
+class TestFriendlyErrorMessageDiskFull(unittest.TestCase):
+    def test_disk_full_gets_dedicated_message(self):
+        msg = db_utils.friendlyErrorMessage(
+            sqlite3.OperationalError, sqlite3.OperationalError("database or disk is full"))
+        self.assertIn("空間不足", msg)
+
+    def test_generic_operational_error_unaffected(self):
+        msg = db_utils.friendlyErrorMessage(
+            sqlite3.OperationalError, sqlite3.OperationalError("no such table: Foo"))
+        self.assertNotIn("空間不足", msg)
+
+
+class TestDiskSpaceThreshold(unittest.TestCase):
+    def setUp(self):
+        fd, self.db_path = tempfile.mkstemp(suffix=".db")
+        os.write(fd, b"x" * 1000)
+        os.close(fd)
+
+    def tearDown(self):
+        os.remove(self.db_path)
+
+    def test_threshold_scales_with_db_size(self):
+        base = db_utils.diskSpaceThreshold(self.db_path)
+        self.assertEqual(
+            base,
+            db_utils.DISK_RUNTIME_FOOTPRINT + 1000 * 2 + db_utils.DISK_SAFETY_MARGIN)
+
+    def test_missing_db_treated_as_zero_size(self):
+        threshold = db_utils.diskSpaceThreshold(os.path.join(
+            os.path.dirname(self.db_path), "does_not_exist.db"))
+        self.assertEqual(
+            threshold, db_utils.DISK_RUNTIME_FOOTPRINT + db_utils.DISK_SAFETY_MARGIN)
+
+
 if __name__ == "__main__":
     unittest.main()

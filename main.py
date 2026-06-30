@@ -344,10 +344,28 @@ if __name__ == "__main__":
 
     db_path = getResourcePath("dbfile.db")
 
+    # ── C 槽空間檢查（純勸導，不擋死；門檻見 lib/db_utils.diskSpaceThreshold）──
+    import shutil as _shutil
+    from lib.db_utils import diskSpaceThreshold as _diskSpaceThreshold
+    from ui_utils import confirmBox as _confirmBox
+    try:
+        _free_bytes = _shutil.disk_usage(os.path.dirname(os.path.abspath(db_path)) or "C:\\").free
+    except OSError:
+        _free_bytes = None
+    if _free_bytes is not None and _free_bytes < _diskSpaceThreshold(db_path):
+        _free_mb = _free_bytes // (1024 * 1024)
+        if not _confirmBox(
+                "磁碟空間不足",
+                f"C 槽可用空間僅剩 {_free_mb} MB。",
+                confirm_text="仍要開啟", cancel_text="取消離開",
+                confirm_danger=True, default_confirm=False,
+                informative="空間不足可能導致儲存、備份失敗，且錯誤可能無法留下紀錄。\n"
+                            "建議清理磁碟空間後再開啟。"):
+            sys.exit(0)
+
     # ── APP 層軟性互斥：開啟時偵測是否已有人在用（純勸導，不擋 DB）──
     from datetime import datetime as _dt
     from lib import app_lock as _lock
-    from ui_utils import confirmBox as _confirmBox
     _lock_path = _lock.lock_file_path(db_path)
     _machine, _user, _pid = _lock.current_identity()
     _opened_iso = _dt.now().isoformat(timespec="seconds")
@@ -429,9 +447,18 @@ if __name__ == "__main__":
         mgr.window.show()
         QTimer.singleShot(50, lambda: mgr._onTabChanged(menu.selected_tab))
 
+    def _on_load_failed(exc_type, exc_value):
+        # 背景載入執行緒例外（如磁碟空間不足）：乾淨顯示訊息再結束，不讓程式悶死無聲消失。
+        from lib.db_utils import friendlyErrorMessage as _friendly
+        logging.error("".join(traceback.format_exception(exc_type, exc_value, exc_value.__traceback__)))
+        from ui_utils import msgCritical as _msgCritical
+        _msgCritical("系統錯誤", _friendly(exc_type, exc_value))
+        sys.exit(1)
+
     loading = LoadingScreen(db_path)
     _refs.append(loading)
     loading.dataReady.connect(_on_data_ready)
+    loading.loadFailed.connect(_on_load_failed)
     loading.show()
 
     sys.exit(app.exec())
