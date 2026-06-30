@@ -12,8 +12,8 @@ import shutil
 import subprocess
 from datetime import datetime
 
-from PySide6.QtCore    import Qt, QProcess, QObject, QEvent
-from PySide6.QtGui     import QColor
+from PySide6.QtCore    import Qt, QProcess, QObject, QEvent, QRegularExpression
+from PySide6.QtGui     import QColor, QPen, QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QVBoxLayout, QStackedWidget,
     QLabel, QLineEdit, QPushButton,
@@ -88,6 +88,27 @@ class _NoFocusDelegate(QStyledItemDelegate):
         if option.state & QStyle.State_HasFocus:
             option.state &= ~QStyle.State_HasFocus
         super().paint(painter, option, index)
+
+
+class _SeqEditDelegate(_NoFocusDelegate):
+    """序號欄專用 delegate：editor 限定只能打數字；
+    paint 疊一層淺色虛線框，常駐提示「這格可以點來改」（呼應 ⠿ 把手欄的提示風格）。"""
+
+    def createEditor(self, parent, option, index):
+        editor = QLineEdit(parent)
+        editor.setValidator(QRegularExpressionValidator(
+            QRegularExpression(r"[0-9]*"), editor))
+        editor.setAlignment(Qt.AlignCenter)
+        return editor
+
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        painter.save()
+        pen = QPen(QColor("#9bb0c9"))
+        pen.setStyle(Qt.DashLine)
+        painter.setPen(pen)
+        painter.drawRect(option.rect.adjusted(2, 2, -3, -3))
+        painter.restore()
 
 
 class _RowDragFilter(QObject):
@@ -367,7 +388,8 @@ class TabSettings(BaseTab):
         hdr.setSectionResizeMode(name_c, QHeaderView.Stretch)
         if alias_c is not None:
             hdr.setSectionResizeMode(alias_c, QHeaderView.Stretch)
-        tbl.cellDoubleClicked.connect(lambda row, col, cb=edit_cb: cb(row))
+        tbl.cellDoubleClicked.connect(
+            lambda row, col, t=tbl, cb=edit_cb: self._onCellDoubleClicked(t, row, col, cb))
 
         # 拖拉排序（event filter 攔截 Drop，阻止 Qt 的逐格移動行為，改成整列記憶體操作）
         from PySide6.QtWidgets import QAbstractItemView
@@ -376,6 +398,11 @@ class TabSettings(BaseTab):
         tbl.setAutoScrollMargin(90)
         drag_filter = _RowDragFilter(tbl, lambda s, d, k=key: self._onDragDrop(k, s, d))
         tbl.viewport().installEventFilter(drag_filter)
+
+        # 序號欄可編輯（打數字搬移），delegate 限定只能輸入數字
+        seq_delegate = _SeqEditDelegate(tbl)
+        tbl.setItemDelegateForColumn(self._SEQ_COL, seq_delegate)
+        tbl.itemChanged.connect(lambda item, k=key: self._onSeqItemChanged(k, item))
 
         # 動作鈕樣式與綁定
         btn_add.setStyleSheet(BTN_CONFIRM)
@@ -388,7 +415,7 @@ class TabSettings(BaseTab):
 
         self._sort_state[key] = {
             "rows": [], "dirty": False, "save_btn": btn_save, "table": tbl,
-            "drag_filter": drag_filter}  # drag_filter 存入防 GC
+            "drag_filter": drag_filter, "seq_delegate": seq_delegate}  # 防 GC
 
     def _onDragDrop(self, key, src_row, dst_row):
         """整列移動：記憶體 rows 重排，重繪表格，選中移動後的列"""
@@ -405,6 +432,31 @@ class TabSettings(BaseTab):
         st["save_btn"].setEnabled(True)
         self._renderSortTable(key)
         st["table"].selectRow(dst)
+
+    def _onCellDoubleClicked(self, tbl, row, col, edit_cb):
+        """序號欄雙擊＝進入行內編輯；其餘欄位維持原行為（開修改對話框）。"""
+        if col == self._SEQ_COL:
+            item = tbl.item(row, self._SEQ_COL)
+            if item:
+                tbl.editItem(item)
+            return
+        edit_cb(row)
+
+    def _onSeqItemChanged(self, key, item):
+        """序號欄編輯完成（Enter／離焦）：合法則搬移，不合法安靜跳回原數字。"""
+        if item.column() != self._SEQ_COL:
+            return
+        st     = self._sort_state[key]
+        row    = item.row()
+        target = _parseSeqMoveTarget(item.text(), len(st["rows"]))
+        if target is None:
+            st["table"].blockSignals(True)
+            item.setText(str(row + 1))
+            st["table"].blockSignals(False)
+            return
+        if target == row:
+            return
+        self._moveRow(key, row, target)
 
     def _item(self, text, color=None):
         it = QTableWidgetItem(str(text) if text is not None else "")
@@ -759,20 +811,26 @@ class TabSettings(BaseTab):
         tbl = st["table"]
 
         def _build():
-            tbl.setRowCount(0)
-            for r, row in enumerate(st["rows"]):
-                rname, active = row[1], row[2]
-                tbl.insertRow(r)
-                color  = None if active else _COLOR_INACTIVE
-                status = word_on if active else word_off
-                # col0 拖拉把手；col1 顯示「序號」＝目前列位置（r+1），非內部 PK；rid 仍存記憶體供存檔
-                tbl.setItem(r, self._HANDLE_COL, self._handleItem())
-                tbl.setItem(r, self._SEQ_COL,    self._item(r + 1,  color))
-                tbl.setItem(r, name_c,   self._item(rname,  color))
-                if alias_c is not None:
-                    alias = (row[3] if len(row) > 3 and row[3] else "")
-                    tbl.setItem(r, alias_c, self._item(alias, color))
-                tbl.setItem(r, status_c, self._item(status, color))
+            tbl.blockSignals(True)   # 重建表格時不要讓 itemChanged 誤判成使用者手動改序號
+            try:
+                tbl.setRowCount(0)
+                for r, row in enumerate(st["rows"]):
+                    rname, active = row[1], row[2]
+                    tbl.insertRow(r)
+                    color  = None if active else _COLOR_INACTIVE
+                    status = word_on if active else word_off
+                    # col0 拖拉把手；col1 顯示「序號」＝目前列位置（r+1），非內部 PK；rid 仍存記憶體供存檔
+                    tbl.setItem(r, self._HANDLE_COL, self._handleItem())
+                    seq_item = self._item(r + 1, color)
+                    seq_item.setBackground(QColor("#F5F7FA"))
+                    tbl.setItem(r, self._SEQ_COL, seq_item)
+                    tbl.setItem(r, name_c,   self._item(rname,  color))
+                    if alias_c is not None:
+                        alias = (row[3] if len(row) > 3 and row[3] else "")
+                        tbl.setItem(r, alias_c, self._item(alias, color))
+                    tbl.setItem(r, status_c, self._item(status, color))
+            finally:
+                tbl.blockSignals(False)
 
         # 重繪前後保留捲動位置（新增／修改後不跳回頂端）
         preserveScroll(tbl, _build)
