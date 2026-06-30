@@ -68,6 +68,19 @@ _NAV_DANGER = (
     "QPushButton:disabled { color: #c5c5c9; background-color: transparent; }"
 )
 
+
+def _parseSeqMoveTarget(text, row_count):
+    """既有列「序號」欄編輯驗證（純邏輯，可單測）。
+    回傳 0-based 目標索引；不合法（非數字／超出 1~row_count）回 None。"""
+    text = (text or "").strip()
+    if not text.isdigit():
+        return None
+    n = int(text)
+    if not (1 <= n <= row_count):
+        return None
+    return n - 1
+
+
 class _NoFocusDelegate(QStyledItemDelegate):
     """移除「目前儲存格」焦點外框（Windows 樣式點擊後會在該格畫框）。
     僅去焦點框，保留列選取底色（拖拉排序需要 currentRow）。"""

@@ -87,6 +87,22 @@ def _next_sort(conn, table):
     return (row[0] - 1) if row and row[0] is not None else 1
 
 
+def _parseAddPosition(text, existing_count):
+    """新增對話框「順序」欄位驗證（純邏輯，可單測）。
+    留空＝合法、回 (True, None)（套用預設行為：塞最前）。
+    合法範圍 1～existing_count+1（新增後清單會變 existing_count+1 筆）。
+    回傳 (is_valid, 0-based目標索引或None)；不合法回 (False, None)。"""
+    text = (text or "").strip()
+    if text == "":
+        return True, None
+    if not text.isdigit():
+        return False, None
+    n = int(text)
+    if not (1 <= n <= existing_count + 1):
+        return False, None
+    return True, n - 1
+
+
 # ══════════════════════════════════════════════════════════════════
 # 人員管理
 # ══════════════════════════════════════════════════════════════════
