@@ -923,6 +923,9 @@ class TabSettings(BaseTab):
         if dlg.exec():
             self._ref_dirty = True
             self._reloadPreservingOrder("personnel")   # 保留未存拖拉順序
+            pos = dlg.get_target_position()
+            if pos is not None:
+                self._moveRow("personnel", 0, pos)      # 新增後預設在最前，搬到指定位置
 
     def _editPersonnel(self, row=None):
         if not self._refEditable():
@@ -955,6 +958,9 @@ class TabSettings(BaseTab):
         if dlg.exec():
             self._ref_dirty = True
             self._reloadPreservingOrder("dept")        # 保留未存拖拉順序
+            pos = dlg.get_target_position()
+            if pos is not None:
+                self._moveRow("dept", 0, pos)
 
     def _editDept(self, row=None):
         if not self._refEditable():
@@ -987,6 +993,9 @@ class TabSettings(BaseTab):
         if dlg.exec():
             self._ref_dirty = True
             self._reloadPreservingOrder("casetype")    # 保留未存拖拉順序
+            pos = dlg.get_target_position()
+            if pos is not None:
+                self._moveRow("casetype", 0, pos)
 
     def _editCaseType(self, row=None):
         if not self._refEditable():

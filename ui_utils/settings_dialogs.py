@@ -11,7 +11,8 @@ import os
 import re
 import sqlite3
 
-from PySide6.QtCore    import Qt
+from PySide6.QtCore    import Qt, QRegularExpression
+from PySide6.QtGui     import QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QPushButton, QCheckBox,
@@ -132,6 +133,7 @@ class PersonnelAddDialog(QDialog):
         self.db_path = db_path
         self._new_id = None
         self._result = None
+        self._target_pos = None
         self.setWindowTitle('新增人員')
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
         self.setStyleSheet(_DIALOG_SS)
@@ -164,6 +166,13 @@ class PersonnelAddDialog(QDialog):
         self.w_alias.setFixedWidth(_FIELD_W)
         form.addRow("別名：", self.w_alias)
 
+        self.w_seq = QLineEdit()
+        self.w_seq.setValidator(QRegularExpressionValidator(
+            QRegularExpression(r"[0-9]*"), self.w_seq))
+        self.w_seq.setPlaceholderText("留空＝排最前")
+        self.w_seq.setFixedWidth(80)
+        form.addRow("順序（選填）：", self.w_seq)
+
         self.w_retired = QCheckBox("離職")
         self.w_retired.setChecked(False)
         form.addRow("狀態：", self.w_retired)
@@ -182,7 +191,14 @@ class PersonnelAddDialog(QDialog):
             self.w_name.setStyleSheet(_ERR_BORDER_SS)
             return
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn  = sqlite3.connect(self.db_path)
+            count = conn.execute("SELECT COUNT(*) FROM Ref_Personnel").fetchone()[0]
+            valid, target = _parseAddPosition(self.w_seq.text(), count)
+            if not valid:
+                self.w_seq.setStyleSheet(_ERR_BORDER_SS)
+                conn.close()
+                return
+            self.w_seq.setStyleSheet("")
             new_sort = _next_sort(conn, 'Ref_Personnel')
             conn.execute(
                 "INSERT INTO Ref_Personnel (staff_id, staff_name, is_active, sort_order) VALUES (?,?,?,?)",
@@ -193,6 +209,7 @@ class PersonnelAddDialog(QDialog):
             _audit_ref(conn, "人員", "新增", name, "Ref_Personnel", self._new_id)
             conn.commit()
             conn.close()
+            self._target_pos = target
             self._result = (self._new_id, name, bool(is_active))
             self.accept()
         except Exception as e:
@@ -200,6 +217,9 @@ class PersonnelAddDialog(QDialog):
 
     def get_result(self):
         return self._result
+
+    def get_target_position(self):
+        return self._target_pos
 
 
 class PersonnelEditDialog(QDialog):
@@ -304,6 +324,7 @@ class DeptAddDialog(QDialog):
         self.db_path = db_path
         self._new_id = None
         self._result = None
+        self._target_pos = None
         self.setWindowTitle('新增部門')
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
         self.setStyleSheet(_DIALOG_SS)
@@ -331,6 +352,13 @@ class DeptAddDialog(QDialog):
         self.w_name.setFixedWidth(_FIELD_W)
         form.addRow("部門名稱：", self.w_name)
 
+        self.w_seq = QLineEdit()
+        self.w_seq.setValidator(QRegularExpressionValidator(
+            QRegularExpression(r"[0-9]*"), self.w_seq))
+        self.w_seq.setPlaceholderText("留空＝排最前")
+        self.w_seq.setFixedWidth(80)
+        form.addRow("順序（選填）：", self.w_seq)
+
         self.w_retired = QCheckBox("停用")
         self.w_retired.setChecked(False)
         form.addRow("狀態：", self.w_retired)
@@ -348,7 +376,14 @@ class DeptAddDialog(QDialog):
             self.w_name.setStyleSheet(_ERR_BORDER_SS)
             return
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn  = sqlite3.connect(self.db_path)
+            count = conn.execute("SELECT COUNT(*) FROM Ref_Departments").fetchone()[0]
+            valid, target = _parseAddPosition(self.w_seq.text(), count)
+            if not valid:
+                self.w_seq.setStyleSheet(_ERR_BORDER_SS)
+                conn.close()
+                return
+            self.w_seq.setStyleSheet("")
             new_sort = _next_sort(conn, 'Ref_Departments')
             conn.execute(
                 "INSERT INTO Ref_Departments (dept_id, dept_name, is_active, sort_order) VALUES (?,?,?,?)",
@@ -356,6 +391,7 @@ class DeptAddDialog(QDialog):
             _audit_ref(conn, "部門", "新增", name, "Ref_Departments", self._new_id)
             conn.commit()
             conn.close()
+            self._target_pos = target
             self._result = (self._new_id, name, bool(is_active))
             self.accept()
         except Exception as e:
@@ -363,6 +399,9 @@ class DeptAddDialog(QDialog):
 
     def get_result(self):
         return self._result
+
+    def get_target_position(self):
+        return self._target_pos
 
 
 class DeptEditDialog(QDialog):
@@ -446,6 +485,7 @@ class CaseTypeAddDialog(QDialog):
         self.db_path = db_path
         self._new_id = None
         self._result = None
+        self._target_pos = None
         self.setWindowTitle('新增案件類型')
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
         self.setStyleSheet(_DIALOG_SS)
@@ -473,6 +513,13 @@ class CaseTypeAddDialog(QDialog):
         self.w_name.setFixedWidth(_FIELD_W)
         form.addRow("類型名稱：", self.w_name)
 
+        self.w_seq = QLineEdit()
+        self.w_seq.setValidator(QRegularExpressionValidator(
+            QRegularExpression(r"[0-9]*"), self.w_seq))
+        self.w_seq.setPlaceholderText("留空＝排最前")
+        self.w_seq.setFixedWidth(80)
+        form.addRow("順序（選填）：", self.w_seq)
+
         self.w_retired = QCheckBox("停用")
         self.w_retired.setChecked(False)
         form.addRow("狀態：", self.w_retired)
@@ -490,7 +537,14 @@ class CaseTypeAddDialog(QDialog):
             self.w_name.setStyleSheet(_ERR_BORDER_SS)
             return
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn  = sqlite3.connect(self.db_path)
+            count = conn.execute("SELECT COUNT(*) FROM Ref_CaseTypes").fetchone()[0]
+            valid, target = _parseAddPosition(self.w_seq.text(), count)
+            if not valid:
+                self.w_seq.setStyleSheet(_ERR_BORDER_SS)
+                conn.close()
+                return
+            self.w_seq.setStyleSheet("")
             new_sort = _next_sort(conn, 'Ref_CaseTypes')
             conn.execute(
                 "INSERT INTO Ref_CaseTypes (case_type_id, case_type_name, is_active, sort_order) VALUES (?,?,?,?)",
@@ -498,6 +552,7 @@ class CaseTypeAddDialog(QDialog):
             _audit_ref(conn, "案類", "新增", name, "Ref_CaseTypes", self._new_id)
             conn.commit()
             conn.close()
+            self._target_pos = target
             self._result = (self._new_id, name, bool(is_active))
             self.accept()
         except Exception as e:
@@ -505,6 +560,9 @@ class CaseTypeAddDialog(QDialog):
 
     def get_result(self):
         return self._result
+
+    def get_target_position(self):
+        return self._target_pos
 
 
 class CaseTypeEditDialog(QDialog):
