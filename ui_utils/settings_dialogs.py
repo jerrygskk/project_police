@@ -104,6 +104,18 @@ def _parseAddPosition(text, existing_count):
     return True, n - 1
 
 
+def _parseSeqMoveTarget(text, row_count):
+    """既有列「序號」欄編輯驗證（純邏輯，可單測）。
+    回傳 0-based 目標索引；不合法（非數字／超出 1~row_count）回 None。"""
+    text = (text or "").strip()
+    if not text.isdigit():
+        return None
+    n = int(text)
+    if not (1 <= n <= row_count):
+        return None
+    return n - 1
+
+
 # ══════════════════════════════════════════════════════════════════
 # 人員管理
 # ══════════════════════════════════════════════════════════════════
@@ -152,10 +164,6 @@ class PersonnelAddDialog(QDialog):
         form.setLabelAlignment(Qt.AlignRight)
         form.setSpacing(10)
 
-        lbl_id = QLabel(self._new_id)
-        lbl_id.setStyleSheet("font-weight: bold;")
-        form.addRow("人員編號：", lbl_id)
-
         self.w_name = QLineEdit()
         self.w_name.setPlaceholderText("例：王小明 或 王小明-19.06")
         self.w_name.setFixedWidth(_FIELD_W)
@@ -169,9 +177,15 @@ class PersonnelAddDialog(QDialog):
         self.w_seq = QLineEdit()
         self.w_seq.setValidator(QRegularExpressionValidator(
             QRegularExpression(r"[0-9]*"), self.w_seq))
-        self.w_seq.setPlaceholderText("留空＝排最前")
         self.w_seq.setFixedWidth(80)
-        form.addRow("順序（選填）：", self.w_seq)
+        seq_row = QHBoxLayout()
+        seq_row.addWidget(self.w_seq)
+        seq_row.addWidget(QLabel("（選填）"))
+        seq_row.addStretch()
+        lbl_seq = QLabel("順序：")
+        lbl_seq.setFixedWidth(_LABEL_W)
+        lbl_seq.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.addRow(lbl_seq, seq_row)
 
         self.w_retired = QCheckBox("離職")
         self.w_retired.setChecked(False)
@@ -228,8 +242,9 @@ class PersonnelEditDialog(QDialog):
         super().__init__(parent)
         self.db_path  = db_path
         self.staff_id = staff_id      # 真 PK，給 UPDATE 用，不顯示
-        self.seq      = seq           # 序號（列位置），僅供顯示
+        self.seq      = seq           # 序號（列位置），預填進可編輯的順序欄
         self._result  = None
+        self._target_pos = None
         self._old_name   = staff_name
         self._old_active = bool(is_active)
         self.setWindowTitle('修改人員')
@@ -245,10 +260,6 @@ class PersonnelEditDialog(QDialog):
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignRight)
         form.setSpacing(10)
-
-        lbl_id = QLabel(str(self.seq))
-        lbl_id.setStyleSheet("font-weight: bold;")
-        form.addRow("序號：", lbl_id)
 
         self.w_name = QLineEdit(staff_name)
         self.w_name.setFixedWidth(_FIELD_W)
@@ -271,6 +282,15 @@ class PersonnelEditDialog(QDialog):
         self.w_alias.setFixedWidth(_FIELD_W)
         form.addRow("別名：", self.w_alias)
 
+        self.w_seq = QLineEdit(str(self.seq))
+        self.w_seq.setValidator(QRegularExpressionValidator(
+            QRegularExpression(r"[0-9]*"), self.w_seq))
+        self.w_seq.setFixedWidth(80)
+        lbl_seq = QLabel("順序：")
+        lbl_seq.setFixedWidth(_LABEL_W)
+        lbl_seq.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.addRow(lbl_seq, self.w_seq)
+
         self.w_retired = QCheckBox("離職")
         self.w_retired.setChecked(not bool(is_active))
         form.addRow("狀態：", self.w_retired)
@@ -289,7 +309,14 @@ class PersonnelEditDialog(QDialog):
             self.w_name.setStyleSheet(_ERR_BORDER_SS)
             return
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn  = sqlite3.connect(self.db_path)
+            count = conn.execute("SELECT COUNT(*) FROM Ref_Personnel").fetchone()[0]
+            target = _parseSeqMoveTarget(self.w_seq.text(), count)
+            if target is None:
+                self.w_seq.setStyleSheet(_ERR_BORDER_SS)
+                conn.close()
+                return
+            self.w_seq.setStyleSheet("")
             conn.execute(
                 "UPDATE Ref_Personnel SET staff_name=?, is_active=? WHERE staff_id=?",
                 (name, is_active, self.staff_id))
@@ -304,6 +331,7 @@ class PersonnelEditDialog(QDialog):
                            "Ref_Personnel", self.staff_id)
             conn.commit()
             conn.close()
+            self._target_pos = target
             self._result = (self.staff_id, name, bool(is_active))
             self.accept()
         except Exception as e:
@@ -311,6 +339,9 @@ class PersonnelEditDialog(QDialog):
 
     def get_result(self):
         return self._result
+
+    def get_target_position(self):
+        return self._target_pos
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -343,10 +374,6 @@ class DeptAddDialog(QDialog):
         form.setLabelAlignment(Qt.AlignRight)
         form.setSpacing(10)
 
-        lbl_id = QLabel(self._new_id)
-        lbl_id.setStyleSheet("font-weight: bold;")
-        form.addRow("部門編號：", lbl_id)
-
         self.w_name = QLineEdit()
         self.w_name.setPlaceholderText("例：刑事組")
         self.w_name.setFixedWidth(_FIELD_W)
@@ -355,9 +382,15 @@ class DeptAddDialog(QDialog):
         self.w_seq = QLineEdit()
         self.w_seq.setValidator(QRegularExpressionValidator(
             QRegularExpression(r"[0-9]*"), self.w_seq))
-        self.w_seq.setPlaceholderText("留空＝排最前")
         self.w_seq.setFixedWidth(80)
-        form.addRow("順序（選填）：", self.w_seq)
+        seq_row = QHBoxLayout()
+        seq_row.addWidget(self.w_seq)
+        seq_row.addWidget(QLabel("（選填）"))
+        seq_row.addStretch()
+        lbl_seq = QLabel("順序：")
+        lbl_seq.setFixedWidth(_LABEL_W)
+        lbl_seq.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.addRow(lbl_seq, seq_row)
 
         self.w_retired = QCheckBox("停用")
         self.w_retired.setChecked(False)
@@ -410,8 +443,9 @@ class DeptEditDialog(QDialog):
         super().__init__(parent)
         self.db_path = db_path
         self.dept_id = dept_id        # 真 PK，給 UPDATE 用，不顯示
-        self.seq     = seq            # 序號（列位置），僅供顯示
+        self.seq     = seq            # 序號（列位置），預填進可編輯的順序欄
         self._result = None
+        self._target_pos = None
         self._old_name   = dept_name
         self._old_active = bool(is_active)
         self.setWindowTitle('修改部門')
@@ -428,13 +462,18 @@ class DeptEditDialog(QDialog):
         form.setLabelAlignment(Qt.AlignRight)
         form.setSpacing(10)
 
-        lbl_id = QLabel(str(self.seq))
-        lbl_id.setStyleSheet("font-weight: bold;")
-        form.addRow("序號：", lbl_id)
-
         self.w_name = QLineEdit(dept_name)
         self.w_name.setFixedWidth(_FIELD_W)
         form.addRow("部門名稱：", self.w_name)
+
+        self.w_seq = QLineEdit(str(self.seq))
+        self.w_seq.setValidator(QRegularExpressionValidator(
+            QRegularExpression(r"[0-9]*"), self.w_seq))
+        self.w_seq.setFixedWidth(80)
+        lbl_seq = QLabel("順序：")
+        lbl_seq.setFixedWidth(_LABEL_W)
+        lbl_seq.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.addRow(lbl_seq, self.w_seq)
 
         self.w_retired = QCheckBox("停用")
         self.w_retired.setChecked(not bool(is_active))
@@ -453,7 +492,14 @@ class DeptEditDialog(QDialog):
             self.w_name.setStyleSheet(_ERR_BORDER_SS)
             return
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn  = sqlite3.connect(self.db_path)
+            count = conn.execute("SELECT COUNT(*) FROM Ref_Departments").fetchone()[0]
+            target = _parseSeqMoveTarget(self.w_seq.text(), count)
+            if target is None:
+                self.w_seq.setStyleSheet(_ERR_BORDER_SS)
+                conn.close()
+                return
+            self.w_seq.setStyleSheet("")
             conn.execute(
                 "UPDATE Ref_Departments SET dept_name=?, is_active=? WHERE dept_id=?",
                 (name, is_active, self.dept_id))
@@ -465,6 +511,7 @@ class DeptEditDialog(QDialog):
                            "Ref_Departments", self.dept_id)
             conn.commit()
             conn.close()
+            self._target_pos = target
             self._result = (self.dept_id, name, bool(is_active))
             self.accept()
         except Exception as e:
@@ -472,6 +519,9 @@ class DeptEditDialog(QDialog):
 
     def get_result(self):
         return self._result
+
+    def get_target_position(self):
+        return self._target_pos
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -504,10 +554,6 @@ class CaseTypeAddDialog(QDialog):
         form.setLabelAlignment(Qt.AlignRight)
         form.setSpacing(10)
 
-        lbl_id = QLabel(self._new_id)
-        lbl_id.setStyleSheet("font-weight: bold;")
-        form.addRow("類型編號：", lbl_id)
-
         self.w_name = QLineEdit()
         self.w_name.setPlaceholderText("例：277傷害")
         self.w_name.setFixedWidth(_FIELD_W)
@@ -516,9 +562,15 @@ class CaseTypeAddDialog(QDialog):
         self.w_seq = QLineEdit()
         self.w_seq.setValidator(QRegularExpressionValidator(
             QRegularExpression(r"[0-9]*"), self.w_seq))
-        self.w_seq.setPlaceholderText("留空＝排最前")
         self.w_seq.setFixedWidth(80)
-        form.addRow("順序（選填）：", self.w_seq)
+        seq_row = QHBoxLayout()
+        seq_row.addWidget(self.w_seq)
+        seq_row.addWidget(QLabel("（選填）"))
+        seq_row.addStretch()
+        lbl_seq = QLabel("順序：")
+        lbl_seq.setFixedWidth(_LABEL_W)
+        lbl_seq.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.addRow(lbl_seq, seq_row)
 
         self.w_retired = QCheckBox("停用")
         self.w_retired.setChecked(False)
@@ -571,8 +623,9 @@ class CaseTypeEditDialog(QDialog):
         super().__init__(parent)
         self.db_path = db_path
         self.type_id = type_id        # 真 PK，給 UPDATE 用，不顯示
-        self.seq     = seq            # 序號（列位置），僅供顯示
+        self.seq     = seq            # 序號（列位置），預填進可編輯的順序欄
         self._result = None
+        self._target_pos = None
         self._old_name   = type_name
         self._old_active = bool(is_active)
         self.setWindowTitle('修改案件類型')
@@ -589,13 +642,18 @@ class CaseTypeEditDialog(QDialog):
         form.setLabelAlignment(Qt.AlignRight)
         form.setSpacing(10)
 
-        lbl_id = QLabel(str(self.seq))
-        lbl_id.setStyleSheet("font-weight: bold;")
-        form.addRow("序號：", lbl_id)
-
         self.w_name = QLineEdit(type_name)
         self.w_name.setFixedWidth(_FIELD_W)
         form.addRow("類型名稱：", self.w_name)
+
+        self.w_seq = QLineEdit(str(self.seq))
+        self.w_seq.setValidator(QRegularExpressionValidator(
+            QRegularExpression(r"[0-9]*"), self.w_seq))
+        self.w_seq.setFixedWidth(80)
+        lbl_seq = QLabel("順序：")
+        lbl_seq.setFixedWidth(_LABEL_W)
+        lbl_seq.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.addRow(lbl_seq, self.w_seq)
 
         self.w_retired = QCheckBox("停用")
         self.w_retired.setChecked(not bool(is_active))
@@ -614,7 +672,14 @@ class CaseTypeEditDialog(QDialog):
             self.w_name.setStyleSheet(_ERR_BORDER_SS)
             return
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn  = sqlite3.connect(self.db_path)
+            count = conn.execute("SELECT COUNT(*) FROM Ref_CaseTypes").fetchone()[0]
+            target = _parseSeqMoveTarget(self.w_seq.text(), count)
+            if target is None:
+                self.w_seq.setStyleSheet(_ERR_BORDER_SS)
+                conn.close()
+                return
+            self.w_seq.setStyleSheet("")
             conn.execute(
                 "UPDATE Ref_CaseTypes SET case_type_name=?, is_active=? WHERE case_type_id=?",
                 (name, is_active, self.type_id))
@@ -626,6 +691,7 @@ class CaseTypeEditDialog(QDialog):
                            "Ref_CaseTypes", self.type_id)
             conn.commit()
             conn.close()
+            self._target_pos = target
             self._result = (self.type_id, name, bool(is_active))
             self.accept()
         except Exception as e:
@@ -633,6 +699,9 @@ class CaseTypeEditDialog(QDialog):
 
     def get_result(self):
         return self._result
+
+    def get_target_position(self):
+        return self._target_pos
 
 
 # ══════════════════════════════════════════════════════════════════

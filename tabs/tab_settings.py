@@ -40,6 +40,7 @@ from ui_utils import (
     ChangePasswordDialog, ResetDialog, ArchiveRootDialog, PrintTitleDialog,
     preserveScroll,
 )
+from ui_utils.settings_dialogs import _parseSeqMoveTarget
 
 # ── 左側導航按鈕樣式 ────────────────────────────────────────────
 _NAV_ACTIVE = (
@@ -69,18 +70,6 @@ _NAV_DANGER = (
 )
 
 
-def _parseSeqMoveTarget(text, row_count):
-    """既有列「序號」欄編輯驗證（純邏輯，可單測）。
-    回傳 0-based 目標索引；不合法（非數字／超出 1~row_count）回 None。"""
-    text = (text or "").strip()
-    if not text.isdigit():
-        return None
-    n = int(text)
-    if not (1 <= n <= row_count):
-        return None
-    return n - 1
-
-
 class _NoFocusDelegate(QStyledItemDelegate):
     """移除「目前儲存格」焦點外框（Windows 樣式點擊後會在該格畫框）。
     僅去焦點框，保留列選取底色（拖拉排序需要 currentRow）。"""
@@ -99,6 +88,10 @@ class _SeqEditDelegate(_NoFocusDelegate):
         editor.setValidator(QRegularExpressionValidator(
             QRegularExpression(r"[0-9]*"), editor))
         editor.setAlignment(Qt.AlignCenter)
+        # 全域 theme.py 對所有 QLineEdit 套 padding: 6px 10px，疊上字級後在固定 36px 列高
+        # 裡可能擠到下緣被裁切；padding/margin 歸零騰出空間。border 不覆寫，沿用
+        # theme.py 原本的數字（平常 1px、focus 2px，cascade 自動接回來）
+        editor.setStyleSheet("font-size: 13pt; padding: 0px; margin: 0px;")
         return editor
 
     def paint(self, painter, option, index):
@@ -835,9 +828,9 @@ class TabSettings(BaseTab):
         # 重繪前後保留捲動位置（新增／修改後不跳回頂端）
         preserveScroll(tbl, _build)
 
-    def _saveSort(self, key, silent=False):
+    def _saveSort(self, key):
         """把記憶體順序寫回 DB sort_order（連續整數），清 dirty，設 _ref_dirty。
-        silent=True 時不跳「已儲存」提示（由修改流程觸發時用）"""
+        成功後鈕反灰即表示已存，不另跳「已儲存」提示。"""
         tbl_name, idc, _, _, _ = self._REF_CFG[key]
         st = self._sort_state[key]
         conn = None
@@ -857,8 +850,6 @@ class TabSettings(BaseTab):
         st["dirty"] = False
         st["save_btn"].setEnabled(False)
         self._ref_dirty = True
-        if not silent:
-            msgInfo("已儲存", "排序已更新", self.tab_widget)
 
     def _hasUnsavedSort(self):
         return any(s["dirty"] for s in self._sort_state.values())
@@ -899,7 +890,7 @@ class TabSettings(BaseTab):
         if ret:
             for k, s in self._sort_state.items():
                 if s["dirty"]:
-                    self._saveSort(k, silent=True)
+                    self._saveSort(k)
             return True
         # 按了取消 / 離開
         if context == "leave":
@@ -944,6 +935,9 @@ class TabSettings(BaseTab):
             if dlg.get_result():
                 self._ref_dirty = True
                 self._reloadPreservingOrder("personnel")   # 保留未存拖拉順序
+                pos = dlg.get_target_position()
+                if pos is not None and pos != row:
+                    self._moveRow("personnel", row, pos)
 
     # ════════════════════════════════════════════════════════════
     # 部門管理
@@ -979,6 +973,9 @@ class TabSettings(BaseTab):
             if dlg.get_result():
                 self._ref_dirty = True
                 self._reloadPreservingOrder("dept")        # 保留未存拖拉順序
+                pos = dlg.get_target_position()
+                if pos is not None and pos != row:
+                    self._moveRow("dept", row, pos)
 
     # ════════════════════════════════════════════════════════════
     # 案件類型管理
@@ -1014,6 +1011,9 @@ class TabSettings(BaseTab):
             if dlg.get_result():
                 self._ref_dirty = True
                 self._reloadPreservingOrder("casetype")    # 保留未存拖拉順序
+                pos = dlg.get_target_position()
+                if pos is not None and pos != row:
+                    self._moveRow("casetype", row, pos)
 
     # ── 資源回收筒（誤刪還原，僅 admin）────────────────────────────
     @staticmethod

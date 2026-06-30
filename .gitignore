@@ -1,4 +1,5 @@
 ﻿HANDOVER.md
+.superpowers/
 docs/*
 !docs/img/
 release_note_*.md

@@ -1,8 +1,7 @@
 """參照表排序「指定位置」純邏輯測試：既有列序號驗證、Add 對話框順序驗證。"""
 import unittest
 
-from tabs.tab_settings import _parseSeqMoveTarget
-from ui_utils.settings_dialogs import _parseAddPosition
+from ui_utils.settings_dialogs import _parseSeqMoveTarget, _parseAddPosition
 
 
 class TestParseSeqMoveTarget(unittest.TestCase):
