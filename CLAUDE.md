@@ -84,7 +84,7 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 
 - 版本號定義於 `lib/version.py`，進版時只進第三碼
 - 進位與否他決定，不要自己跳版號
-- **進版一律跑 `python tools/bump_version.py <版號>`**（從專案根目錄執行；版號自帶、不自動進位；會先印出目前版號），它會同時改 `version.py` 與產出 `version_info.txt`（exe 檔案資訊）。**勿手改 `version.py`**，否則 `version_info.txt` 不同步
+- **進版一律跑 `python tools/bump_version.py <版號>`**（從專案根目錄執行；版號自帶、不自動進位；會先印出目前版號），它會同時改 `version.py`、產出 `version_info.txt`（exe 檔案資訊）、並同步 `README.md` 門面兩處「目前版本」版號。**勿手改 `version.py`**，否則 `version_info.txt` 不同步
 
 #### 用語約定（他會用簡稱，要對上）
 
