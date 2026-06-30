@@ -85,7 +85,7 @@ main.py
 - 登入比對兩組 hash：中 admin→`admin`、中 archive→`archive`、都不中→失敗（寫一筆登入失敗稽核，不記輸入的密碼）
 - 標題列顯示三態；admin 與 archive 皆閒置 **10 分鐘**自動登出（降回一般使用者，程式不關）
 - **便捷判斷**（勿在各處寫字串比較）：`is_admin()`／`is_archive()`／`is_manager()`（admin or archive，給「歸檔管理也能做」用）／`actor_name()`（稽核 operator 用）
-- **變更密碼**：`change_password()` 依當前登入身分改對應那組（admin→admin、archive→archive）；user 不得改。高風險，**Enter 不送出**（防誤按）、只能滑鼠點
+- **變更密碼**：`change_password()` 依當前登入身分改對應那組（admin→admin、archive→archive）；user 不得改。高風險，**Enter 不送出**（防誤按）、只能滑鼠點。**變更成功後即 `logout()` 降回一般使用者**（`tab_settings._changePassword`），要求以新密碼重新登入（避免舊 session 沿用、確認新密碼可用）
 
 **權限矩陣**（歸檔管理＝一般使用者＋下列加項；空白＝同一般使用者）：
 
@@ -534,6 +534,7 @@ CLAUDE.md 發布流程第 7 步的執行細節。4 個 asset：
 
 | 版本 | 摘要 |
 |------|------|
+| v1.1.4 | **安全性**：登入密碼比對改 `secrets.compare_digest` 常數時間（防時序攻擊）；歸檔 `os.rename` 前以 `os.path.commonpath` 二次驗證落點仍在歸檔夾內（防禦縱深）。**變更密碼後自動登出**，要求以新密碼重新登入。**可空白日期框治本**：查獲日期等「可留空又要手打」欄位由 `QDateEdit`＋`minimumDate` 哨兵改為 `NullableDateEdit(QLineEdit)`——可整格清空自由手打、離開即驗證亮紅框並擋送出、validator 只放行數字與 `-`/`/`、月曆無格線無週數欄（套陳報頁查獲日期／刑案編輯框／稽核起迄）。**重構（使用者無感）**：錯誤彈窗統一走 `ui_common.reportError`（寫完整 traceback 進 error.log＋彈白話訊息），取代直接把 SQLite 英文原文丟給使用者；獨立稽核事件抽 `db_utils.writeAuditSafe`（自開連線寫一筆）；設定頁小去重。 |
 | v1.1.3 | **內部重構為主，無使用者新功能。** **schema／種子改為程式碼唯一來源**：全部資料表＋3 View＋6 trigger 的 DDL 收進 `lib/db_schema.py`（`_TABLES`／`_VIEWS`／`_TRIGGERS`，新增 `applySchema()`），種子資料（參照／預設密碼／Seq 歸零／簽收表四 key 空值）收進新檔 `lib/db_seed.py`；新增 `tools/gen_shell_db.py` 由這兩者產乾淨空殼，取代發版「從 git HEAD 取二進位」。單元測試改用同一份 schema（移除手刻假 schema），消除測試與正式 schema 走鐘的隱患。**UI 修正**：tab 切換的延遲 `resize`／`setFocus` callback 加守門，快速連續換頁不再作用到舊 tab。**Repo 維護**：`dbfile.db` 改為不入庫（gitignored，schema／種子已在程式碼）；以 `git filter-repo` 將歷史中含資料／識別資訊的舊檔（DB／Excel／初始化 SQL 等）自全歷史抹除。 |
 | v1.1.2 | **簽收表標題可自訂**：設定頁新增「簽收表設定」鈕（僅 admin、歸檔管理反灰）→ `PrintTitleDialog`，可自訂三張簽收表標題與現行犯免簽收註記，存 `App_Settings` 四 key、未設定走 `○○` 預設＋列印頁紅字提醒、跨年度重置不清（單位永久設定）。**簽收表排版修正**：欄內換行改用 matplotlib 真實字型度量（修主旨／案類欄寬還夠卻提早折行）、刑案類型欄固定 10pt。**權限修正**：收文／陳報頁刪除誤擋成僅 admin，改為一般使用者可刪（與權限矩陣一致）；移除無用的 `AuthManager.can()`。**刪除流程合併**：四處「快照→回收筒→清空→稽核」收斂為 `db_utils.softDeleteDoc`。**簽收表 PDF 改前景產生**＋「產生中」popup（消除偶發崩潰）。**閒置自動關閉改 `os._exit` 硬關**（穿透 modal）。**重構**：通用 UI 自 `db_utils` 搬至 `ui_utils/ui_common.py`，`db_utils` 回歸純資料層。速查卡改版、HELP 權限／法規用語修正。 |
 | v1.1.1 | **誤刪還原（資源回收筒）**：主表刪除前先把整列快照存入 `Trash_Documents`，設定頁新增「資源回收筒」子頁（僅 admin）可單選還原，把快照寫回原文號、保留刪除當下歸檔狀態，並寫一筆「還原」稽核；跨年度 Reset 一併清空。**啟動冪等建表 `ensureSchema`**（`lib/db_schema.py`）：附加式結構改於啟動時自動套用，新增資料表不再需要發 fix 工具（破壞式仍走手動）。**操作紀錄頁介面整理**：新增「重整」鈕、身分／類別下拉去外部標籤改首項自述、篩選列字級收斂。**主選單顯示修正**：打包版偶被其他視窗壓住，改顯示後強制拉到最前。另含一輪 code review 修正（DB 連線改 `finally` 釋放、刪除入口補權限檢查、`_trimName` 收斂單一實作）。 |

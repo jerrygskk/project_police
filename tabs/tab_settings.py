@@ -515,7 +515,9 @@ class TabSettings(BaseTab):
     def _changePassword(self):
         dlg = ChangePasswordDialog(self.db_path, self.tab_widget)
         if dlg.exec():
-            msgInfo("完成", "密碼已成功變更", self.tab_widget)
+            # 密碼已變更，登出當前身分，要求以新密碼重新登入
+            AuthManager.instance().logout()
+            msgInfo("完成", "密碼已成功變更，請以新密碼重新登入。", self.tab_widget)
 
     # ── 歸檔資料夾設定 ──────────────────────────────────────────
     def _maybeWarnArchiveRoot(self):
