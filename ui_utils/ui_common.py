@@ -112,6 +112,10 @@ def loadUi(path):
         msgCritical("錯誤", f"找不到 UI 檔案: {path}")
         return None
     f.open(QFile.ReadOnly)
-    widget = QUiLoader().load(f)
+    loader = QUiLoader()
+    # 註冊自訂元件，讓 .ui 內 class="NullableDateEdit" 的可空白日期框被正確建立
+    from .widgets import NullableDateEdit
+    loader.registerCustomWidget(NullableDateEdit)
+    widget = loader.load(f)
     f.close()
     return widget

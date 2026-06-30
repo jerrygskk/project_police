@@ -16,7 +16,7 @@ from lib.db_utils import (getConn,
                           writeAudit, buildDetail, auditStaffName)
 from .ui_common import BTN_CONFIRM, BTN_CANCEL, confirmBox
 from lib.auth_manager import AuthManager
-from ui_utils.widgets import setupFilterCombo, setupDateEditCalendarOnly
+from ui_utils.widgets import setupFilterCombo, NullableDateEdit
 
 
 class _ElidingLabel(QLabel):
@@ -629,12 +629,9 @@ QRadioButton:checked {
         self.w_subject.setPlaceholderText("請輸入陳報主旨")
         form.addRow("陳報主旨：", self.w_subject)
 
-        # 查獲日期
-        self.w_occ_date = QDateEdit()
-        self.w_occ_date.setCalendarPopup(True)
-        self.w_occ_date.setDisplayFormat("yyyy-MM-dd")
-        self.w_occ_date.setSpecialValueText(" ")
-        setupDateEditCalendarOnly(self.w_occ_date)
+        # 查獲日期（可空白；可手打 yyyy-MM-dd 或下拉月曆挑日）
+        self.w_occ_date = NullableDateEdit()
+        self.w_occ_date.setPlaceholderText("下拉選擇日期")
         form.addRow("查獲日期：", self.w_occ_date)
 
         # 報案人
@@ -713,7 +710,7 @@ QRadioButton:checked {
         if occ_date:
             self.w_occ_date.setDate(QDate.fromString(str(occ_date), "yyyy-MM-dd"))
         else:
-            self.w_occ_date.setDate(self.w_occ_date.minimumDate())
+            self.w_occ_date.clear()
 
         self.w_reporter.setText(str(reporter) if reporter else "")
 
@@ -727,8 +724,11 @@ QRadioButton:checked {
         proc_id     = self.w_processor.currentData()
         recv_id     = self.w_receiver.currentData()
         subject     = self.w_subject.text().strip()
-        occ_blank   = self.w_occ_date.date() == self.w_occ_date.minimumDate()
-        occ_date    = None if occ_blank else self.w_occ_date.date().toString("yyyy-MM-dd")
+        self.w_occ_date.validateNow()   # 送出前再驗一次（非法即亮紅框）
+        occ_blank   = self.w_occ_date.isBlank()
+        occ_err     = self.w_occ_date.hasError()
+        occ_d       = self.w_occ_date.getDate()
+        occ_date    = occ_d.toString("yyyy-MM-dd") if occ_d else None
         reporter    = self.w_reporter.text().strip()
 
         status_id = 'CS01'
@@ -743,6 +743,7 @@ QRadioButton:checked {
         if not proc_id:   errors.append("承辦人員")
         if not subject:   errors.append("陳報主旨")
         if occ_blank:     errors.append("查獲日期")
+        elif occ_err:     errors.append("查獲日期格式（請用 yyyy-MM-dd）")
         if errors:
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
             return

@@ -13,7 +13,7 @@ from lib.auth_manager import AuthManager
 from ui_utils import (
     setupPreviewTable, autoResizeTable, makeDeleteBtn, setDocIdLinkCell,
     setupFilterCombo, setupDateEditToToday, setupNullableDateEdit, refreshFilterCombo,
-    CriminalEditDialog, GeneralEditDialog, attachStickyScroll,
+    NullableDateEdit, CriminalEditDialog, GeneralEditDialog, attachStickyScroll,
 )
 
 CRIM_HEADERS = ["", "編號", "狀態", "案類", "陳報主旨", "承辦人", "受理人", "日期", "報案人"]
@@ -115,7 +115,7 @@ class TabReport(BaseTab):
         self.crim_processor = inner.findChild(QComboBox, 'crim_processor')
         self.crim_receiver  = inner.findChild(QComboBox, 'crim_receiver')
         self.crim_subject   = inner.findChild(QLineEdit, 'crim_subject')
-        self.crim_occdate   = inner.findChild(QDateEdit, 'crim_occdate')
+        self.crim_occdate   = inner.findChild(NullableDateEdit, 'crim_occdate')
         self.crim_reporter  = inner.findChild(QLineEdit, 'crim_reporter')
 
         # ── 一般欄位（rows 4-5） ──────────────────────────
@@ -202,12 +202,7 @@ class TabReport(BaseTab):
             self.rpt_date.setDate(QDate.currentDate())
             setupDateEditToToday(self.rpt_date)
         if self.crim_occdate:
-            def _occColor(is_blank, de=self.crim_occdate):
-                de.setStyleSheet(
-                    "QDateEdit { color: #a0a0a0; }" if is_blank
-                    else "QDateEdit { color: #1c1c1e; }"
-                )
-            setupNullableDateEdit(self.crim_occdate, "下拉選擇日期", _occColor)
+            setupNullableDateEdit(self.crim_occdate, "下拉選擇日期")
 
         # ── 載入參照表 ────────────────────────────────────
         self._personnel, self._depts = self._loadRef()
@@ -420,7 +415,7 @@ class TabReport(BaseTab):
         setupFilterCombo(self.crim_processor, self._personnel)
         setupFilterCombo(self.crim_receiver,  self._personnel)
         if self.crim_subject:  self.crim_subject.clear()
-        if self.crim_occdate:  self.crim_occdate.setDate(self.crim_occdate.minimumDate())
+        if self.crim_occdate:  self.crim_occdate.clear()
         if self.crim_reporter: self.crim_reporter.clear()
         if self.radio_gen_cat_a: self.radio_gen_cat_a.setChecked(True)
         setupFilterCombo(self.gen_dept,      self._depts)
@@ -450,8 +445,12 @@ class TabReport(BaseTab):
         processor_id = self.crim_processor.currentData()
         receiver_id  = self.crim_receiver.currentData()
         subject      = self.crim_subject.text().strip()  if self.crim_subject   else ""
-        occ_blank    = self.crim_occdate and self.crim_occdate.date() == self.crim_occdate.minimumDate()
-        occ_date     = None if occ_blank else (self.crim_occdate.date().toString("yyyy-MM-dd") if self.crim_occdate else None)
+        if self.crim_occdate:
+            self.crim_occdate.validateNow()   # 送出前再驗一次（非法即亮紅框）
+        occ_blank    = self.crim_occdate and self.crim_occdate.isBlank()
+        occ_err      = self.crim_occdate and self.crim_occdate.hasError()
+        occ_d        = self.crim_occdate.getDate() if self.crim_occdate else None
+        occ_date     = occ_d.toString("yyyy-MM-dd") if occ_d else None
         reporter     = self.crim_reporter.text().strip() if self.crim_reporter  else ""
 
         errors = []
@@ -460,6 +459,7 @@ class TabReport(BaseTab):
         if not processor_id: errors.append("承辦人員")
         if not subject:      errors.append("陳報主旨")
         if occ_blank:        errors.append("查獲日期")
+        elif occ_err:        errors.append("查獲日期格式（請用 yyyy-MM-dd）")
         if errors:
             msgWarning("欄位未填", f"請填寫以下必填欄位：\n{'、'.join(errors)}")
             return

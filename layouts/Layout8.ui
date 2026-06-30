@@ -66,10 +66,8 @@
            </widget>
           </item>
           <item>
-           <widget class="QDateEdit" name="audit_from">
+           <widget class="NullableDateEdit" name="audit_from">
             <property name="minimumWidth"><number>180</number></property>
-            <property name="calendarPopup"><bool>true</bool></property>
-            <property name="displayFormat"><string>yyyy-MM-dd</string></property>
            </widget>
           </item>
           <item>
@@ -78,10 +76,8 @@
            </widget>
           </item>
           <item>
-           <widget class="QDateEdit" name="audit_to">
+           <widget class="NullableDateEdit" name="audit_to">
             <property name="minimumWidth"><number>180</number></property>
-            <property name="calendarPopup"><bool>true</bool></property>
-            <property name="displayFormat"><string>yyyy-MM-dd</string></property>
            </widget>
           </item>
 

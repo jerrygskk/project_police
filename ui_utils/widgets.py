@@ -1,9 +1,12 @@
-from PySide6.QtCore import Qt, QDate, QObject, QEvent, QTimer
+from PySide6.QtCore import Qt, QDate, QObject, QEvent, QTimer, Signal, QRegularExpression
 from PySide6.QtWidgets import (
-    QComboBox, QCompleter, QLabel,
+    QComboBox, QCompleter, QLabel, QLineEdit, QCalendarWidget,
     QStyledItemDelegate, QStyle, QStyleOptionViewItem,
 )
-from PySide6.QtGui import QColor, QPainter, QTextLayout, QTextOption
+from PySide6.QtGui import (
+    QColor, QPainter, QTextLayout, QTextOption, QIcon,
+    QRegularExpressionValidator,
+)
 
 
 def runWithBusy(parent, func, text="更新中，請稍候…", min_ms=350):
@@ -115,76 +118,172 @@ def setupDateEditCalendarOnly(date_edit):
     cal._calef = ef   # 防止被 GC 回收
 
 
-def nullableDateKeyAction(is_blank, key, text):
-    """可空白 QDateEdit 的鍵盤事件決策（純邏輯，便於單測）。
+def normalizeDateText(text):
+    """把使用者輸入正規化成 `yyyy-MM-dd`（純邏輯，便於單測）。
 
-    欄位停在 minimumDate（空白）時，QDateEdit 顯示 specialValueText、收不到
-    數字鍵編輯，使用者體感「鍵盤打不動」。本函式判斷該如何讓它離開特殊值：
-      'forward' = 先跳今天，再讓此鍵落到段位上繼續編輯（數字鍵）
-      'consume' = 先跳今天並消化此鍵，避免在今天之上再 ±1（上下／翻頁鍵）
-      None      = 不介入（已有值，或非編輯鍵，照 Qt 原行為）
+    - 三段且皆數字（2025-1-3 / 2025-01-30）→ 補零成 2025-01-03
+    - 否則抽出所有數字，剛好 8 碼 → 拆成 yyyy-MM-dd
+      （容 20250130 / 2026-0125 / 2026/01/25 等混合寫法）
+    - 仍無法判定 → 原樣回傳，交由 classifyNullableDate 判非法
     """
-    if not is_blank:
-        return None
-    if text and text.isdigit():
-        return 'forward'
-    if key in (Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown):
-        return 'consume'
-    return None
+    t = (text or "").strip()
+    if not t:
+        return ""
+    # 1) 年-月-日三段（允許單位數）→ 補零
+    if "-" in t:
+        parts = t.split("-")
+        if len(parts) == 3 and all(p.isdigit() and p for p in parts):
+            y, m, d = parts
+            return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+    # 2) 抽出所有數字，剛好 8 碼 → yyyy-MM-dd
+    digits = "".join(ch for ch in t if ch.isdigit())
+    if len(digits) == 8:
+        return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+    return t
+
+
+def classifyNullableDate(text):
+    """判定可空白日期輸入的狀態（純邏輯，便於單測）。
+
+    回傳 (status, QDate|None)：
+      'empty'   空字串              → (… , None)
+      'valid'   合法且能 round-trip → (… , QDate)
+      'invalid' 非空但不是合法日期  → (… , None)
+    """
+    t = (text or "").strip()
+    if not t:
+        return ('empty', None)
+    norm = normalizeDateText(t)
+    qd = QDate.fromString(norm, "yyyy-MM-dd")
+    if qd.isValid() and qd.toString("yyyy-MM-dd") == norm:
+        return ('valid', qd)
+    return ('invalid', None)
+
+
+_DATE_ERR_CSS = "QLineEdit { border: 2px solid #d9534f; }"
+
+
+class NullableDateEdit(QLineEdit):
+    """可空白日期框（治本版）：底層是 QLineEdit，不再用 QDateEdit 的 minimumDate
+    哨兵。因此天生支援「整格清空 → 自由手打 2025-01-30」，不會被 fixup 還原、
+    也不會冒 1752/1753 殘值。
+
+    行為：
+    - **手打**：直接輸入 `yyyy-MM-dd`（或連打 8 位數字，離開時自動補分隔）。
+    - **月曆**：右側箭頭圖示開 `QCalendarWidget` popup 挑日。
+    - **驗證**：離開欄位（focus-out / Enter）即判定；非空但非法 → 亮紅框。
+      手打過程中不嘮叨（紅框只在離開時亮、再次編輯即收）。
+    - **空白**：合法的「未填」狀態（必填與否由呼叫端決定）。
+
+    對外 API（取代舊的 .date()/.minimumDate() 慣用法）：
+      getDate()  -> QDate | None    （空白或非法皆 None）
+      isBlank()  -> bool            （文字為空）
+      hasError() -> bool            （非空且非法）
+      setDate(QDate|None)           （None/非法＝清空）
+      validateNow()                 （送出前強制驗證並亮紅框）
+      changed   訊號                （離開欄位／挑日／清空後發出）
+    """
+
+    changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._base_css = ""        # 呼叫端可注入的基底樣式（如稽核頁 12pt）
+        self._cal = None           # 月曆 popup（延遲建立）
+        self.setMaxLength(10)      # yyyy-MM-dd
+        # 鍵盤層只放行數字與 - / 分隔符；英文字母與其他符號打不進來
+        # （只擋使用者按鍵；setText/月曆挑日等程式設值不受影響）
+        self.setValidator(QRegularExpressionValidator(
+            QRegularExpression(r"[0-9/\-]*"), self))
+        # 右側箭頭圖示：點擊開月曆
+        self._cal_action = self.addAction(
+            QIcon(":/arrow.svg"), QLineEdit.TrailingPosition)
+        self._cal_action.triggered.connect(self._openCalendar)
+        self.textEdited.connect(lambda *_: self._showError(False))   # 編輯中收紅框
+        self.editingFinished.connect(self.validateNow)               # 離開即驗證
+        self._applyStyle(False)
+
+    # ── 樣式 ──────────────────────────────────────────────────
+    def setBaseCss(self, css):
+        """注入基底 QLineEdit 樣式（與紅框錯誤態共存，不互相洗掉）。"""
+        self._base_css = css or ""
+        self._applyStyle(self._error_shown())
+
+    def _error_shown(self):
+        return _DATE_ERR_CSS in (self.styleSheet() or "")
+
+    def _applyStyle(self, error):
+        border = "border: 2px solid #d9534f;" if error else ""
+        self.setStyleSheet(f"QLineEdit {{ {self._base_css} {border} }}")
+
+    def _showError(self, error):
+        self._applyStyle(error)
+
+    # ── 驗證 ──────────────────────────────────────────────────
+    def validateNow(self):
+        status, qd = classifyNullableDate(self.text())
+        if status == 'valid':
+            canon = qd.toString("yyyy-MM-dd")
+            if self.text() != canon:
+                self.setText(canon)   # 正規化顯示（不再觸發 editingFinished）
+        self._showError(status == 'invalid')
+        self.changed.emit()
+
+    # ── 對外查詢 ──────────────────────────────────────────────
+    def getDate(self):
+        status, qd = classifyNullableDate(self.text())
+        return qd if status == 'valid' else None
+
+    def isBlank(self):
+        return not self.text().strip()
+
+    def hasError(self):
+        return classifyNullableDate(self.text())[0] == 'invalid'
+
+    # ── 設值 ──────────────────────────────────────────────────
+    def setDate(self, qdate):
+        if qdate is None or not qdate.isValid():
+            self.setText("")
+        else:
+            self.setText(qdate.toString("yyyy-MM-dd"))
+        self._showError(False)
+        self.changed.emit()
+
+    def clear(self):
+        super().clear()
+        self._showError(False)
+        self.changed.emit()
+
+    # ── 月曆 popup ────────────────────────────────────────────
+    def _openCalendar(self):
+        if self._cal is None:
+            self._cal = QCalendarWidget(self)
+            self._cal.setWindowFlags(Qt.Popup)
+            # 不設 gridVisible：維持與其他日期欄一致的無格線外觀
+            # 關掉最左側週數欄（垂直表頭）
+            self._cal.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader)
+            self._cal.clicked.connect(self._onPick)
+            self._cal.activated.connect(self._onPick)
+        status, qd = classifyNullableDate(self.text())
+        self._cal.setSelectedDate(qd if status == 'valid' else QDate.currentDate())
+        pos = self.mapToGlobal(self.rect().bottomLeft())
+        self._cal.move(pos)
+        self._cal.show()
+
+    def _onPick(self, qd):
+        if self._cal:
+            self._cal.hide()
+        self.setText(qd.toString("yyyy-MM-dd"))
+        self.validateNow()
 
 
 def setupNullableDateEdit(date_edit, special_text, on_blank_changed=None):
-    """設定「可空白」QDateEdit，修掉空白哨兵的兩個互動雷：
+    """設定可空白日期框：填入空白提示文字（灰字 placeholder）。
 
-    1. 空白（date==minimumDate）時鍵盤打不動 → 裝事件過濾器攔截數字／上下／
-       翻頁鍵與滾輪，先跳今天離開特殊值再正常編輯，使用者怎麼亂點都不會卡死。
-    2. 每次 dateChanged 都 setStyleSheet 重設樣式會重建內部 QLineEdit、打斷
-       正在進行的鍵盤編輯 → 改成只在「空白↔有值」切換時才回呼 on_blank_changed
-       （且延遲到事件處理完才換樣式，不干擾當下按鍵）。
-
-    呼叫前若需自訂 minimumDate（如稽核頁 QDate(2000,1,1)），先自行 setMinimumDate。
-    on_blank_changed(is_blank)：可選，由呼叫端據以換色／樣式（會在初始化先呼叫一次）。
+    保留舊簽名以相容既有呼叫端；`on_blank_changed` 不再需要（placeholder 自帶
+    灰字、紅框由元件自管），保留參數僅為相容，會被忽略。
     """
-    date_edit.setSpecialValueText(special_text)
-    date_edit.setDate(date_edit.minimumDate())   # 起始空白
-    setupDateEditCalendarOnly(date_edit)         # 空白時開月曆導到今天月份
-
-    # ── 只在「空白↔有值」切換時換樣式（避免每鍵重建 QLineEdit）──
-    state = {'blank': date_edit.date() == date_edit.minimumDate()}
-
-    def _onChanged(*_):
-        is_blank = date_edit.date() == date_edit.minimumDate()
-        if is_blank != state['blank']:
-            state['blank'] = is_blank
-            if on_blank_changed:
-                # 延遲到當前事件處理完再換樣式，避免重建 QLineEdit 打斷按鍵
-                QTimer.singleShot(0, lambda b=is_blank: on_blank_changed(b))
-
-    date_edit.dateChanged.connect(_onChanged)
-    if on_blank_changed:
-        on_blank_changed(state['blank'])   # 初始狀態先上色
-
-    # ── 鍵盤／滾輪離開特殊值 ──
-    class _BlankEntryFilter(QObject):
-        def eventFilter(self, obj, event):
-            et = event.type()
-            is_blank = date_edit.date() == date_edit.minimumDate()
-            if et == QEvent.Type.KeyPress:
-                action = nullableDateKeyAction(is_blank, event.key(), event.text())
-                if action == 'forward':
-                    date_edit.setDate(QDate.currentDate())
-                    return False   # 讓數字鍵落到今天的段位上
-                if action == 'consume':
-                    date_edit.setDate(QDate.currentDate())
-                    return True    # 消化掉，避免再 ±1
-            elif et == QEvent.Type.Wheel and is_blank:
-                date_edit.setDate(QDate.currentDate())
-                return True
-            return False
-
-    ef = _BlankEntryFilter(date_edit)
-    date_edit.installEventFilter(ef)
-    date_edit._blankef = ef   # 防止被 GC 回收
+    date_edit.setPlaceholderText(special_text)
 
 
 def setupFilterCombo(combo, data_list):
