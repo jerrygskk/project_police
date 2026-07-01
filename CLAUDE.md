@@ -139,6 +139,7 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 - **`QTableWidget`/`QAbstractScrollArea` 滾輪攔不到** → 滾輪事件在 `viewport()`：於 `table.viewport()` `installEventFilter` 攔 `QEvent.Wheel`，filter 存成屬性防 GC（覆寫 `wheelEvent` 無效）。
 - **confirmBox 確認/取消鈕被左右調換** → 兩鈕都用 `ActionRole`（`AcceptRole`/`RejectRole` 會依 OS 慣例調換），手動 `setDefaultButton`+`setEscapeButton`。
 - **`QDateEdit` 月曆打開停在 1752／空白哨兵相關亂象** → minimumDate 哨兵所致。**必填**日期欄（預設今天、不需空白）用 `setupDateEditToToday` 捲到今月即可。**可留空又要手打的欄位千萬別用 QDateEdit**——拿分段遮罩 spinbox 當可空白欄會反覆出包（空白時鍵盤打不動、亂點冒 `1752/1753` 殘值、整格清空後手打半成品被 fixup 還原）。改用 `NullableDateEdit`（QLineEdit 子類，治本，見 DEVELOPER.md §5「可空白日期框」）。
+- **表格內用 `QStyledItemDelegate.createEditor()` 塞 `QLineEdit` 編輯框，固定列高裡數字下緣被裁切** → 全域 `theme.py` 對所有 `QLineEdit` 套 `padding: 6px 10px`，疊上編輯時 focus 的 2px 邊框，固定列高（如 36px）扣一扣空間就不夠。editor 要顯式歸零 `padding`/`margin`（border 不覆寫，沿用 theme.py 原值）。⚠️ 容器內離線量測（無真實 GUI、無 Windows 125% 縮放）這類問題會失準，算出來「應該塞得下」不代表實機真的塞得下，**這類視覺裁切問題最終仍要上機才能定案**，別只憑 `QFontMetrics`/`sizeHint` 的數字就回報「修好了」。
 
 #### 4. 版面／模式切換抖動（多見於 `tab_report._switchFormType`）
 - **隱藏列幽靈間距、兩模式下方表格高度不一** → `verticalSpacing=0`、列距改 `setRowMinimumHeight`；兩模式 form 總高設成相同固定值（如刑案 4×45、一般 3×60＝180）。
