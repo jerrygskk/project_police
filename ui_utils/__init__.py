@@ -30,8 +30,9 @@ from .help_dialog import helpDialog, attachHelpButton
 from .edit_dialog import TaskEditDialog, CriminalEditDialog, GeneralEditDialog
 from .settings_dialogs import (
     RefItemDialog, REF_PERSONNEL, REF_DEPT, REF_CASETYPE,
-    ChangePasswordDialog, ResetDialog, ArchiveRootDialog, PrintTitleDialog,
+    ChangePasswordDialog, ResetDialog,
 )
+from .settings_panels import ArchiveRootPanel, PrintTitlePanel, IdleTimeoutPanel
 
 __all__ = [
     "msgInfo", "msgWarning", "msgCritical", "reportError", "confirmBox", "loadUi",
@@ -67,5 +68,6 @@ __all__ = [
     "GeneralEditDialog",
     "FIXED_COL_WIDTHS",
     "RefItemDialog", "REF_PERSONNEL", "REF_DEPT", "REF_CASETYPE",
-    "ChangePasswordDialog", "ResetDialog", "ArchiveRootDialog", "PrintTitleDialog",
+    "ChangePasswordDialog", "ResetDialog",
+    "ArchiveRootPanel", "PrintTitlePanel", "IdleTimeoutPanel",
 ]

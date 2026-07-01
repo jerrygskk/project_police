@@ -136,28 +136,35 @@ class DocumentManager:
         self._updateTitle(AuthManager.instance().current_role)
         AuthManager.instance().role_changed.connect(self._updateTitle)
 
-        # 閒置 10 分鐘自動登出（僅管理者／歸檔管理）
-        self._IDLE_TIMEOUT_MS = 10 * 60 * 1000
+        # 閒置逾時（分）可於設定頁「系統設定」調整，存 App_Settings；
+        # 啟動時讀一次（改值須重啟生效），讀不到／不合法走預設（登出 10、關閉 14.5），
+        # 0＝停用該機制（不啟動計時器）。自動登出：僅管理者／歸檔管理計時。
+        from lib.db_utils import getIdleTimeoutsMs
+        logout_ms, close_ms = getIdleTimeoutsMs(self.db_path)
+        self._IDLE_TIMEOUT_MS = logout_ms
         self._idle_timer = QTimer(self.window)
         self._idle_timer.setSingleShot(True)
         self._idle_timer.timeout.connect(self._onIdleTimeout)
-        # 閒置 14 分半自動關閉整支程式（不分身分，一律計時）。
-        # ⚠️ 刻意設在 Windows（AD 部署）15 分鐘鎖螢幕之前：DB／鎖檔在 SMB 網路碟，
-        # 本程式須趕在系統把畫面切回登入前先關閉、清掉 dbfile.lock，否則 A 的程式
-        # 在鎖螢幕後仍於背景續跑並更新心跳，會一直卡住別台電腦的 B 登入。勿改回整數。
-        self._CLOSE_TIMEOUT_MS = (14 * 60 + 30) * 1000
+        # 閒置自動關閉整支程式（不分身分，一律計時）。
+        # ⚠️ 預設 14.5 分刻意設在 Windows（AD 部署）15 分鐘鎖螢幕之前：DB／鎖檔在
+        # SMB 網路碟，本程式須趕在系統把畫面切回登入前先關閉、清掉 dbfile.lock，
+        # 否則 A 的程式在鎖螢幕後仍於背景續跑並更新心跳，會一直卡住別台電腦的 B 登入。
+        # 現場調整此值時務必維持「低於該單位鎖螢幕時間」（此約束不放 UI，維護者默契）；
+        # 設 0 停用時同樣要自行承擔上述 SMB 鎖檔風險。
+        self._CLOSE_TIMEOUT_MS = close_ms
         self._close_timer = QTimer(self.window)
         self._close_timer.setSingleShot(True)
         self._close_timer.timeout.connect(self._onIdleClose)
-        self._close_timer.start(self._CLOSE_TIMEOUT_MS)
+        if self._CLOSE_TIMEOUT_MS > 0:
+            self._close_timer.start(self._CLOSE_TIMEOUT_MS)
         self._installIdleFilter()
 
     def _updateTitle(self, role):
         suffix = {'admin': '管理者模式', 'archive': '歸檔管理'}.get(role, '一般使用者')
         self.window.setWindowTitle(f"{self._base_title}  [{suffix}]  - v{__version__}")
-        # 登入時啟動計時，登出時停掉（管理者與歸檔管理皆計時）
+        # 登入時啟動計時，登出時停掉（管理者與歸檔管理皆計時）；0＝停用
         if hasattr(self, '_idle_timer'):
-            if role in ('admin', 'archive'):
+            if role in ('admin', 'archive') and self._IDLE_TIMEOUT_MS > 0:
                 self._idle_timer.start(self._IDLE_TIMEOUT_MS)
             else:
                 self._idle_timer.stop()
@@ -172,10 +179,11 @@ class DocumentManager:
                 t = ev.type()
                 if t in (QEvent.MouseButtonPress, QEvent.MouseMove,
                          QEvent.KeyPress, QEvent.Wheel):
-                    # 任何操作都重設「自動關閉」計時（不分身分）
-                    mgr._close_timer.start(mgr._CLOSE_TIMEOUT_MS)
+                    # 任何操作都重設「自動關閉」計時（不分身分；0＝停用不計時）
+                    if mgr._CLOSE_TIMEOUT_MS > 0:
+                        mgr._close_timer.start(mgr._CLOSE_TIMEOUT_MS)
                     # 「自動登出」計時僅管理者／歸檔管理
-                    if AuthManager.instance().is_manager():
+                    if AuthManager.instance().is_manager() and mgr._IDLE_TIMEOUT_MS > 0:
                         mgr._idle_timer.start(mgr._IDLE_TIMEOUT_MS)
                 return False
 

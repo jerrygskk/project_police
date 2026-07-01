@@ -509,6 +509,48 @@ def printTitlesUnset(db_path):
             return True
     return False
 
+
+# ══════════════════════════════════════════════════════════════════
+# 閒置逾時（設定頁「系統設定」可調；存 App_Settings，未設定/不合法走預設）
+# ──────────────────────────────────────────────────────────────────
+# close 預設 14.5 分：刻意低於 Windows（AD 部署）15 分鎖螢幕，搶先關閉並
+# 清 SMB dbfile.lock（詳見 main.py 計時器註解與 DEVELOPER.md §3「閒置處理」）。
+# ⚠️ 此約束不放 UI（維護者層級默契），設定頁僅驗證「關閉 > 登出」。
+# 跨年度重置不清這些 key（單位環境常數，見 performYearEndReset）。
+IDLE_TIMEOUT_KEYS = {"logout": "idle_logout_min", "close": "idle_close_min"}
+IDLE_TIMEOUT_DEFAULTS = {"logout": 10.0, "close": 14.5}
+IDLE_TIMEOUT_RANGE = (1.0, 60.0)
+
+
+def parseIdleMinutes(which, raw):
+    """App_Settings 存的字串 → 分鐘數（float）。
+    0 為合法值＝該機制停用（不計時）；其餘非數字／超出範圍 → 回該項預設
+    （DB 值被手動改壞時的保底）。"""
+    try:
+        val = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return IDLE_TIMEOUT_DEFAULTS[which]
+    if val == 0:
+        return 0.0
+    lo, hi = IDLE_TIMEOUT_RANGE
+    if not (lo <= val <= hi):
+        return IDLE_TIMEOUT_DEFAULTS[which]
+    return val
+
+
+def getIdleTimeoutsMs(db_path):
+    """回傳 (自動登出 ms, 強制關閉 ms)；0＝停用該機制（呼叫端勿啟動計時器）。
+    讀不到或不合法一律走預設，不拋例外。"""
+    mins = {}
+    for which, key in IDLE_TIMEOUT_KEYS.items():
+        try:
+            raw = getSetting(db_path, key, "")
+        except Exception:
+            raw = ""
+        mins[which] = parseIdleMinutes(which, raw)
+    return int(mins["logout"] * 60000), int(mins["close"] * 60000)
+
+
 _PDF_INDEX_CACHE = {}   # base_dir -> {nfc(檔名): 完整路徑}
 
 

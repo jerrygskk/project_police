@@ -35,7 +35,8 @@ from ui_utils import (
 )
 from ui_utils import (
     RefItemDialog, REF_PERSONNEL, REF_DEPT, REF_CASETYPE,
-    ChangePasswordDialog, ResetDialog, ArchiveRootDialog, PrintTitleDialog,
+    ChangePasswordDialog, ResetDialog,
+    ArchiveRootPanel, PrintTitlePanel, IdleTimeoutPanel,
     preserveScroll,
 )
 from ui_utils.settings_dialogs import _parseSeqMoveTarget
@@ -180,6 +181,7 @@ class TabSettings(BaseTab):
     _PAGE_DEPT      = 1
     _PAGE_CASETYPE  = 2
     _PAGE_TRASH     = 3
+    _PAGE_SYSTEM    = 4
 
     def setup(self, tab_index):
         tab = self.tab_widget.widget(tab_index)
@@ -218,15 +220,12 @@ class TabSettings(BaseTab):
             inner.findChild(QPushButton, "btn_nav_dept"),
             inner.findChild(QPushButton, "btn_nav_casetype"),
             inner.findChild(QPushButton, "btn_nav_trash"),
+            inner.findChild(QPushButton, "btn_nav_system"),
         ]
         btn_change_pwd = inner.findChild(QPushButton, "btn_change_pwd")
         btn_year_reset = inner.findChild(QPushButton, "btn_year_reset")
         self._btn_year_reset = btn_year_reset
         btn_logout     = inner.findChild(QPushButton, "btn_logout")
-        btn_archive_root = inner.findChild(QPushButton, "btn_archive_root")
-        self._btn_archive_root = btn_archive_root
-        btn_print_titles = inner.findChild(QPushButton, "btn_print_titles")
-        self._btn_print_titles = btn_print_titles
 
         # 三子頁的表格、新增/修改/儲存排序按鈕
         self.tbl_personnel = inner.findChild(QTableWidget, "tbl_personnel")
@@ -261,13 +260,6 @@ class TabSettings(BaseTab):
         btn_change_pwd.setStyleSheet(_NAV_BOTTOM)
         btn_year_reset.setStyleSheet(_NAV_DANGER)
         btn_logout.setStyleSheet(_NAV_BOTTOM)
-        if btn_archive_root:
-            btn_archive_root.setStyleSheet(_NAV_BOTTOM)
-        if btn_print_titles:
-            # 含 :disabled 灰字（歸檔管理反灰需要，見 §2 雷：無 :disabled 不會變灰）
-            btn_print_titles.setStyleSheet(
-                _NAV_BOTTOM
-                + "QPushButton:disabled { color: #c5c5c9; background-color: transparent; }")
 
         # ── 綁定 signal ──
         self.w_password.returnPressed.connect(self._doLogin)
@@ -277,10 +269,6 @@ class TabSettings(BaseTab):
         btn_change_pwd.clicked.connect(self._changePassword)
         btn_year_reset.clicked.connect(self._doReset)
         btn_logout.clicked.connect(self._doLogout)
-        if btn_archive_root:
-            btn_archive_root.clicked.connect(self._onSetArchiveRoot)
-        if btn_print_titles:
-            btn_print_titles.clicked.connect(self._onSetPrintTitles)
 
         # ── 初始化三頁的表格與排序暫存狀態 ──
         self._initRefPage("personnel", self.tbl_personnel,
@@ -311,6 +299,24 @@ class TabSettings(BaseTab):
             hint_label=self._lbl_hint_trash,
             parent=self.tab_widget,
             sibling_reload=self._flagSiblingReload)
+
+        # ── 系統設定子頁：三個嵌入面板掛進捲動容器（ui_utils/settings_panels.py）──
+        scroll = inner.findChild(QWidget, "system_scroll")
+        if scroll:
+            # 捲動區透明化，沿用頁面底色（QScrollArea 預設灰底會突兀）
+            scroll.setStyleSheet(
+                "QScrollArea { background: transparent; border: none; }"
+                "QScrollArea > QWidget > QWidget { background: transparent; }")
+        sys_content = inner.findChild(QWidget, "system_scroll_content")
+        self._panel_archive_root = ArchiveRootPanel(self.db_path, sys_content)
+        self._panel_print_title  = PrintTitlePanel(self.db_path, sys_content)
+        self._panel_idle         = IdleTimeoutPanel(self.db_path, sys_content)
+        if sys_content and sys_content.layout():
+            sys_lay = sys_content.layout()
+            sys_lay.addWidget(self._panel_archive_root)
+            sys_lay.addWidget(self._panel_print_title)
+            sys_lay.addWidget(self._panel_idle)
+            sys_lay.addStretch()
 
         self._outer_stack.setCurrentIndex(0)
 
@@ -484,7 +490,7 @@ class TabSettings(BaseTab):
         for i, btn in enumerate(self._nav_btns):
             btn.setStyleSheet(_NAV_ACTIVE if i == idx else _NAV_INACTIVE)
         loaders = [self._loadPersonnel, self._loadDept,
-                   self._loadCaseType, self._loadTrash]
+                   self._loadCaseType, self._loadTrash, self._loadSystem]
         loaders[idx]()
 
     def on_activated(self):
@@ -501,7 +507,7 @@ class TabSettings(BaseTab):
 
         idx = self._inner_stack.currentIndex()
         loaders = [self._loadPersonnel, self._loadDept,
-                   self._loadCaseType, self._loadTrash]
+                   self._loadCaseType, self._loadTrash, self._loadSystem]
         if 0 <= idx < len(loaders):
             loaders[idx]()
 
@@ -559,14 +565,18 @@ class TabSettings(BaseTab):
         if self._btn_year_reset:
             self._btn_year_reset.setEnabled(is_admin)
 
-        # 簽收表標題設定（僅 admin；歸檔管理可見但反灰）
-        if getattr(self, "_btn_print_titles", None):
-            self._btn_print_titles.setEnabled(is_admin)
-
         # 資源回收筒：admin 可用；歸檔管理可見但停用（反灰，與其他維護功能一致）
         if self._nav_btns[self._PAGE_TRASH]:
             self._nav_btns[self._PAGE_TRASH].setVisible(True)
             self._nav_btns[self._PAGE_TRASH].setEnabled(is_admin)
+
+        # 系統設定子頁：兩身分都可進；簽收表標題／閒置逾時面板僅 admin
+        # （setEnabled(False) 停用整塊含所有輸入路徑；面板 _save 另有權限 guard 保底）
+        # 歸檔資料夾面板維持 admin/archive 皆可改（比照原 Dialog 開放範圍）
+        if getattr(self, "_panel_print_title", None):
+            self._panel_print_title.setEnabled(is_admin)
+        if getattr(self, "_panel_idle", None):
+            self._panel_idle.setEnabled(is_admin)
 
     # ── 身份切換監聽：登出時回到密碼驗證畫面 ─────────────────────
     def _onRoleChanged(self, role):
@@ -579,6 +589,9 @@ class TabSettings(BaseTab):
             self.w_password.clear()
             self.lbl_login_err.setText("")
             self._arch_warn_shown = False  # 重置，下次登入仍會檢查
+            # 登出＝放棄系統設定面板未存變更（殘留 dirty 會卡住下次登入的切頁提示）
+            for p in self._dirtyPanels():
+                p.reload()
 
     # ── 變更密碼 ────────────────────────────────────────────────
     def _changePassword(self):
@@ -598,22 +611,20 @@ class TabSettings(BaseTab):
         self._arch_warn_shown = True
         if confirmBox(
             "歸檔資料夾未設定",
-            "歸檔根目錄尚未設定。\n是否現在前往「歸檔資料夾」更新？",
+            "歸檔根目錄尚未設定。\n是否現在前往「系統設定」更新？",
             confirm_text="前往設定", cancel_text="稍後",
             default_confirm=True, parent=self.tab_widget
         ):
-            self._onSetArchiveRoot()
+            self._switchPage(self._PAGE_SYSTEM)
 
-    def _onSetArchiveRoot(self):
-        """設定/更新瀏覽頁開啟電子檔用的歸檔資料夾（年度層 UNC + 刑案/一般子夾名）。"""
-        ArchiveRootDialog(self.db_path, self.tab_widget).exec()
-
-    # ── 簽收表標題設定（僅 admin）──────────────────────────────────
-    def _onSetPrintTitles(self):
-        """自訂簽收表 PDF 標題列／現行犯註記文字。"""
-        if not AuthManager.instance().is_admin():
-            return
-        PrintTitleDialog(self.db_path, self.tab_widget).exec()
+    # ── 系統設定子頁（歸檔資料夾／簽收表標題／閒置逾時三面板）──────
+    def _loadSystem(self):
+        """切入系統設定子頁時重讀三面板的 DB 值，確保畫面與 DB 一致。"""
+        for p in (getattr(self, "_panel_archive_root", None),
+                  getattr(self, "_panel_print_title", None),
+                  getattr(self, "_panel_idle", None)):
+            if p:
+                p.reload()
 
     # ── 跨年度重置 ──────────────────────────────────────────────
     def _doReset(self):
@@ -681,19 +692,12 @@ class TabSettings(BaseTab):
                         self.tab_widget)
             return
 
-        # 4.5 新年度開始：提示更新本年度歸檔資料夾
-        #     （重置已清空 archive_root，須於新年度重新指定，故主動提醒）
-        if confirmBox(
-                "更新歸檔資料夾",
-                "新年度開始，是否現在更新本年度的歸檔資料夾位置？\n"
-                "（稍後仍可於設定頁的「歸檔資料夾」變更。）",
-                confirm_text="更新", cancel_text="稍後",
-                default_confirm=True, parent=self.tab_widget):
-            ArchiveRootDialog(self.db_path, self.tab_widget).exec()
-
         # 5. 完成提示 → 按確定後重啟程式
+        #    （歸檔資料夾已清空，重啟後首次登入設定頁時 _maybeWarnArchiveRoot
+        #      會提示並導向「系統設定」重新指定，此處不再另開設定流程）
         msgInfo("重置完成",
-                "跨年度重置已完成。\n\n"
+                "跨年度重置已完成，歸檔資料夾已清空，"
+                "請於重新啟動後至設定頁「系統設定」重新指定。\n\n"
                 "按下確定後，程式將自動關閉並重新啟動，重啟前畫面會短暫消失，"
                 "屬正常現象。", self.tab_widget)
         self._restartApp()
@@ -883,19 +887,30 @@ class TabSettings(BaseTab):
         st["save_btn"].setEnabled(was_dirty)
         self._renderSortTable(key)
 
+    def _dirtyPanels(self):
+        """系統設定子頁三面板中有未存變更者（切頁/離開提示用）。"""
+        return [p for p in (getattr(self, "_panel_archive_root", None),
+                            getattr(self, "_panel_print_title", None),
+                            getattr(self, "_panel_idle", None))
+                if p and p.isDirty()]
+
     def _promptUnsaved(self, context="edit"):
-        """有未存排序時詢問。
-        context='edit'  ：取消=保留排序、中止動作（回 False）
+        """有未存排序或未存系統設定時詢問（兩者不會同時發生：
+        排序 dirty 在切離該子頁時就被本函式擋下處理）。
+        context='edit'  ：取消=保留變更、中止動作（回 False）
         context='switch'：同 edit，文字為切換頁面
-        context='leave' ：一律回傳 True(按離開=放棄排序、按儲存=存檔)"""
-        if not self._hasUnsavedSort():
+        context='leave' ：一律回傳 True(按離開=放棄變更、按儲存=存檔)"""
+        sort_dirty   = self._hasUnsavedSort()
+        dirty_panels = self._dirtyPanels()
+        if not sort_dirty and not dirty_panels:
             return True
+        noun = "排序" if sort_dirty else "設定"
         if context == "leave":
-            title, msg, confirm, cancel = "排序未儲存", "離開將遺失排序資料", "儲存", "離開"
+            title, msg, confirm, cancel = f"{noun}未儲存", f"離開將遺失{noun}資料", "儲存", "離開"
         elif context == "switch":
-            title, msg, confirm, cancel = "排序未儲存", "儲存目前排序後切換頁面？", "儲存", "取消"
+            title, msg, confirm, cancel = f"{noun}未儲存", f"儲存目前{noun}後切換頁面？", "儲存", "取消"
         else:
-            title, msg, confirm, cancel = "排序未儲存", "儲存目前排序後繼續編輯？", "儲存", "取消"
+            title, msg, confirm, cancel = f"{noun}未儲存", f"儲存目前{noun}後繼續編輯？", "儲存", "取消"
         ret = confirmBox(
             title, msg,
             confirm_text=confirm, cancel_text=cancel, parent=self.tab_widget)
@@ -903,14 +918,22 @@ class TabSettings(BaseTab):
             for k, s in self._sort_state.items():
                 if s["dirty"]:
                     self._saveSort(k)
+            # 面板存檔（成功即儲存鈕回灰，無成功彈窗）；
+            # 任一存檔被擋（驗證失敗/必填空白）→ 中止切換、留在頁面修正
+            for p in dirty_panels:
+                if not p._save():
+                    if context != "leave":
+                        return False
             return True
         # 按了取消 / 離開
         if context == "leave":
             for s in self._sort_state.values():
                 s["dirty"] = False
                 s["save_btn"].setEnabled(False)
+            for p in dirty_panels:
+                p.reload()      # 放棄變更＝重讀 DB 值、重設 dirty 基準
             return True
-        # edit / switch 取消：保留排序、回報中止
+        # edit / switch 取消：保留變更、回報中止
         return False
 
     # ════════════════════════════════════════════════════════════
