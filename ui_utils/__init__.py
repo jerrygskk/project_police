@@ -29,9 +29,7 @@ from .table   import (
 from .help_dialog import helpDialog, attachHelpButton
 from .edit_dialog import TaskEditDialog, CriminalEditDialog, GeneralEditDialog
 from .settings_dialogs import (
-    PersonnelAddDialog, PersonnelEditDialog,
-    DeptAddDialog, DeptEditDialog,
-    CaseTypeAddDialog, CaseTypeEditDialog,
+    RefItemDialog, REF_PERSONNEL, REF_DEPT, REF_CASETYPE,
     ChangePasswordDialog, ResetDialog, ArchiveRootDialog, PrintTitleDialog,
 )
 
@@ -68,8 +66,6 @@ __all__ = [
     "CriminalEditDialog",
     "GeneralEditDialog",
     "FIXED_COL_WIDTHS",
-    "PersonnelAddDialog", "PersonnelEditDialog",
-    "DeptAddDialog", "DeptEditDialog",
-    "CaseTypeAddDialog", "CaseTypeEditDialog",
+    "RefItemDialog", "REF_PERSONNEL", "REF_DEPT", "REF_CASETYPE",
     "ChangePasswordDialog", "ResetDialog", "ArchiveRootDialog", "PrintTitleDialog",
 ]

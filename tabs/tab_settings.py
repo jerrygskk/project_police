@@ -34,9 +34,7 @@ from ui_utils import (
     BTN_CONFIRM, BTN_CANCEL, loadUi,
 )
 from ui_utils import (
-    PersonnelAddDialog, PersonnelEditDialog,
-    DeptAddDialog, DeptEditDialog,
-    CaseTypeAddDialog, CaseTypeEditDialog,
+    RefItemDialog, REF_PERSONNEL, REF_DEPT, REF_CASETYPE,
     ChangePasswordDialog, ResetDialog, ArchiveRootDialog, PrintTitleDialog,
     preserveScroll,
 )
@@ -910,7 +908,7 @@ class TabSettings(BaseTab):
     def _addPersonnel(self):
         if not self._refEditable():
             return
-        dlg = PersonnelAddDialog(self.db_path, self.tab_widget)
+        dlg = RefItemDialog(REF_PERSONNEL, self.db_path, parent=self.tab_widget)
         if dlg.exec():
             self._ref_dirty = True
             self._reloadPreservingOrder("personnel")   # 保留未存拖拉順序
@@ -930,7 +928,8 @@ class TabSettings(BaseTab):
         sid    = srow[0]              # 真 PK，給 UPDATE 用
         sname  = srow[1]
         active = bool(srow[2])
-        dlg = PersonnelEditDialog(self.db_path, sid, row + 1, sname, active, self.tab_widget)
+        dlg = RefItemDialog(REF_PERSONNEL, self.db_path,
+                            existing=(sid, row + 1, sname, active), parent=self.tab_widget)
         if dlg.exec():
             if dlg.get_result():
                 self._ref_dirty = True
@@ -948,7 +947,7 @@ class TabSettings(BaseTab):
     def _addDept(self):
         if not self._refEditable():
             return
-        dlg = DeptAddDialog(self.db_path, self.tab_widget)
+        dlg = RefItemDialog(REF_DEPT, self.db_path, parent=self.tab_widget)
         if dlg.exec():
             self._ref_dirty = True
             self._reloadPreservingOrder("dept")        # 保留未存拖拉順序
@@ -968,7 +967,8 @@ class TabSettings(BaseTab):
         did    = drow[0]             # 真 PK，給 UPDATE 用
         dname  = drow[1]
         active = bool(drow[2])
-        dlg = DeptEditDialog(self.db_path, did, row + 1, dname, active, self.tab_widget)
+        dlg = RefItemDialog(REF_DEPT, self.db_path,
+                            existing=(did, row + 1, dname, active), parent=self.tab_widget)
         if dlg.exec():
             if dlg.get_result():
                 self._ref_dirty = True
@@ -986,7 +986,7 @@ class TabSettings(BaseTab):
     def _addCaseType(self):
         if not self._refEditable():
             return
-        dlg = CaseTypeAddDialog(self.db_path, self.tab_widget)
+        dlg = RefItemDialog(REF_CASETYPE, self.db_path, parent=self.tab_widget)
         if dlg.exec():
             self._ref_dirty = True
             self._reloadPreservingOrder("casetype")    # 保留未存拖拉順序
@@ -1006,7 +1006,8 @@ class TabSettings(BaseTab):
         tid    = trow[0]             # 真 PK，給 UPDATE 用
         tname  = trow[1]
         active = bool(trow[2])
-        dlg = CaseTypeEditDialog(self.db_path, tid, row + 1, tname, active, self.tab_widget)
+        dlg = RefItemDialog(REF_CASETYPE, self.db_path,
+                            existing=(tid, row + 1, tname, active), parent=self.tab_widget)
         if dlg.exec():
             if dlg.get_result():
                 self._ref_dirty = True

@@ -2,10 +2,10 @@
 settings_dialogs.py — 設定頁彈窗
 
 包含：
-  - PersonnelAddDialog    / PersonnelEditDialog    人員 新增 / 修改
-  - DeptAddDialog         / DeptEditDialog          部門 新增 / 修改
-  - CaseTypeAddDialog     / CaseTypeEditDialog      案件類型 新增 / 修改
+  - RefItemDialog                                   參照項（人員／部門／案類）新增 / 修改共用
+      REF_PERSONNEL / REF_DEPT / REF_CASETYPE       三份設定表驅動同一類別
   - ChangePasswordDialog                            變更密碼
+  - ResetDialog / ArchiveRootDialog / PrintTitleDialog
 """
 import os
 import re
@@ -117,7 +117,7 @@ def _parseSeqMoveTarget(text, row_count):
 
 
 # ══════════════════════════════════════════════════════════════════
-# 人員管理
+# 參照項（人員／部門／案類）新增 / 修改 —— 設定表驅動的單一 Dialog
 # ══════════════════════════════════════════════════════════════════
 
 def _has_alias_col(conn):
@@ -138,121 +138,88 @@ def _audit_ref(conn, category, act, content, table=None, ref_id=None):
                detail=buildDetail(category, act, content))
 
 
-class PersonnelAddDialog(QDialog):
+# 三種參照項的差異全部收斂成設定表，RefItemDialog 只讀這裡、不寫死任何實體。
+#   table / pk_col / name_col：資料表與欄位
+#   prefix / digits          ：新增時自動編號（P01 / D01 / CT01）
+#   category                 ：稽核分類名（人員／部門／案類）
+#   name_label / placeholder ：主欄位（姓名／部門名稱／類型名稱）標籤與提示
+#   retired_label            ：停用勾選框文字（人員為「離職」，其餘「停用」）
+#   title_add / title_edit   ：視窗標題
+#   extra_fields             ：額外欄位（目前僅人員有「別名」）；每項為
+#       {attr, col, label, placeholder}，資料驅動、非特例分支
+REF_PERSONNEL = {
+    "table": "Ref_Personnel",   "pk_col": "staff_id",     "name_col": "staff_name",
+    "prefix": "P",  "digits": 2, "category": "人員",
+    "name_label": "姓名：",     "placeholder": "例：王小明 或 王小明-19.06",
+    "retired_label": "離職",
+    "title_add": "新增人員",    "title_edit": "修改人員",
+    "extra_fields": [
+        {"attr": "alias", "col": "alias", "label": "別名：",
+         "placeholder": "綽號/簡稱，半形逗號分隔"},
+    ],
+}
 
-    def __init__(self, db_path, parent=None):
+REF_DEPT = {
+    "table": "Ref_Departments", "pk_col": "dept_id",      "name_col": "dept_name",
+    "prefix": "D",  "digits": 2, "category": "部門",
+    "name_label": "部門名稱：", "placeholder": "例：刑事組",
+    "retired_label": "停用",
+    "title_add": "新增部門",    "title_edit": "修改部門",
+    "extra_fields": [],
+}
+
+REF_CASETYPE = {
+    "table": "Ref_CaseTypes",   "pk_col": "case_type_id", "name_col": "case_type_name",
+    "prefix": "CT", "digits": 2, "category": "案類",
+    "name_label": "類型名稱：", "placeholder": "例：277傷害",
+    "retired_label": "停用",
+    "title_add": "新增案件類型", "title_edit": "修改案件類型",
+    "extra_fields": [],
+}
+
+
+class RefItemDialog(QDialog):
+    """參照項（人員／部門／案類）新增 / 修改共用彈窗。
+
+    - 由 cfg（REF_PERSONNEL / REF_DEPT / REF_CASETYPE）驅動，差異全在設定表
+    - existing=None            → 新增模式（自動編號、INSERT、順序欄可留空塞最前）
+    - existing=(pk, seq, name, is_active) → 修改模式（UPDATE、順序欄預填目前列位置）
+    - 對外 API 與舊六個類別相容：get_result() / get_target_position()
+    """
+
+    def __init__(self, cfg, db_path, existing=None, parent=None):
         super().__init__(parent)
-        self.db_path = db_path
-        self._new_id = None
-        self._result = None
-        self._target_pos = None
-        self.setWindowTitle('新增人員')
-        self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
-        self.setStyleSheet(_DIALOG_SS)
-        self._build()
-
-    def _build(self):
-        conn         = sqlite3.connect(self.db_path)
-        self._new_id = _next_id(conn, 'Ref_Personnel', 'staff_id', 'P', digits=2)
-        conn.close()
-
-        vlay = QVBoxLayout(self)
-        vlay.setSpacing(16)
-        vlay.setContentsMargins(24, 20, 24, 16)
-
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
-        form.setSpacing(10)
-
-        self.w_name = QLineEdit()
-        self.w_name.setPlaceholderText("例：王小明 或 王小明-19.06")
-        self.w_name.setFixedWidth(_FIELD_W)
-        form.addRow("姓名：", self.w_name)
-
-        self.w_alias = QLineEdit()
-        self.w_alias.setPlaceholderText("綽號/簡稱，半形逗號分隔")
-        self.w_alias.setFixedWidth(_FIELD_W)
-        form.addRow("別名：", self.w_alias)
-
-        self.w_seq = QLineEdit()
-        self.w_seq.setValidator(QRegularExpressionValidator(
-            QRegularExpression(r"[0-9]*"), self.w_seq))
-        self.w_seq.setFixedWidth(80)
-        seq_row = QHBoxLayout()
-        seq_row.addWidget(self.w_seq)
-        seq_row.addWidget(QLabel("（選填）"))
-        seq_row.addStretch()
-        lbl_seq = QLabel("順序：")
-        lbl_seq.setFixedWidth(_LABEL_W)
-        lbl_seq.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        form.addRow(lbl_seq, seq_row)
-
-        self.w_retired = QCheckBox("離職")
-        self.w_retired.setChecked(False)
-        form.addRow("狀態：", self.w_retired)
-
-        vlay.addLayout(form)
-        _, btn_ok = _add_buttons(self, vlay, confirm_text='新增')
-        btn_ok.clicked.connect(self._submit)
-        self.w_name.returnPressed.connect(self._submit)
-        self.w_name.setFocus()
-
-    def _submit(self):
-        name      = self.w_name.text().strip()
-        alias     = self.w_alias.text().strip()
-        is_active = 0 if self.w_retired.isChecked() else 1
-        if not name:
-            self.w_name.setStyleSheet(_ERR_BORDER_SS)
-            return
-        try:
-            conn  = sqlite3.connect(self.db_path)
-            count = conn.execute("SELECT COUNT(*) FROM Ref_Personnel").fetchone()[0]
-            valid, target = _parseAddPosition(self.w_seq.text(), count)
-            if not valid:
-                self.w_seq.setStyleSheet(_ERR_BORDER_SS)
-                conn.close()
-                return
-            self.w_seq.setStyleSheet("")
-            new_sort = _next_sort(conn, 'Ref_Personnel')
-            conn.execute(
-                "INSERT INTO Ref_Personnel (staff_id, staff_name, is_active, sort_order) VALUES (?,?,?,?)",
-                (self._new_id, name, is_active, new_sort))
-            if _has_alias_col(conn):
-                conn.execute("UPDATE Ref_Personnel SET alias=? WHERE staff_id=?",
-                             (alias, self._new_id))
-            _audit_ref(conn, "人員", "新增", name, "Ref_Personnel", self._new_id)
-            conn.commit()
-            conn.close()
-            self._target_pos = target
-            self._result = (self._new_id, name, bool(is_active))
-            self.accept()
-        except Exception as e:
-            reportError("寫入失敗", e, self)
-
-    def get_result(self):
-        return self._result
-
-    def get_target_position(self):
-        return self._target_pos
-
-
-class PersonnelEditDialog(QDialog):
-
-    def __init__(self, db_path, staff_id, seq, staff_name, is_active, parent=None):
-        super().__init__(parent)
+        self.cfg      = cfg
         self.db_path  = db_path
-        self.staff_id = staff_id      # 真 PK，給 UPDATE 用，不顯示
-        self.seq      = seq           # 序號（列位置），預填進可編輯的順序欄
+        self.is_edit  = existing is not None
         self._result  = None
         self._target_pos = None
-        self._old_name   = staff_name
-        self._old_active = bool(is_active)
-        self.setWindowTitle('修改人員')
+        self._extra_widgets = {}     # attr -> QLineEdit
+        if self.is_edit:
+            self._pk, self._seq, self._old_name, old_active = existing
+            self._old_active = bool(old_active)
+        else:
+            self._pk = None          # 於 _build 產生
+            self._seq = None
+            self._old_name = None
+            self._old_active = None
+        self.setWindowTitle(cfg["title_edit"] if self.is_edit else cfg["title_add"])
         self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
         self.setStyleSheet(_DIALOG_SS)
-        self._build(staff_name, is_active)
+        self._build()
 
-    def _build(self, staff_name, is_active):
+    def _build(self):
+        cfg = self.cfg
+        # 取目前筆數（供順序欄提示合法範圍）；新增模式順手取自動編號
+        conn  = sqlite3.connect(self.db_path)
+        count = conn.execute(f"SELECT COUNT(*) FROM {cfg['table']}").fetchone()[0]
+        if not self.is_edit:
+            self._pk = _next_id(conn, cfg["table"], cfg["pk_col"],
+                                cfg["prefix"], digits=cfg["digits"])
+        conn.close()
+        # 合法範圍上限：新增可插到最後（count+1），修改在既有列間搬移（count）
+        seq_max = count + 1 if not self.is_edit else count
+
         vlay = QVBoxLayout(self)
         vlay.setSpacing(16)
         vlay.setContentsMargins(24, 20, 24, 16)
@@ -261,441 +228,132 @@ class PersonnelEditDialog(QDialog):
         form.setLabelAlignment(Qt.AlignRight)
         form.setSpacing(10)
 
-        self.w_name = QLineEdit(staff_name)
+        # 主欄位（姓名／部門名稱／類型名稱）
+        self.w_name = QLineEdit(self._old_name if self.is_edit else "")
+        if not self.is_edit:
+            self.w_name.setPlaceholderText(cfg["placeholder"])
         self.w_name.setFixedWidth(_FIELD_W)
-        form.addRow("姓名：", self.w_name)
+        form.addRow(cfg["name_label"], self.w_name)
 
-        # 別名預填：清單未帶 alias，直接由 staff_id 查 DB（缺欄則留空）
-        cur_alias = ""
+        # 額外欄位（人員別名）：資料驅動；修改模式從 DB 預填
+        for f in cfg["extra_fields"]:
+            cur = self._load_extra(f["col"]) if self.is_edit else ""
+            w = QLineEdit(cur)
+            w.setPlaceholderText(f["placeholder"])
+            w.setFixedWidth(_FIELD_W)
+            form.addRow(f["label"], w)
+            self._extra_widgets[f["attr"]] = w
+
+        # 順序欄
+        self.w_seq = QLineEdit(str(self._seq) if self.is_edit else "")
+        self.w_seq.setValidator(QRegularExpressionValidator(
+            QRegularExpression(r"[0-9]*"), self.w_seq))
+        self.w_seq.setFixedWidth(80)
+        lbl_seq = QLabel("順序：")
+        lbl_seq.setFixedWidth(_LABEL_W)
+        lbl_seq.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # 順序欄右側提示合法範圍：新增「（選填，1～N）」、修改「（1～N）」
+        hint = (f"（選填，1～{seq_max}）" if not self.is_edit
+                else f"（1～{seq_max}）")
+        seq_row = QHBoxLayout()
+        seq_row.addWidget(self.w_seq)
+        seq_row.addWidget(QLabel(hint))
+        seq_row.addStretch()
+        form.addRow(lbl_seq, seq_row)
+
+        # 狀態（離職／停用）
+        self.w_retired = QCheckBox(cfg["retired_label"])
+        self.w_retired.setChecked(self._old_active is False if self.is_edit else False)
+        form.addRow("狀態：", self.w_retired)
+
+        vlay.addLayout(form)
+        _, btn_ok = _add_buttons(
+            self, vlay, confirm_text=('儲存' if self.is_edit else '新增'))
+        btn_ok.clicked.connect(self._submit)
+        self.w_name.returnPressed.connect(self._submit)
+        self.w_name.setFocus()
+
+    def _load_extra(self, col):
+        """修改模式預填額外欄位（缺欄／查不到則空字串）。"""
         try:
             conn = sqlite3.connect(self.db_path)
-            if _has_alias_col(conn):
-                row = conn.execute(
-                    "SELECT alias FROM Ref_Personnel WHERE staff_id=?",
-                    (self.staff_id,)).fetchone()
-                cur_alias = (row[0] if row and row[0] else "")
+            if col == "alias" and not _has_alias_col(conn):
+                conn.close()
+                return ""
+            row = conn.execute(
+                f"SELECT {col} FROM {self.cfg['table']} WHERE {self.cfg['pk_col']}=?",
+                (self._pk,)).fetchone()
             conn.close()
+            return (row[0] if row and row[0] else "")
         except Exception:
-            pass
-        self.w_alias = QLineEdit(cur_alias)
-        self.w_alias.setPlaceholderText("綽號/簡稱，半形逗號分隔")
-        self.w_alias.setFixedWidth(_FIELD_W)
-        form.addRow("別名：", self.w_alias)
+            return ""
 
-        self.w_seq = QLineEdit(str(self.seq))
-        self.w_seq.setValidator(QRegularExpressionValidator(
-            QRegularExpression(r"[0-9]*"), self.w_seq))
-        self.w_seq.setFixedWidth(80)
-        lbl_seq = QLabel("順序：")
-        lbl_seq.setFixedWidth(_LABEL_W)
-        lbl_seq.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        form.addRow(lbl_seq, self.w_seq)
-
-        self.w_retired = QCheckBox("離職")
-        self.w_retired.setChecked(not bool(is_active))
-        form.addRow("狀態：", self.w_retired)
-
-        vlay.addLayout(form)
-        _, btn_ok = _add_buttons(self, vlay, confirm_text='儲存')
-        btn_ok.clicked.connect(self._submit)
-        self.w_name.returnPressed.connect(self._submit)
-        self.w_name.setFocus()
+    def _write_extra(self, conn):
+        """寫入額外欄位（別名有缺欄保護）。用呼叫端的同一 conn。"""
+        for f in self.cfg["extra_fields"]:
+            col = f["col"]
+            if col == "alias" and not _has_alias_col(conn):
+                continue
+            val = self._extra_widgets[f["attr"]].text().strip()
+            conn.execute(
+                f"UPDATE {self.cfg['table']} SET {col}=? WHERE {self.cfg['pk_col']}=?",
+                (val, self._pk))
 
     def _submit(self):
-        name      = self.w_name.text().strip()
-        alias     = self.w_alias.text().strip()
+        cfg  = self.cfg
+        name = self.w_name.text().strip()
         is_active = 0 if self.w_retired.isChecked() else 1
         if not name:
             self.w_name.setStyleSheet(_ERR_BORDER_SS)
             return
         try:
             conn  = sqlite3.connect(self.db_path)
-            count = conn.execute("SELECT COUNT(*) FROM Ref_Personnel").fetchone()[0]
-            target = _parseSeqMoveTarget(self.w_seq.text(), count)
-            if target is None:
+            count = conn.execute(
+                f"SELECT COUNT(*) FROM {cfg['table']}").fetchone()[0]
+
+            if self.is_edit:
+                target = _parseSeqMoveTarget(self.w_seq.text(), count)
+                seq_bad = target is None
+            else:
+                valid, target = _parseAddPosition(self.w_seq.text(), count)
+                seq_bad = not valid
+            if seq_bad:
                 self.w_seq.setStyleSheet(_ERR_BORDER_SS)
                 conn.close()
                 return
             self.w_seq.setStyleSheet("")
-            conn.execute(
-                "UPDATE Ref_Personnel SET staff_name=?, is_active=? WHERE staff_id=?",
-                (name, is_active, self.staff_id))
-            if _has_alias_col(conn):
-                conn.execute("UPDATE Ref_Personnel SET alias=? WHERE staff_id=?",
-                             (alias, self.staff_id))
-            if name != self._old_name:
-                _audit_ref(conn, "人員", "修改", f"{self._old_name} → {name}",
-                           "Ref_Personnel", self.staff_id)
-            if bool(is_active) != self._old_active:
-                _audit_ref(conn, "人員", "啟用" if is_active else "停用", name,
-                           "Ref_Personnel", self.staff_id)
+
+            if self.is_edit:
+                conn.execute(
+                    f"UPDATE {cfg['table']} SET {cfg['name_col']}=?, is_active=? "
+                    f"WHERE {cfg['pk_col']}=?",
+                    (name, is_active, self._pk))
+                self._write_extra(conn)
+                if name != self._old_name:
+                    _audit_ref(conn, cfg["category"], "修改",
+                               f"{self._old_name} → {name}", cfg["table"], self._pk)
+                if bool(is_active) != self._old_active:
+                    _audit_ref(conn, cfg["category"],
+                               "啟用" if is_active else "停用", name,
+                               cfg["table"], self._pk)
+            else:
+                new_sort = _next_sort(conn, cfg["table"])
+                conn.execute(
+                    f"INSERT INTO {cfg['table']} "
+                    f"({cfg['pk_col']}, {cfg['name_col']}, is_active, sort_order) "
+                    f"VALUES (?,?,?,?)",
+                    (self._pk, name, is_active, new_sort))
+                self._write_extra(conn)
+                _audit_ref(conn, cfg["category"], "新增", name,
+                           cfg["table"], self._pk)
+
             conn.commit()
             conn.close()
             self._target_pos = target
-            self._result = (self.staff_id, name, bool(is_active))
+            self._result = (self._pk, name, bool(is_active))
             self.accept()
         except Exception as e:
-            reportError("更新失敗", e, self)
-
-    def get_result(self):
-        return self._result
-
-    def get_target_position(self):
-        return self._target_pos
-
-
-# ══════════════════════════════════════════════════════════════════
-# 部門管理
-# ══════════════════════════════════════════════════════════════════
-
-class DeptAddDialog(QDialog):
-
-    def __init__(self, db_path, parent=None):
-        super().__init__(parent)
-        self.db_path = db_path
-        self._new_id = None
-        self._result = None
-        self._target_pos = None
-        self.setWindowTitle('新增部門')
-        self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
-        self.setStyleSheet(_DIALOG_SS)
-        self._build()
-
-    def _build(self):
-        conn         = sqlite3.connect(self.db_path)
-        self._new_id = _next_id(conn, 'Ref_Departments', 'dept_id', 'D', digits=2)
-        conn.close()
-
-        vlay = QVBoxLayout(self)
-        vlay.setSpacing(16)
-        vlay.setContentsMargins(24, 20, 24, 16)
-
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
-        form.setSpacing(10)
-
-        self.w_name = QLineEdit()
-        self.w_name.setPlaceholderText("例：刑事組")
-        self.w_name.setFixedWidth(_FIELD_W)
-        form.addRow("部門名稱：", self.w_name)
-
-        self.w_seq = QLineEdit()
-        self.w_seq.setValidator(QRegularExpressionValidator(
-            QRegularExpression(r"[0-9]*"), self.w_seq))
-        self.w_seq.setFixedWidth(80)
-        seq_row = QHBoxLayout()
-        seq_row.addWidget(self.w_seq)
-        seq_row.addWidget(QLabel("（選填）"))
-        seq_row.addStretch()
-        lbl_seq = QLabel("順序：")
-        lbl_seq.setFixedWidth(_LABEL_W)
-        lbl_seq.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        form.addRow(lbl_seq, seq_row)
-
-        self.w_retired = QCheckBox("停用")
-        self.w_retired.setChecked(False)
-        form.addRow("狀態：", self.w_retired)
-
-        vlay.addLayout(form)
-        _, btn_ok = _add_buttons(self, vlay, confirm_text='新增')
-        btn_ok.clicked.connect(self._submit)
-        self.w_name.returnPressed.connect(self._submit)
-        self.w_name.setFocus()
-
-    def _submit(self):
-        name      = self.w_name.text().strip()
-        is_active = 0 if self.w_retired.isChecked() else 1
-        if not name:
-            self.w_name.setStyleSheet(_ERR_BORDER_SS)
-            return
-        try:
-            conn  = sqlite3.connect(self.db_path)
-            count = conn.execute("SELECT COUNT(*) FROM Ref_Departments").fetchone()[0]
-            valid, target = _parseAddPosition(self.w_seq.text(), count)
-            if not valid:
-                self.w_seq.setStyleSheet(_ERR_BORDER_SS)
-                conn.close()
-                return
-            self.w_seq.setStyleSheet("")
-            new_sort = _next_sort(conn, 'Ref_Departments')
-            conn.execute(
-                "INSERT INTO Ref_Departments (dept_id, dept_name, is_active, sort_order) VALUES (?,?,?,?)",
-                (self._new_id, name, is_active, new_sort))
-            _audit_ref(conn, "部門", "新增", name, "Ref_Departments", self._new_id)
-            conn.commit()
-            conn.close()
-            self._target_pos = target
-            self._result = (self._new_id, name, bool(is_active))
-            self.accept()
-        except Exception as e:
-            reportError("寫入失敗", e, self)
-
-    def get_result(self):
-        return self._result
-
-    def get_target_position(self):
-        return self._target_pos
-
-
-class DeptEditDialog(QDialog):
-
-    def __init__(self, db_path, dept_id, seq, dept_name, is_active, parent=None):
-        super().__init__(parent)
-        self.db_path = db_path
-        self.dept_id = dept_id        # 真 PK，給 UPDATE 用，不顯示
-        self.seq     = seq            # 序號（列位置），預填進可編輯的順序欄
-        self._result = None
-        self._target_pos = None
-        self._old_name   = dept_name
-        self._old_active = bool(is_active)
-        self.setWindowTitle('修改部門')
-        self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
-        self.setStyleSheet(_DIALOG_SS)
-        self._build(dept_name, is_active)
-
-    def _build(self, dept_name, is_active):
-        vlay = QVBoxLayout(self)
-        vlay.setSpacing(16)
-        vlay.setContentsMargins(24, 20, 24, 16)
-
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
-        form.setSpacing(10)
-
-        self.w_name = QLineEdit(dept_name)
-        self.w_name.setFixedWidth(_FIELD_W)
-        form.addRow("部門名稱：", self.w_name)
-
-        self.w_seq = QLineEdit(str(self.seq))
-        self.w_seq.setValidator(QRegularExpressionValidator(
-            QRegularExpression(r"[0-9]*"), self.w_seq))
-        self.w_seq.setFixedWidth(80)
-        lbl_seq = QLabel("順序：")
-        lbl_seq.setFixedWidth(_LABEL_W)
-        lbl_seq.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        form.addRow(lbl_seq, self.w_seq)
-
-        self.w_retired = QCheckBox("停用")
-        self.w_retired.setChecked(not bool(is_active))
-        form.addRow("狀態：", self.w_retired)
-
-        vlay.addLayout(form)
-        _, btn_ok = _add_buttons(self, vlay, confirm_text='儲存')
-        btn_ok.clicked.connect(self._submit)
-        self.w_name.returnPressed.connect(self._submit)
-        self.w_name.setFocus()
-
-    def _submit(self):
-        name      = self.w_name.text().strip()
-        is_active = 0 if self.w_retired.isChecked() else 1
-        if not name:
-            self.w_name.setStyleSheet(_ERR_BORDER_SS)
-            return
-        try:
-            conn  = sqlite3.connect(self.db_path)
-            count = conn.execute("SELECT COUNT(*) FROM Ref_Departments").fetchone()[0]
-            target = _parseSeqMoveTarget(self.w_seq.text(), count)
-            if target is None:
-                self.w_seq.setStyleSheet(_ERR_BORDER_SS)
-                conn.close()
-                return
-            self.w_seq.setStyleSheet("")
-            conn.execute(
-                "UPDATE Ref_Departments SET dept_name=?, is_active=? WHERE dept_id=?",
-                (name, is_active, self.dept_id))
-            if name != self._old_name:
-                _audit_ref(conn, "部門", "修改", f"{self._old_name} → {name}",
-                           "Ref_Departments", self.dept_id)
-            if bool(is_active) != self._old_active:
-                _audit_ref(conn, "部門", "啟用" if is_active else "停用", name,
-                           "Ref_Departments", self.dept_id)
-            conn.commit()
-            conn.close()
-            self._target_pos = target
-            self._result = (self.dept_id, name, bool(is_active))
-            self.accept()
-        except Exception as e:
-            reportError("更新失敗", e, self)
-
-    def get_result(self):
-        return self._result
-
-    def get_target_position(self):
-        return self._target_pos
-
-
-# ══════════════════════════════════════════════════════════════════
-# 案件類型管理
-# ══════════════════════════════════════════════════════════════════
-
-class CaseTypeAddDialog(QDialog):
-
-    def __init__(self, db_path, parent=None):
-        super().__init__(parent)
-        self.db_path = db_path
-        self._new_id = None
-        self._result = None
-        self._target_pos = None
-        self.setWindowTitle('新增案件類型')
-        self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
-        self.setStyleSheet(_DIALOG_SS)
-        self._build()
-
-    def _build(self):
-        conn         = sqlite3.connect(self.db_path)
-        self._new_id = _next_id(conn, 'Ref_CaseTypes', 'case_type_id', 'CT', digits=2)
-        conn.close()
-
-        vlay = QVBoxLayout(self)
-        vlay.setSpacing(16)
-        vlay.setContentsMargins(24, 20, 24, 16)
-
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
-        form.setSpacing(10)
-
-        self.w_name = QLineEdit()
-        self.w_name.setPlaceholderText("例：277傷害")
-        self.w_name.setFixedWidth(_FIELD_W)
-        form.addRow("類型名稱：", self.w_name)
-
-        self.w_seq = QLineEdit()
-        self.w_seq.setValidator(QRegularExpressionValidator(
-            QRegularExpression(r"[0-9]*"), self.w_seq))
-        self.w_seq.setFixedWidth(80)
-        seq_row = QHBoxLayout()
-        seq_row.addWidget(self.w_seq)
-        seq_row.addWidget(QLabel("（選填）"))
-        seq_row.addStretch()
-        lbl_seq = QLabel("順序：")
-        lbl_seq.setFixedWidth(_LABEL_W)
-        lbl_seq.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        form.addRow(lbl_seq, seq_row)
-
-        self.w_retired = QCheckBox("停用")
-        self.w_retired.setChecked(False)
-        form.addRow("狀態：", self.w_retired)
-
-        vlay.addLayout(form)
-        _, btn_ok = _add_buttons(self, vlay, confirm_text='新增')
-        btn_ok.clicked.connect(self._submit)
-        self.w_name.returnPressed.connect(self._submit)
-        self.w_name.setFocus()
-
-    def _submit(self):
-        name      = self.w_name.text().strip()
-        is_active = 0 if self.w_retired.isChecked() else 1
-        if not name:
-            self.w_name.setStyleSheet(_ERR_BORDER_SS)
-            return
-        try:
-            conn  = sqlite3.connect(self.db_path)
-            count = conn.execute("SELECT COUNT(*) FROM Ref_CaseTypes").fetchone()[0]
-            valid, target = _parseAddPosition(self.w_seq.text(), count)
-            if not valid:
-                self.w_seq.setStyleSheet(_ERR_BORDER_SS)
-                conn.close()
-                return
-            self.w_seq.setStyleSheet("")
-            new_sort = _next_sort(conn, 'Ref_CaseTypes')
-            conn.execute(
-                "INSERT INTO Ref_CaseTypes (case_type_id, case_type_name, is_active, sort_order) VALUES (?,?,?,?)",
-                (self._new_id, name, is_active, new_sort))
-            _audit_ref(conn, "案類", "新增", name, "Ref_CaseTypes", self._new_id)
-            conn.commit()
-            conn.close()
-            self._target_pos = target
-            self._result = (self._new_id, name, bool(is_active))
-            self.accept()
-        except Exception as e:
-            reportError("寫入失敗", e, self)
-
-    def get_result(self):
-        return self._result
-
-    def get_target_position(self):
-        return self._target_pos
-
-
-class CaseTypeEditDialog(QDialog):
-
-    def __init__(self, db_path, type_id, seq, type_name, is_active, parent=None):
-        super().__init__(parent)
-        self.db_path = db_path
-        self.type_id = type_id        # 真 PK，給 UPDATE 用，不顯示
-        self.seq     = seq            # 序號（列位置），預填進可編輯的順序欄
-        self._result = None
-        self._target_pos = None
-        self._old_name   = type_name
-        self._old_active = bool(is_active)
-        self.setWindowTitle('修改案件類型')
-        self.setMinimumWidth(_LABEL_W + _FIELD_W + _MARGIN)
-        self.setStyleSheet(_DIALOG_SS)
-        self._build(type_name, is_active)
-
-    def _build(self, type_name, is_active):
-        vlay = QVBoxLayout(self)
-        vlay.setSpacing(16)
-        vlay.setContentsMargins(24, 20, 24, 16)
-
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
-        form.setSpacing(10)
-
-        self.w_name = QLineEdit(type_name)
-        self.w_name.setFixedWidth(_FIELD_W)
-        form.addRow("類型名稱：", self.w_name)
-
-        self.w_seq = QLineEdit(str(self.seq))
-        self.w_seq.setValidator(QRegularExpressionValidator(
-            QRegularExpression(r"[0-9]*"), self.w_seq))
-        self.w_seq.setFixedWidth(80)
-        lbl_seq = QLabel("順序：")
-        lbl_seq.setFixedWidth(_LABEL_W)
-        lbl_seq.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        form.addRow(lbl_seq, self.w_seq)
-
-        self.w_retired = QCheckBox("停用")
-        self.w_retired.setChecked(not bool(is_active))
-        form.addRow("狀態：", self.w_retired)
-
-        vlay.addLayout(form)
-        _, btn_ok = _add_buttons(self, vlay, confirm_text='儲存')
-        btn_ok.clicked.connect(self._submit)
-        self.w_name.returnPressed.connect(self._submit)
-        self.w_name.setFocus()
-
-    def _submit(self):
-        name      = self.w_name.text().strip()
-        is_active = 0 if self.w_retired.isChecked() else 1
-        if not name:
-            self.w_name.setStyleSheet(_ERR_BORDER_SS)
-            return
-        try:
-            conn  = sqlite3.connect(self.db_path)
-            count = conn.execute("SELECT COUNT(*) FROM Ref_CaseTypes").fetchone()[0]
-            target = _parseSeqMoveTarget(self.w_seq.text(), count)
-            if target is None:
-                self.w_seq.setStyleSheet(_ERR_BORDER_SS)
-                conn.close()
-                return
-            self.w_seq.setStyleSheet("")
-            conn.execute(
-                "UPDATE Ref_CaseTypes SET case_type_name=?, is_active=? WHERE case_type_id=?",
-                (name, is_active, self.type_id))
-            if name != self._old_name:
-                _audit_ref(conn, "案類", "修改", f"{self._old_name} → {name}",
-                           "Ref_CaseTypes", self.type_id)
-            if bool(is_active) != self._old_active:
-                _audit_ref(conn, "案類", "啟用" if is_active else "停用", name,
-                           "Ref_CaseTypes", self.type_id)
-            conn.commit()
-            conn.close()
-            self._target_pos = target
-            self._result = (self.type_id, name, bool(is_active))
-            self.accept()
-        except Exception as e:
-            reportError("更新失敗", e, self)
+            reportError("更新失敗" if self.is_edit else "寫入失敗", e, self)
 
     def get_result(self):
         return self._result
