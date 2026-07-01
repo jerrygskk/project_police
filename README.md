@@ -8,7 +8,7 @@
   <img src="docs/img/01-main-menu.png" alt="主選單" width="340">
 </p>
 
-`Windows` ・ `免安裝單一執行檔` ・ 目前版本 **v1.1.4**
+`Windows` ・ `免安裝單一執行檔` ・ 目前版本 **v1.1.5**
 
 ---
 
@@ -163,7 +163,7 @@
 ## 下載與版本
 
 - **下載**：[GitHub Releases](https://github.com/jerrygskk/project_police/releases/latest)
-- **目前版本**：v1.1.4
+- **目前版本**：v1.1.5
 
 每個版本的下載頁提供四個檔案：
 
