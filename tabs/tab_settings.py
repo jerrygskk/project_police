@@ -297,7 +297,7 @@ class TabSettings(BaseTab):
         for _key in ("personnel", "dept", "casetype"):
             _lbl = inner.findChild(QLabel, f"lbl_hint_{_key}")
             if _lbl:
-                _lbl.setText("可拖拉列以調整排序，完成後按「儲存排序」")
+                _lbl.setText("可拖拉列或點序號欄數字調整排序，完成後按「儲存排序」")
                 _lbl.setStyleSheet("color: #8e8e93; font-size: 11pt;")
 
         # ── 資源回收筒：抽成獨立面板（ui_utils/trash_panel.py）──
@@ -368,6 +368,10 @@ class TabSettings(BaseTab):
         hdr.setSectionResizeMode(name_c, QHeaderView.Stretch)
         if alias_c is not None:
             hdr.setSectionResizeMode(alias_c, QHeaderView.Stretch)
+        # 序號欄：單擊即進行內編輯（呼應框中數字「可點改位置」的視覺提示）
+        tbl.cellClicked.connect(
+            lambda row, col, t=tbl, k=key: self._onCellClicked(t, row, col, k))
+        # 名稱等其餘欄：雙擊開修改對話框
         tbl.cellDoubleClicked.connect(
             lambda row, col, t=tbl, k=key: self._onCellDoubleClicked(t, row, col, k))
 
@@ -413,16 +417,24 @@ class TabSettings(BaseTab):
         self._renderSortTable(key)
         st["table"].selectRow(dst)
 
-    def _onCellDoubleClicked(self, tbl, row, col, key):
-        """序號欄雙擊＝進入行內編輯；其餘欄位維持原行為（開修改對話框）。"""
-        # 歸檔管理唯讀：雙擊不得進序號行內編輯，也不得開修改框
-        # （按鈕 enabled 擋得住按鈕，擋不住雙擊，故此處補 gate）
+    def _onCellClicked(self, tbl, row, col, key):
+        """序號欄單擊＝進入行內編輯（框中數字可點改排序位置）。"""
+        if col != self._SEQ_COL:
+            return
+        # 歸檔管理唯讀：不得進序號行內編輯
+        # （按鈕 enabled 擋得住按鈕，擋不住點擊，故此處補 gate）
         if not self._refEditable():
             return
+        item = tbl.item(row, self._SEQ_COL)
+        if item:
+            tbl.editItem(item)
+
+    def _onCellDoubleClicked(self, tbl, row, col, key):
+        """名稱等欄位雙擊＝開修改對話框；序號欄已由單擊處理，此處略過。"""
         if col == self._SEQ_COL:
-            item = tbl.item(row, self._SEQ_COL)
-            if item:
-                tbl.editItem(item)
+            return
+        # 歸檔管理唯讀：雙擊不得開修改框（_editRef 亦有 guard，此處提早返回）
+        if not self._refEditable():
             return
         self._editRef(key, row)
 
