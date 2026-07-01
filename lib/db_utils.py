@@ -362,8 +362,10 @@ def performYearEndReset(db_path):
       3. 依 sort_order 重編參照表 id（連續，維持原前綴與位數）
       4. 重設 sort_order 為連續整數（1 起）
       5. 歸零 Seq_DocId
+      6. commit 後 VACUUM：縮檔並清除已刪舊年度公文的實體殘留（slack space）
 
-    全程單一 transaction，任一步失敗則 rollback 並拋出例外（資料不變）。
+    1~5 全程單一 transaction，任一步失敗則 rollback 並拋出例外（資料不變）；
+    VACUUM 在 commit 之後（不可在 transaction 內執行）。
 
     重編 id 採兩段式避開主鍵衝突：
       先把所有列改成暫時前綴（如 _TMP_P0001），再編回正式 id。
@@ -423,6 +425,11 @@ def performYearEndReset(db_path):
             pass
 
         conn.commit()
+
+        # 9. VACUUM 重建整庫：DELETE 只把資料頁列入 free-list、檔案不會縮，且被刪的
+        #    舊年度公文（含個資）實體殘留在空閒頁（strings 掃得到）。VACUUM 重建成
+        #    新檔→ 縮回最小並清除殘留。⚠️ 不可在 transaction 內執行，故置於 commit 之後。
+        conn.execute("VACUUM")
     except Exception:
         conn.rollback()
         raise
