@@ -901,6 +901,7 @@ class TabArchive(BaseTab):
                 b_open.setToolTip("開啟 PDF 檢視")
                 b_open.setStyleSheet("QPushButton{border:1px solid #c6c6c8;border-radius:6px;background:#fff;}"
                                      "QPushButton:hover{background:#eaf1f8;}")
+                b_open.setCursor(Qt.PointingHandCursor)   # 滑過顯示可點手指游標（比照瀏覽頁）
                 b_open.clicked.connect(lambda _, p=fp: self._openPdf(p))
                 b_pick = QPushButton()
                 b_pick.setIcon(QIcon(":/icon_archive.svg"))
@@ -908,6 +909,7 @@ class TabArchive(BaseTab):
                 b_pick.setFixedSize(28, 28)
                 if doc_id:
                     b_pick.setToolTip("歸檔預覽")
+                    b_pick.setCursor(Qt.PointingHandCursor)   # 可用時顯示手指游標
                     b_pick.clicked.connect(lambda _, k=key, d=doc_id, p=fp: self._selectPdf(k, d, p))
                 else:
                     b_pick.setToolTip("請先於左側選擇待歸檔公文")
