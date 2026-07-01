@@ -141,8 +141,11 @@ class DocumentManager:
         self._idle_timer = QTimer(self.window)
         self._idle_timer.setSingleShot(True)
         self._idle_timer.timeout.connect(self._onIdleTimeout)
-        # 閒置 20 分鐘自動關閉整支程式（不分身分，一律計時）
-        self._CLOSE_TIMEOUT_MS = 20 * 60 * 1000
+        # 閒置 14 分半自動關閉整支程式（不分身分，一律計時）。
+        # ⚠️ 刻意設在 Windows（AD 部署）15 分鐘鎖螢幕之前：DB／鎖檔在 SMB 網路碟，
+        # 本程式須趕在系統把畫面切回登入前先關閉、清掉 dbfile.lock，否則 A 的程式
+        # 在鎖螢幕後仍於背景續跑並更新心跳，會一直卡住別台電腦的 B 登入。勿改回整數。
+        self._CLOSE_TIMEOUT_MS = (14 * 60 + 30) * 1000
         self._close_timer = QTimer(self.window)
         self._close_timer.setSingleShot(True)
         self._close_timer.timeout.connect(self._onIdleClose)
@@ -186,14 +189,14 @@ class DocumentManager:
             msgInfo("自動登出", "閒置已超過 10 分鐘，已自動登出，請重新登入。", self.window)
 
     def _onIdleClose(self):
-        # 閒置 20 分鐘自動關閉整支程式（靜默，僅 error.log 留痕）。
+        # 閒置 14 分半自動關閉整支程式（靜默，僅 error.log 留痕）。
         # 用 os._exit 硬關，不走 app.quit()：若此刻有 modal exec()（HELP／確認框／
         # 編輯彈窗／原生檔案對話框）開著，quit() 只會退掉最內層那個迴圈、關不掉主程式
         # （且 _close_timer 為 single-shot、已觸發過不再重啟＝自動關閉就此失效）。
         # os._exit 不受巢狀事件迴圈影響，一定結束；但 aboutToQuit／atexit 不會跑到，
         # 故結束前先手動清掉自己的鎖檔。
         import os
-        logging.error("閒置已超過 20 分鐘，自動關閉程式。")
+        logging.error("閒置已超過 14 分半，自動關閉程式。")
         cb = getattr(self, "_cleanup_lock_cb", None)
         if cb:
             try:
@@ -382,7 +385,7 @@ if __name__ == "__main__":
                 confirm_text="仍要開啟", cancel_text="取消離開",
                 confirm_danger=True, default_confirm=False,
                 informative="多人同時編輯可能造成資料毀損，建議稍後再開。\n"
-                            "開啟後若閒置超過 20 分鐘，程式將自動關閉。"):
+                            "開啟後若閒置約 15 分鐘，程式將自動關閉。"):
             sys.exit(0)
 
     # 寫入自己的鎖檔並啟動心跳；正常結束時清掉（含閒置自動關）。
