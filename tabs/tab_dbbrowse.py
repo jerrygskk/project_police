@@ -2,6 +2,7 @@ from PySide6.QtCore import Qt, QTimer, QUrl, QSize, QEvent, QObject
 from PySide6.QtWidgets import (
     QVBoxLayout, QTabWidget, QComboBox, QLineEdit, QPushButton,
     QLabel, QTableWidget, QTableWidgetItem, QWidget, QHBoxLayout,
+    QAbstractItemView,
 )
 from PySide6.QtGui import QColor, QIcon, QDesktopServices
 
@@ -224,6 +225,9 @@ class TabDBBrowse(BaseTab):
         self._watermark = {}
         for key in ("task", "crim", "gen"):
             tbl = self._ui[key]["table"]
+            # 唯讀瀏覽：不需選取反白、去點擊焦點黑框（統一為回收筒／操作紀錄的行為）
+            tbl.setSelectionMode(QAbstractItemView.NoSelection)
+            tbl.setFocusPolicy(Qt.NoFocus)
             wm = QLabel(tbl)
             wm.setAlignment(Qt.AlignCenter)
             wm.setStyleSheet(
