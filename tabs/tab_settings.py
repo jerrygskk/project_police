@@ -27,7 +27,7 @@ from lib.auth_manager import AuthManager
 from lib.db_utils import (
     getResourcePath,
     performYearEndReset, getSetting, ARCHIVE_ROOT_KEY,
-    getConn, writeAudit, writeAuditSafe, buildDetail, restoreFromTrash,
+    getConn, writeAudit, writeAuditSafe, buildDetail,
 )
 from ui_utils import (
     msgInfo, msgWarning, msgCritical, confirmBox, reportError,
@@ -39,6 +39,7 @@ from ui_utils import (
     preserveScroll,
 )
 from ui_utils.settings_dialogs import _parseSeqMoveTarget
+from ui_utils.trash_panel import TrashPanel
 
 # ── 左側導航按鈕樣式 ────────────────────────────────────────────
 _NAV_ACTIVE = (
@@ -180,13 +181,6 @@ class TabSettings(BaseTab):
     _PAGE_CASETYPE  = 2
     _PAGE_TRASH     = 3
 
-    # 回收筒 table_name → 類別中文
-    _TRASH_CAT = {
-        "Document_Task":     "交辦",
-        "Document_Criminal": "刑案",
-        "Document_General":  "一般",
-    }
-
     def setup(self, tab_index):
         tab = self.tab_widget.widget(tab_index)
         if not tab:
@@ -246,7 +240,6 @@ class TabSettings(BaseTab):
         self.btn_reload_trash  = inner.findChild(QPushButton,  "btn_reload_trash")
         self.lbl_trash_count   = inner.findChild(QLabel,       "lbl_trash_count")
         self._lbl_hint_trash   = inner.findChild(QLabel,       "lbl_hint_trash")
-        self._trash_rows       = []   # 與 tbl_trash 列 1:1：每筆 {trash_id, cat, subject, person, role, ts}
 
         self.btn_add_personnel  = inner.findChild(QPushButton, "btn_add_personnel")
         self.btn_edit_personnel = inner.findChild(QPushButton, "btn_edit_personnel")
@@ -292,13 +285,13 @@ class TabSettings(BaseTab):
         # ── 初始化三頁的表格與排序暫存狀態 ──
         self._initRefPage("personnel", self.tbl_personnel,
                           self.btn_add_personnel, self.btn_edit_personnel,
-                          self.btn_save_personnel, self._addPersonnel, self._editPersonnel)
+                          self.btn_save_personnel)
         self._initRefPage("dept", self.tbl_dept,
                           self.btn_add_dept, self.btn_edit_dept,
-                          self.btn_save_dept, self._addDept, self._editDept)
+                          self.btn_save_dept)
         self._initRefPage("casetype", self.tbl_casetype,
                           self.btn_add_casetype, self.btn_edit_casetype,
-                          self.btn_save_casetype, self._addCaseType, self._editCaseType)
+                          self.btn_save_casetype)
 
         # 提示字（用 inner 查找，避免 btn.parent() 在 QUiLoader 環境觸發 GC 刪 C++ widget）
         for _key in ("personnel", "dept", "casetype"):
@@ -307,21 +300,17 @@ class TabSettings(BaseTab):
                 _lbl.setText("可拖拉列以調整排序，完成後按「儲存排序」")
                 _lbl.setStyleSheet("color: #8e8e93; font-size: 11pt;")
 
-        # ── 資源回收筒：表格、提示、signal ──
-        self._initTrashTable()
-        if self._lbl_hint_trash:
-            self._lbl_hint_trash.setText("還原後資料回填原文號。回收筒於跨年度重置時清空。")
-            self._lbl_hint_trash.setStyleSheet("color: #8e8e93; font-size: 11pt;")
-        if self.lbl_trash_count:
-            self.lbl_trash_count.setStyleSheet("color: #8e8e93; font-size: 11pt;")
-        if self.btn_restore_trash:
-            self.btn_restore_trash.setStyleSheet(BTN_CONFIRM)
-            self.btn_restore_trash.clicked.connect(self._restoreTrash)
-        if self.btn_reload_trash:
-            self.btn_reload_trash.setStyleSheet(BTN_CANCEL)
-            self.btn_reload_trash.clicked.connect(lambda _=False: self._loadTrash())
-        if self.w_trash_filter:
-            self.w_trash_filter.textChanged.connect(self._applyTrashFilter)
+        # ── 資源回收筒：抽成獨立面板（ui_utils/trash_panel.py）──
+        self._trash_panel = TrashPanel(
+            db_path=self.db_path,
+            table=self.tbl_trash,
+            filter_edit=self.w_trash_filter,
+            restore_btn=self.btn_restore_trash,
+            reload_btn=self.btn_reload_trash,
+            count_label=self.lbl_trash_count,
+            hint_label=self._lbl_hint_trash,
+            parent=self.tab_widget,
+            sibling_reload=self._flagSiblingReload)
 
         self._outer_stack.setCurrentIndex(0)
 
@@ -356,7 +345,7 @@ class TabSettings(BaseTab):
         # 三個導航鈕的選中/未選中樣式由 _switchPage 動態切換
 
     # ── 初始化單一參照頁（表格樣式 + 動作鈕綁定 + 排序暫存） ──────
-    def _initRefPage(self, key, tbl, btn_add, btn_edit, btn_save, add_cb, edit_cb):
+    def _initRefPage(self, key, tbl, btn_add, btn_edit, btn_save):
         # 表格樣式與行為
         tbl.verticalHeader().setVisible(False)
         tbl.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -380,7 +369,7 @@ class TabSettings(BaseTab):
         if alias_c is not None:
             hdr.setSectionResizeMode(alias_c, QHeaderView.Stretch)
         tbl.cellDoubleClicked.connect(
-            lambda row, col, t=tbl, cb=edit_cb: self._onCellDoubleClicked(t, row, col, cb))
+            lambda row, col, t=tbl, k=key: self._onCellDoubleClicked(t, row, col, k))
 
         # 拖拉排序（event filter 攔截 Drop，阻止 Qt 的逐格移動行為，改成整列記憶體操作）
         from PySide6.QtWidgets import QAbstractItemView
@@ -399,8 +388,8 @@ class TabSettings(BaseTab):
         btn_add.setStyleSheet(BTN_CONFIRM)
         btn_edit.setStyleSheet(BTN_CANCEL)
         btn_save.setStyleSheet(_SAVE_BTN_SS)
-        btn_add.clicked.connect(lambda _=False, cb=add_cb: cb())
-        btn_edit.clicked.connect(lambda _=False, cb=edit_cb: cb())
+        btn_add.clicked.connect(lambda _=False, k=key: self._addRef(k))
+        btn_edit.clicked.connect(lambda _=False, k=key: self._editRef(k))
         btn_save.setEnabled(False)
         btn_save.clicked.connect(lambda _=False, k=key: self._saveSort(k))
 
@@ -424,18 +413,24 @@ class TabSettings(BaseTab):
         self._renderSortTable(key)
         st["table"].selectRow(dst)
 
-    def _onCellDoubleClicked(self, tbl, row, col, edit_cb):
+    def _onCellDoubleClicked(self, tbl, row, col, key):
         """序號欄雙擊＝進入行內編輯；其餘欄位維持原行為（開修改對話框）。"""
+        # 歸檔管理唯讀：雙擊不得進序號行內編輯，也不得開修改框
+        # （按鈕 enabled 擋得住按鈕，擋不住雙擊，故此處補 gate）
+        if not self._refEditable():
+            return
         if col == self._SEQ_COL:
             item = tbl.item(row, self._SEQ_COL)
             if item:
                 tbl.editItem(item)
             return
-        edit_cb(row)
+        self._editRef(key, row)
 
     def _onSeqItemChanged(self, key, item):
         """序號欄編輯完成（Enter／離焦）：合法則搬移，不合法安靜跳回原數字。"""
         if item.column() != self._SEQ_COL:
+            return
+        if not self._refEditable():   # 防禦：唯讀身分不得觸發搬移（會亮回儲存排序鈕）
             return
         st     = self._sort_state[key]
         row    = item.row()
@@ -747,6 +742,13 @@ class TabSettings(BaseTab):
         "casetype":  ("Ref_CaseTypes",    "case_type_id", "case_type_name", "啟用", "停用"),
     }
 
+    # 新增／修改對話框：key → (RefItemDialog 設定常數, 警告用名詞)
+    _REF_DIALOG = {
+        "personnel": (REF_PERSONNEL, "人員"),
+        "dept":      (REF_DEPT,      "部門"),
+        "casetype":  (REF_CASETYPE,  "案件類型"),
+    }
+
     # 排序表固定前兩欄：col0＝拖拉把手、col1＝序號（顯示排序位置）
     _HANDLE_COL = 0
     _SEQ_COL    = 1
@@ -905,259 +907,53 @@ class TabSettings(BaseTab):
     def _loadPersonnel(self):
         self._loadRefGeneric("personnel")
 
-    def _addPersonnel(self):
-        if not self._refEditable():
-            return
-        dlg = RefItemDialog(REF_PERSONNEL, self.db_path, parent=self.tab_widget)
-        if dlg.exec():
-            self._ref_dirty = True
-            self._reloadPreservingOrder("personnel")   # 保留未存拖拉順序
-            pos = dlg.get_target_position()
-            if pos is not None:
-                self._moveRow("personnel", 0, pos)      # 新增後預設在最前，搬到指定位置
-
-    def _editPersonnel(self, row=None):
-        if not self._refEditable():
-            return
-        if row is None:
-            row = self._selected_row(self.tbl_personnel)
-        if row < 0:
-            msgWarning("請選擇項目", "請先點選要修改的人員", self.tab_widget)
-            return
-        srow   = self._sort_state["personnel"]["rows"][row]
-        sid    = srow[0]              # 真 PK，給 UPDATE 用
-        sname  = srow[1]
-        active = bool(srow[2])
-        dlg = RefItemDialog(REF_PERSONNEL, self.db_path,
-                            existing=(sid, row + 1, sname, active), parent=self.tab_widget)
-        if dlg.exec():
-            if dlg.get_result():
-                self._ref_dirty = True
-                self._reloadPreservingOrder("personnel")   # 保留未存拖拉順序
-                pos = dlg.get_target_position()
-                if pos is not None and pos != row:
-                    self._moveRow("personnel", row, pos)
-
-    # ════════════════════════════════════════════════════════════
-    # 部門管理
-    # ════════════════════════════════════════════════════════════
     def _loadDept(self):
         self._loadRefGeneric("dept")
 
-    def _addDept(self):
-        if not self._refEditable():
-            return
-        dlg = RefItemDialog(REF_DEPT, self.db_path, parent=self.tab_widget)
-        if dlg.exec():
-            self._ref_dirty = True
-            self._reloadPreservingOrder("dept")        # 保留未存拖拉順序
-            pos = dlg.get_target_position()
-            if pos is not None:
-                self._moveRow("dept", 0, pos)
-
-    def _editDept(self, row=None):
-        if not self._refEditable():
-            return
-        if row is None:
-            row = self._selected_row(self.tbl_dept)
-        if row < 0:
-            msgWarning("請選擇項目", "請先點選要修改的部門", self.tab_widget)
-            return
-        drow   = self._sort_state["dept"]["rows"][row]
-        did    = drow[0]             # 真 PK，給 UPDATE 用
-        dname  = drow[1]
-        active = bool(drow[2])
-        dlg = RefItemDialog(REF_DEPT, self.db_path,
-                            existing=(did, row + 1, dname, active), parent=self.tab_widget)
-        if dlg.exec():
-            if dlg.get_result():
-                self._ref_dirty = True
-                self._reloadPreservingOrder("dept")        # 保留未存拖拉順序
-                pos = dlg.get_target_position()
-                if pos is not None and pos != row:
-                    self._moveRow("dept", row, pos)
-
-    # ════════════════════════════════════════════════════════════
-    # 案件類型管理
-    # ════════════════════════════════════════════════════════════
     def _loadCaseType(self):
         self._loadRefGeneric("casetype")
 
-    def _addCaseType(self):
+    # ════════════════════════════════════════════════════════════
+    # 參照項新增／修改（人員／部門／案類三頁共用，差異查 _REF_DIALOG）
+    # ════════════════════════════════════════════════════════════
+    def _addRef(self, key):
         if not self._refEditable():
             return
-        dlg = RefItemDialog(REF_CASETYPE, self.db_path, parent=self.tab_widget)
+        cfg, _noun = self._REF_DIALOG[key]
+        dlg = RefItemDialog(cfg, self.db_path, parent=self.tab_widget)
         if dlg.exec():
             self._ref_dirty = True
-            self._reloadPreservingOrder("casetype")    # 保留未存拖拉順序
+            self._reloadPreservingOrder(key)        # 保留未存拖拉順序
             pos = dlg.get_target_position()
             if pos is not None:
-                self._moveRow("casetype", 0, pos)
+                self._moveRow(key, 0, pos)          # 新增後預設在最前，搬到指定位置
 
-    def _editCaseType(self, row=None):
+    def _editRef(self, key, row=None):
         if not self._refEditable():
             return
         if row is None:
-            row = self._selected_row(self.tbl_casetype)
+            row = self._selected_row(self._sort_state[key]["table"])
+        cfg, noun = self._REF_DIALOG[key]
         if row < 0:
-            msgWarning("請選擇項目", "請先點選要修改的案件類型", self.tab_widget)
+            msgWarning("請選擇項目", f"請先點選要修改的{noun}", self.tab_widget)
             return
-        trow   = self._sort_state["casetype"]["rows"][row]
-        tid    = trow[0]             # 真 PK，給 UPDATE 用
-        tname  = trow[1]
-        active = bool(trow[2])
-        dlg = RefItemDialog(REF_CASETYPE, self.db_path,
-                            existing=(tid, row + 1, tname, active), parent=self.tab_widget)
-        if dlg.exec():
-            if dlg.get_result():
-                self._ref_dirty = True
-                self._reloadPreservingOrder("casetype")    # 保留未存拖拉順序
-                pos = dlg.get_target_position()
-                if pos is not None and pos != row:
-                    self._moveRow("casetype", row, pos)
+        srow = self._sort_state[key]["rows"][row]   # [id(真 PK), name, is_active(, alias)]
+        dlg = RefItemDialog(cfg, self.db_path,
+                            existing=(srow[0], row + 1, srow[1], bool(srow[2])),
+                            parent=self.tab_widget)
+        if dlg.exec() and dlg.get_result():
+            self._ref_dirty = True
+            self._reloadPreservingOrder(key)        # 保留未存拖拉順序
+            pos = dlg.get_target_position()
+            if pos is not None and pos != row:
+                self._moveRow(key, row, pos)
 
-    # ── 資源回收筒（誤刪還原，僅 admin）────────────────────────────
-    @staticmethod
-    def _roleZh(role):
-        return {"admin": "管理者", "archive": "歸檔管理",
-                "user": "一般使用者"}.get(role, role or "")
-
-    def _initTrashTable(self):
-        t = self.tbl_trash
-        if not t:
-            return
-        vh = t.verticalHeader()
-        vh.setVisible(False)
-        vh.setDefaultSectionSize(30)        # 固定列高，比照資料庫瀏覽頁
-        t.setWordWrap(False)                # 不換行（單行省略＋tooltip）
-        t.setShowGrid(False)
-        t.setFocusPolicy(Qt.NoFocus)        # 去焦點虛線框（選取仍可用）
-        t.setAlternatingRowColors(True)
-        t.setStyleSheet("""
-            QTableWidget {
-                background-color: #ffffff;
-                alternate-background-color: #f2f2f7;
-                border: none; border-top: 1px solid #c6c6c8;
-                font-size: 13pt;
-            }
-            QHeaderView::section {
-                background-color: #f2f2f7; color: #3a3a3c;
-                font-weight: 600; font-size: 13pt; padding: 4px 4px;
-                border: none; border-bottom: 2px solid #c6c6c8;
-                border-right: 1px solid #e5e5ea;
-            }
-            QTableWidget::item { padding: 2px 6px; border-bottom: 1px solid #e5e5ea; }
-            QTableWidget::item:selected { background-color: #d6e3f5; color: #1c3d5a; }
-        """)
-        hdr = t.horizontalHeader()
-        # 0 刪除時間 / 1 文號 / 2 類別 / 3 主旨 / 4 對象人 / 5 刪除身分
-        for c in (0, 1, 2, 4, 5):
-            hdr.setSectionResizeMode(c, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(3, QHeaderView.Stretch)
-
+    # ── 資源回收筒（誤刪還原，僅 admin）：面板見 ui_utils/trash_panel.py ──
     def _loadTrash(self):
-        if not self.tbl_trash:
-            return
-        rows = []
-        try:
-            conn = getConn(self.db_path)
-            try:
-                cur = conn.execute(
-                    "SELECT trash_id, table_name, doc_id, subject, doc_person, "
-                    "deleted_role, deleted_ts FROM Trash_Documents "
-                    "ORDER BY trash_id DESC")
-                for tid, tbl, doc_id, subj, person, role, ts in cur.fetchall():
-                    rows.append({
-                        "trash_id": tid,
-                        "doc_id":   str(doc_id or ""),
-                        "cat":      self._TRASH_CAT.get(tbl, tbl or ""),
-                        "subject":  subj or "",
-                        "person":   person or "",
-                        "role":     self._roleZh(role),
-                        "ts":       (ts or "").replace("T", " ")[:16],
-                    })
-            finally:
-                conn.close()
-        except Exception:
-            rows = []   # 缺 Trash_Documents 的舊 DB → 空清單
-        self._trash_rows = rows
-        self._renderTrash()
-
-    def _renderTrash(self):
-        t = self.tbl_trash
-        if not t:
-            return
-        kw = (self.w_trash_filter.text() if self.w_trash_filter else "").strip().lower()
-        t.setRowCount(0)
-        shown = 0
-        for r in self._trash_rows:
-            if kw and kw not in r["subject"].lower() and kw not in r["person"].lower():
-                continue
-            row = t.rowCount()
-            t.insertRow(row)
-            for c, text in enumerate(
-                    (r["ts"], r["doc_id"], r["cat"],
-                     r["subject"], r["person"], r["role"])):
-                it = QTableWidgetItem(text)
-                it.setData(Qt.UserRole, r["trash_id"])
-                if c == 3 and text:
-                    it.setToolTip(text)
-                t.setItem(row, c, it)
-            shown += 1
-        if self.lbl_trash_count:
-            self.lbl_trash_count.setText(f"顯示 {shown}／共 {len(self._trash_rows)} 筆")
-
-    def _applyTrashFilter(self, _=None):
-        self._renderTrash()
-
-    def _restoreTrash(self):
-        if not AuthManager.instance().is_admin():
-            return
-        t = self.tbl_trash
-        row = t.currentRow() if t else -1
-        if row < 0:
-            msgWarning("請選擇項目", "請先選取要還原的紀錄", self.tab_widget)
-            return
-        cell = t.item(row, 0)
-        if not cell:
-            return
-        trash_id = cell.data(Qt.UserRole)
-        subj = t.item(row, 3).text() if t.item(row, 3) else ""
-        cat  = t.item(row, 2).text() if t.item(row, 2) else ""
-        if not confirmBox(
-                "還原誤刪", "確定還原此筆紀錄？資料將回填原文號。",
-                confirm_text="還原", cancel_text="取消",
-                informative=(f"{cat}　{subj}" if subj else None)):
-            return
-        ret = None
-        conn = None
-        try:
-            conn = getConn(self.db_path)
-            ret = restoreFromTrash(conn, trash_id)
-            if ret:
-                tbl, doc_id = ret
-                writeAudit(conn,
-                           role=AuthManager.instance().current_role,
-                           action="還原", target_table=tbl,
-                           target_id=str(doc_id), operator=None,
-                           detail=buildDetail(
-                               self._TRASH_CAT.get(tbl, ""), "還原", subj))
-            conn.commit()
-        except Exception:
-            msgCritical("還原失敗", "還原時發生錯誤，請稍後再試。", self.tab_widget)
-            return
-        finally:
-            if conn:
-                conn.close()
-        if not ret:
-            msgWarning("無法還原", "此筆紀錄已不存在或無法還原。", self.tab_widget)
-        else:
-            # 標記被還原的那張表：瀏覽／歸檔頁切過去時於 on_activated 走 _forceReload
-            # （runWithBusy「更新中」popup → 全量重建），遵循既有重載慣例。
-            self._flagSiblingReload({
-                "Document_Task": "task", "Document_Criminal": "crim",
-                "Document_General": "gen"}.get(ret[0]))
-        self._loadTrash()
+        """子頁被顯示時（_switchPage／on_activated 依 index 呼叫）重載回收筒。"""
+        panel = getattr(self, "_trash_panel", None)
+        if panel:
+            panel.load()
 
     def _flagSiblingReload(self, key):
         """標記其他 Tab（瀏覽／歸檔）下次顯示時強制重載指定表。"""
