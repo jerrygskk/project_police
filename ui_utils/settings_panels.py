@@ -5,6 +5,7 @@ settings_panels.py — 設定頁「系統設定」子頁的嵌入式面板
   - ArchiveRootPanel   歸檔資料夾（年度層 UNC + 刑案/一般子夾名；admin/archive 皆可改）
   - PrintTitlePanel    簽收表標題（4 欄自訂文字；僅 admin）
   - IdleTimeoutPanel   閒置逾時（自動登出／強制關閉，分；僅 admin，重啟生效）
+  - InputLockPanel     唯讀設定（三表新增鎖；僅 admin；即時生效）
 
 由 ArchiveRootDialog / PrintTitleDialog（settings_dialogs.py，已移除）改寫而來，
 儲存邏輯與稽核行為不變。面板值以 reload() 重讀 DB（切入子頁時呼叫）。

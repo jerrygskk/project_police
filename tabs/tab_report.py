@@ -279,6 +279,19 @@ class TabReport(BaseTab):
         }
         self._applyInputLock()
 
+        # main._onTabChanged 不會對本頁呼叫 on_activated（只對設定/瀏覽頁），
+        # 故自掛 currentChanged：切回本頁時重套唯讀狀態（比照 tab_print._onShown）。
+        self._tab_index = tab_index
+        try:
+            self.tab_widget.currentChanged.connect(self._onShown)
+        except Exception:
+            pass
+        from lib.auth_manager import AuthManager as _AM
+        try:
+            _AM.instance().role_changed.connect(lambda *_: self._applyInputLock())
+        except Exception:
+            pass
+
         # ── 初始狀態：顯示刑案、隱藏一般 ─────────────────
         self._switchFormType(0)
 
@@ -300,6 +313,11 @@ class TabReport(BaseTab):
             for row, h in heights.items():
                 self._mainGrid.setRowMinimumHeight(row, h)
         self._applyInputLock()
+
+    def _onShown(self, idx):
+        """切回本頁時重套唯讀狀態（main._onTabChanged 不會對本頁呼叫 on_activated）。"""
+        if idx == getattr(self, "_tab_index", -1):
+            self._applyInputLock()
 
     def _currentLockKind(self):
         idx = self.type_tabbar.currentIndex() if self.type_tabbar else 0

@@ -108,6 +108,20 @@ class TabReceive(BaseTab):
             btn_submit, btn_clear) if w]
         self._applyInputLock()
 
+        # main._onTabChanged 不會對本頁呼叫 on_activated（只對設定/瀏覽頁），
+        # 故自掛 currentChanged：切回本頁時重套唯讀狀態（比照 tab_print._onShown）。
+        self._tab_index = tab_index
+        try:
+            self.tab_widget.currentChanged.connect(self._onShown)
+        except Exception:
+            pass
+        # 登出降回一般使用者時即時重套反灰
+        from lib.auth_manager import AuthManager as _AM
+        try:
+            _AM.instance().role_changed.connect(lambda *_: self._applyInputLock())
+        except Exception:
+            pass
+
         if self.recv_subject: self.recv_subject.setFocus()
 
     # ── BaseTab 介面 ──────────────────────────────────────
@@ -124,6 +138,11 @@ class TabReceive(BaseTab):
         refreshFilterCombo(self.recv_dept,      self._depts)
         self._refreshTaskPreviewNames(self.recv_table)
         self._applyInputLock()
+
+    def _onShown(self, idx):
+        """切回本頁時重套唯讀狀態（main._onTabChanged 不會對本頁呼叫 on_activated）。"""
+        if idx == getattr(self, "_tab_index", -1):
+            self._applyInputLock()
 
     def _applyInputLock(self):
         """一般使用者遇交辦表被鎖 → 表單全反灰＋顯示紅色唯讀橫幅；
