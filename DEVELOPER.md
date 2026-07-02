@@ -123,6 +123,16 @@ main.py
 > 一般使用者限制由 `TaskEditDialog(restricted=…)` 控制（鎖定欄顯示 DB 原值＋灰 `:disabled` 樣式，儲存只動承辦人）；身分變更時 `_onRolePerm` 重刷編號連結與刪除鈕。瀏覽頁已改純 item，`_onRolePerm` 只切編號欄 `setForeground`（藍＝可點）、`refreshDeleteBtns` 切 ✕ 字色，點擊走 `cellClicked`；收/發/陳報頁仍由 `setDocIdLinkCell(clickable=…)`（cellWidget）控制。
 > 「歸檔管理也能做」用 `is_manager()`；「僅 admin」（Tab4 刪除、Tab0 發文）維持 `is_admin()`。設定頁參照維護按鈕對 archive `setEnabled(False)`（需配 `:disabled` 樣式，見踩雷表）；雙擊參照列會繞過按鈕 enabled，故 `_add*/_edit*`（現已收斂為 `_addRef`／`_editRef`）皆有 `_refEditable()`（僅 admin）guard。⚠️ **排序的替代路徑也要 gate**：拖拉在 `_applyRolePermissions` 以 `NoDragDrop` 關閉；**序號欄雙擊行內編輯**曾漏 gate（archive 可雙擊改序號→ `_moveRow` 把已反灰的「儲存排序」鈕重新點亮→ 存回 DB＝權限繞過），已於 `_onCellDoubleClicked` 開頭與 `_onSeqItemChanged` 補 `_refEditable()` guard。凡新增「受限身分不可做」的功能，務必檢查**每一條**觸發路徑（按鈕／雙擊／行內編輯／Enter／拖拉），見 CLAUDE.md「寫 code 的紀律」。
 
+#### 三表新增鎖（唯讀設定，v1.1.6）
+
+單位級「跨年度後唯讀」開關：管理者於「系統設定 → 唯讀設定」（`InputLockPanel`）逐一停用三張公文主表的**新增**，被停用者一般使用者只能瀏覽。
+
+- **儲存**：`App_Settings` 三 key `input_lock_task`／`input_lock_crim`／`input_lock_gen`（`"1"`＝鎖）；讀取端 fallback，預設不鎖。常數 `INPUT_LOCK_KEYS`＋便捷 `isInputLocked(db_path, kind)`（kind ∈ task/crim/gen）皆在 `lib/db_utils.py`。純邏輯測試 `tests/test_input_lock.py`。
+- **只擋新增、只擋一般使用者**：不擋修改／刪除；admin／archive（`is_manager()`）不受限。跨年度重置不動這三 key（`performYearEndReset` 不清 `App_Settings`），重置後保留現值。
+- **硬 gate（真正防線）**：三個唯一 INSERT 進入點開頭 `if not is_manager() and isInputLocked(...): return`——`tab_receive._submit`(task)／`tab_report._submitCriminal`(crim)／`_submitGeneral`(gen)。涵蓋送出鈕與 Enter。交辦發文 Tab0 是更新既有列、不新增，不受影響。
+- **唯讀 UI（輔助提示）**：一般使用者進到被鎖分頁 → 該表單所有可填欄位＋送出/清除鈕 `setEnabled(False)`、頂端顯示紅色橫幅「唯讀模式：本功能目前無法使用，僅供瀏覽」；預覽表維持可讀。各分頁 `_applyInputLock()` 於 `on_activated` 刷新。`tab_report` 依當前刑案/一般模式（`_currentLockKind()`）只鎖對應那種，`type_tabbar` 不反灰（可切到未鎖模式），`_switchFormType` 末尾亦重套。
+- ⚠️ 即時生效（送出當下讀設定），不需重啟；UI 反灰狀態於切入分頁時刷新。
+
 ### 閒置處理與多人使用（main.py）
 
 兩個獨立計時器（全域事件過濾器 `_IdleFilter` 監聽滑鼠/鍵盤/滾輪重設）。**兩值自 v1.1.6 起可由「系統設定」子頁調整**（存 `App_Settings`：`idle_logout_min`／`idle_close_min`，分為單位、**0＝停用該機制**；啟動時 `getIdleTimeoutsMs` 讀一次、改值重啟生效，讀不到／壞值退預設，見 `db_utils.parseIdleMinutes`）：
@@ -415,13 +425,16 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 
 ### 系統設定子頁（settings_panels.py，v1.1.6）
 
-設定 Tab6 第 5 個 nav 子頁「系統設定」（`inner_stack` index 4，`_PAGE_SYSTEM`），QScrollArea 內直排三個嵌入面板（`ui_utils/settings_panels.py`，QGroupBox）。取代原 nav 兩顆鈕＋兩個 Dialog（`ArchiveRootDialog`／`PrintTitleDialog` 已刪，邏輯原樣搬入面板）：
+設定 Tab6 第 5 個 nav 子頁「系統設定」（`inner_stack` index 4，`_PAGE_SYSTEM`），QScrollArea 內直排四個嵌入面板（`ui_utils/settings_panels.py`，QGroupBox）。取代原 nav 兩顆鈕＋兩個 Dialog（`ArchiveRootDialog`／`PrintTitleDialog` 已刪，邏輯原樣搬入面板）：
 
 | 面板 | 內容 | 權限 |
 |------|------|------|
 | `ArchiveRootPanel` | 年度層 UNC 路徑＋刑案/一般子夾（兩欄並排固定寬） | admin／archive 皆可改 |
 | `PrintTitlePanel` | 簽收表四格（2×2 等寬撐滿）＋恢復預設 | 僅 admin，archive 整塊反灰 |
 | `IdleTimeoutPanel` | 閒置自動登出／強制關閉（NoButtons spinbox，0＝停用） | 僅 admin，archive 整塊反灰 |
+| `InputLockPanel` | 唯讀設定：三個勾選框停用一般使用者對交辦收文／刑案陳報／一般陳報的**新增**（存 `App_Settings`，即時生效） | 僅 admin，archive 整塊反灰 |
+
+> `tab_settings` 掛載處（建立、`_applyRolePermissions` 反灰、`_loadSystem` reload、`_dirtyPanels` dirty）四份清單都要含新面板；面板由 `ui_utils/__init__.py` 匯出。
 
 - **儲存鈕 UX**：各面板獨立「儲存」（墨藍樣式）。**未變動反灰、改值即亮、存檔成功直接回灰**＝完成回饋，無成功彈窗。回灰前先 `clearFocus()`——Qt 停用「持有焦點的元件」時會把焦點塞給 tab 順序下一個輸入欄（游標亂跳、QScrollArea 跟著捲）
 - **dirty 追蹤**：`reload()` 存值快照 `_loaded`，`isDirty()` 比對畫面值。切子頁／切出大 Tab 沿用 `_promptUnsaved`（併入面板 dirty，噪音字依來源顯示「排序／設定」）；按「儲存」批次呼叫 `panel._save()`（回 bool，被擋則留在頁面）；登出＝放棄（`_onRoleChanged` reload）
