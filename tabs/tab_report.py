@@ -255,6 +255,30 @@ class TabReport(BaseTab):
         if btn_copy_to_processor:
             btn_copy_to_processor.clicked.connect(self._copyReceiverToProcessor)
 
+        # ── 唯讀橫幅＋表單鎖定 ────────────────────────────
+        # 唯讀橫幅（預設隱藏）
+        self._readonly_banner = QLabel("唯讀模式：本功能目前無法使用，僅供瀏覽")
+        self._readonly_banner.setStyleSheet(
+            "background-color: #fdecea; color: #c0392b; border: 1px solid #e74c3c;"
+            "border-radius: 8px; padding: 8px 12px; font-weight: 600;")
+        self._readonly_banner.setVisible(False)
+        lay.insertWidget(0, self._readonly_banner)
+
+        shared = [self.rpt_date, self.rpt_sender]
+        self._lock_widgets = {
+            "crim": [w for w in (shared + [
+                self.crim_casetype, self.crim_processor, self.crim_receiver,
+                self.crim_subject, self.crim_occdate, self.crim_reporter,
+                self.radio_status_a, self.radio_status_b, self.radio_status_c,
+                btn_copy_to_receiver, btn_copy_to_processor,
+                btn_submit, btn_clear]) if w],
+            "gen":  [w for w in (shared + [
+                self.gen_dept, self.gen_processor, self.gen_subject,
+                self.radio_gen_cat_a, self.radio_gen_cat_b, self.radio_gen_cat_c,
+                btn_submit, btn_clear]) if w],
+        }
+        self._applyInputLock()
+
         # ── 初始狀態：顯示刑案、隱藏一般 ─────────────────
         self._switchFormType(0)
 
@@ -275,6 +299,26 @@ class TabReport(BaseTab):
                        else {0: 48, 1: 0, 2: 0, 3: 0, 4: 66, 5: 66})
             for row, h in heights.items():
                 self._mainGrid.setRowMinimumHeight(row, h)
+        self._applyInputLock()
+
+    def _currentLockKind(self):
+        idx = self.type_tabbar.currentIndex() if self.type_tabbar else 0
+        return "crim" if idx == 0 else "gen"
+
+    def _applyInputLock(self):
+        """依當前模式（刑案/一般）判斷該類別是否對一般使用者鎖定：
+        鎖定 → 當前模式表單全反灰＋紅色橫幅；未鎖或管理者 → 正常。
+        模式切換列（type_tabbar）不反灰，讓使用者可切到未鎖模式。"""
+        from lib.auth_manager import AuthManager
+        from lib.db_utils import isInputLocked
+        kind = self._currentLockKind()
+        locked = (not AuthManager.instance().is_manager()
+                  and isInputLocked(self.db_path, kind))
+        widgets = getattr(self, "_lock_widgets", {}).get(kind, [])
+        for w in widgets:
+            w.setEnabled(not locked)
+        if getattr(self, "_readonly_banner", None):
+            self._readonly_banner.setVisible(locked)
 
     # ── BaseTab 介面 ──────────────────────────────────────
     def get_tables(self):
@@ -297,6 +341,7 @@ class TabReport(BaseTab):
         refreshFilterCombo(self.gen_processor,  self._personnel)
         self._refreshCrimPreviewNames()
         self._refreshGenPreviewNames()
+        self._applyInputLock()
 
     def _refreshCrimPreviewNames(self):
         """掃刑案預覽表，更新案類/承辦人/受理人欄。"""
@@ -434,6 +479,11 @@ class TabReport(BaseTab):
             self._submitGeneral(report_date, sender_id)
 
     def _submitCriminal(self, report_date, sender_id):
+        from lib.auth_manager import AuthManager
+        from lib.db_utils import isInputLocked
+        if not AuthManager.instance().is_manager() and isInputLocked(self.db_path, "crim"):
+            msgWarning("唯讀模式", "本功能目前為唯讀模式無法使用。")
+            return
         # status_name 為預覽顯示用，與 Ref_Case_Status.status_name 一致（皆兩字）
         if self.radio_status_a and self.radio_status_a.isChecked():
             status_id, status_name = 'CS01', '現行'
@@ -498,6 +548,11 @@ class TabReport(BaseTab):
                 conn.close()
 
     def _submitGeneral(self, report_date, sender_id):
+        from lib.auth_manager import AuthManager
+        from lib.db_utils import isInputLocked
+        if not AuthManager.instance().is_manager() and isInputLocked(self.db_path, "gen"):
+            msgWarning("唯讀模式", "本功能目前為唯讀模式無法使用。")
+            return
         # cat_name 為預覽顯示用，與 Ref_General_Category.gen_cat_name 一致（皆兩字）
         if self.radio_gen_cat_a and self.radio_gen_cat_a.isChecked():
             cat_id, cat_name = 'GC01', '業務'
