@@ -115,10 +115,10 @@ class TabReceive(BaseTab):
             self.tab_widget.currentChanged.connect(self._onShown)
         except Exception:
             pass
-        # 登出降回一般使用者時即時重套反灰
+        # 登出降回一般使用者時：清空預覽清單（不在原頁做額外的即時反灰）
         from lib.auth_manager import AuthManager as _AM
         try:
-            _AM.instance().role_changed.connect(lambda *_: self._applyInputLock())
+            _AM.instance().role_changed.connect(self._onRoleClearList)
         except Exception:
             pass
 
@@ -155,6 +155,12 @@ class TabReceive(BaseTab):
             w.setEnabled(not locked)
         if getattr(self, "_readonly_banner", None):
             self._readonly_banner.setVisible(locked)
+
+    def _onRoleClearList(self, *_):
+        """登出降回一般使用者時清空預覽清單（取代原頁即時反灰）。"""
+        from lib.auth_manager import AuthManager
+        if not AuthManager.instance().is_manager() and self.recv_table:
+            self.recv_table.setRowCount(0)
 
     # ── 免覆 Checkbox ─────────────────────────────────────
     def _onNoDeadlineChanged(self, state):

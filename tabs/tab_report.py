@@ -286,9 +286,10 @@ class TabReport(BaseTab):
             self.tab_widget.currentChanged.connect(self._onShown)
         except Exception:
             pass
+        # 登出降回一般使用者時：清空預覽清單（不在原頁做額外的即時反灰）
         from lib.auth_manager import AuthManager as _AM
         try:
-            _AM.instance().role_changed.connect(lambda *_: self._applyInputLock())
+            _AM.instance().role_changed.connect(self._onRoleClearList)
         except Exception:
             pass
 
@@ -318,6 +319,14 @@ class TabReport(BaseTab):
         """切回本頁時重套唯讀狀態（main._onTabChanged 不會對本頁呼叫 on_activated）。"""
         if idx == getattr(self, "_tab_index", -1):
             self._applyInputLock()
+
+    def _onRoleClearList(self, *_):
+        """登出降回一般使用者時清空刑案/一般預覽清單（取代原頁即時反灰）。"""
+        from lib.auth_manager import AuthManager
+        if not AuthManager.instance().is_manager():
+            for t in (self.crim_table, self.gen_table):
+                if t:
+                    t.setRowCount(0)
 
     def _currentLockKind(self):
         idx = self.type_tabbar.currentIndex() if self.type_tabbar else 0

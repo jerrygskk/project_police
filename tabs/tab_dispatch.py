@@ -91,8 +91,8 @@ class TabDispatch(BaseTab):
             self.tab_widget.currentChanged.connect(self._onShown)
         except Exception:
             pass
-        # 登出降回一般使用者時即時重套反灰
-        AuthManager.instance().role_changed.connect(lambda *_: self._applyInputLock())
+        # 登出降回一般使用者時：清空發文清單（不在原頁做額外的即時反灰）
+        AuthManager.instance().role_changed.connect(self._onRoleClearList)
         self._applyInputLock()
 
     def _onShown(self, idx):
@@ -109,6 +109,11 @@ class TabDispatch(BaseTab):
             w.setEnabled(not locked)
         if getattr(self, "_readonly_banner", None):
             self._readonly_banner.setVisible(locked)
+
+    def _onRoleClearList(self, *_):
+        """登出降回一般使用者時清空發文清單（取代原頁即時反灰）。"""
+        if not AuthManager.instance().is_manager() and self.table:
+            self.table.setRowCount(0)
 
     def _onRolePerm(self, _role=None):
         """身分變更即時生效：逐列切換刪除鈕停用/啟用，並重算編號欄可點狀態
