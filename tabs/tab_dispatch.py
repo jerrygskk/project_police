@@ -2,7 +2,7 @@ from datetime import datetime
 
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui  import QColor
-from PySide6.QtWidgets import QTableWidgetItem, QLabel
+from PySide6.QtWidgets import QTableWidgetItem, QLabel, QWidget, QVBoxLayout
 
 from lib.base_tab import BaseTab
 from lib.db_utils import DEBUG_MODE, isInputLocked
@@ -74,9 +74,26 @@ class TabDispatch(BaseTab):
             "background-color: #fdecea; color: #c0392b; border: 1px solid #e74c3c;"
             "border-radius: 8px; padding: 8px 12px; font-weight: 600;")
         self._readonly_banner.setVisible(False)
+        # 橫幅滿版（貼齊分頁邊緣，與收文/陳報頁一致）：發文頁的表單與表格原本
+        # 直接放在 tabLayout_1，若把橫幅插進去會被套用該 layout 的左右內距而較窄。
+        # 比照收文頁做法：把原有內容包進 inner 容器承接邊距，tabLayout_1 邊距歸零，
+        # 橫幅插在最上層橫向滿版（inner 保留原內距，表單/表格位置不變）。
         _tl = tab.layout()
         if _tl is not None:
-            _tl.insertWidget(0, self._readonly_banner)
+            inner = QWidget()
+            inner_lay = QVBoxLayout(inner)
+            inner_lay.setContentsMargins(*_tl.getContentsMargins())
+            inner_lay.setSpacing(_tl.spacing())
+            while _tl.count():
+                it = _tl.takeAt(0)
+                if it.widget() is not None:
+                    inner_lay.addWidget(it.widget())
+                elif it.layout() is not None:
+                    inner_lay.addLayout(it.layout())
+            _tl.setContentsMargins(0, 0, 0, 0)
+            _tl.setSpacing(0)
+            _tl.addWidget(self._readonly_banner)
+            _tl.addWidget(inner)
 
         # 唯讀時一併反灰的可填元件（發文動作屬交辦表 task 鎖範圍：發文是在
         # 既有交辦單上補登發文資訊，跨年度後唯讀時亦停用）
