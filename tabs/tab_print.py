@@ -490,8 +490,10 @@ class TabPrint(BaseTab):
         lay = QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0)
         # 簽收表標題未設定（仍為 ○○ 預設）→ 頂部紅字提醒去設定頁（比照歸檔未設定）
-        self._title_warn = QLabel("⚠ 簽收表標題未設定，請至「資料庫設定 → 簽收表設定」更新")
-        self._title_warn.setStyleSheet("color:#e74c3c; font-size:11pt; padding:4px 10px;")
+        self._title_warn = QLabel("⚠ 簽收表標題未設定，請至「資料庫設定 → 系統設定」更新")
+        self._title_warn.setStyleSheet(
+            "background-color: #fdecea; color: #c0392b; border: 1px solid #e74c3c;"
+            "border-radius: 8px; padding: 8px 12px; font-weight: 600;")
         self._title_warn.setVisible(False)
         lay.addWidget(self._title_warn)
         lay.addWidget(inner)

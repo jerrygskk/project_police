@@ -194,7 +194,9 @@ class TabArchive(BaseTab):
         self._selected = {"crim": None, "gen": None}  # 鎖定的 doc_id
 
         # 歸檔根目錄警示 label（放在 pick 按鈕右側，archive_root 空時顯示）
-        _ARCH_WARN_SS  = "color:#e74c3c; font-size:11pt;"
+        _ARCH_WARN_SS  = ("background-color: #fdecea; color: #c0392b; "
+                          "border: 1px solid #e74c3c; border-radius: 8px; "
+                          "padding: 8px 12px; font-weight: 600;")
         _ARCH_WARN_TXT = "⚠ 歸檔資料夾未設定，請至設定頁更新"
         self._arch_warn = {}
         for key in ("crim", "gen"):
