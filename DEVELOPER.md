@@ -129,9 +129,10 @@ main.py
 
 - **儲存**：`App_Settings` 三 key `input_lock_task`／`input_lock_crim`／`input_lock_gen`（`"1"`＝鎖）；讀取端 fallback，預設不鎖。常數 `INPUT_LOCK_KEYS`＋便捷 `isInputLocked(db_path, kind)`（kind ∈ task/crim/gen）皆在 `lib/db_utils.py`。純邏輯測試 `tests/test_input_lock.py`。
 - **只擋新增、只擋一般使用者**：不擋修改／刪除；admin／archive（`is_manager()`）不受限。跨年度重置不動這三 key（`performYearEndReset` 不清 `App_Settings`），重置後保留現值。
-- **硬 gate（真正防線）**：三個唯一 INSERT 進入點開頭 `if not is_manager() and isInputLocked(...): return`——`tab_receive._submit`(task)／`tab_report._submitCriminal`(crim)／`_submitGeneral`(gen)。涵蓋送出鈕與 Enter。交辦發文 Tab0 是更新既有列、不新增，不受影響。
-- **唯讀 UI（輔助提示）**：一般使用者進到被鎖分頁 → 該表單所有可填欄位＋送出/清除鈕 `setEnabled(False)`、頂端顯示紅色橫幅「唯讀模式：本功能目前無法使用，僅供瀏覽」；預覽表維持可讀。各分頁 `_applyInputLock()` 於 `on_activated` 刷新。`tab_report` 依當前刑案/一般模式（`_currentLockKind()`）只鎖對應那種，`type_tabbar` 不反灰（可切到未鎖模式），`_switchFormType` 末尾亦重套。
-- ⚠️ 即時生效（送出當下讀設定），不需重啟；UI 反灰狀態於切入分頁時刷新。
+- **硬 gate（真正防線）**：`if not is_manager() and isInputLocked(...): return`——`tab_receive._submit`(task／收文 INSERT)／`tab_report._submitCriminal`(crim)／`_submitGeneral`(gen)／`tab_dispatch.handleDispatch`(task／發文 UPDATE)。涵蓋送出鈕與 Enter。**`task` 鎖同時涵蓋交辦單收文（新增）與交辦單發文（Tab0 確認發文，屬同一交辦流程，跨年度後一併凍結）**——這是刻意的範圍決定，`task` 一個開關管收發文兩頁。
+- **唯讀 UI（輔助提示）**：一般使用者進到被鎖分頁 → 該表單所有可填欄位＋送出/清除鈕 `setEnabled(False)`、頂端顯示紅色橫幅「唯讀模式：本功能目前無法使用，僅供瀏覽」；預覽表維持可讀。三頁（收文／發文／陳報）各有 `_applyInputLock()`。`tab_report` 依當前刑案/一般模式（`_currentLockKind()`）只鎖對應那種，`type_tabbar` 不反灰（可切到未鎖模式），`_switchFormType` 末尾亦重套。
+- ⚠️ **刷新時機（易踩）**：`main._onTabChanged` **只對設定頁與瀏覽頁**呼叫 `on_activated`，切入收文/發文/陳報頁不會觸發。故這三頁各自 `setup()` 內自掛 `self.tab_widget.currentChanged.connect(self._onShown)`（比照 `tab_print`）＋ `AuthManager.role_changed`（登出降回一般使用者即時反灰）來重套 `_applyInputLock`，不能只靠 `on_activated`。
+- ⚠️ 即時生效（送出當下讀設定），不需重啟。
 
 ### 閒置處理與多人使用（main.py）
 

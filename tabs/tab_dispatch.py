@@ -2,10 +2,10 @@ from datetime import datetime
 
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui  import QColor
-from PySide6.QtWidgets import QTableWidgetItem
+from PySide6.QtWidgets import QTableWidgetItem, QLabel
 
 from lib.base_tab import BaseTab
-from lib.db_utils import DEBUG_MODE
+from lib.db_utils import DEBUG_MODE, isInputLocked
 from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, reportError
 from lib.auth_manager import AuthManager
 from ui_utils import (
@@ -68,6 +68,48 @@ class TabDispatch(BaseTab):
         # 身分切換時即時更新刪除鈕可用狀態
         AuthManager.instance().role_changed.connect(self._onRolePerm)
 
+        # 唯讀橫幅（預設隱藏；一般使用者遇交辦表被鎖時顯示）
+        self._readonly_banner = QLabel("唯讀模式：本功能目前無法使用，僅供瀏覽")
+        self._readonly_banner.setStyleSheet(
+            "background-color: #fdecea; color: #c0392b; border: 1px solid #e74c3c;"
+            "border-radius: 8px; padding: 8px 12px; font-weight: 600;")
+        self._readonly_banner.setVisible(False)
+        _tl = tab.layout()
+        if _tl is not None:
+            _tl.insertWidget(0, self._readonly_banner)
+
+        # 唯讀時一併反灰的可填元件（發文動作屬交辦表 task 鎖範圍：發文是在
+        # 既有交辦單上補登發文資訊，跨年度後唯讀時亦停用）
+        self._lock_widgets = [w for w in (
+            self.lineEdit, btn_input, self.dispatch_date, self.dispatch_sender,
+            btn_send, btn_clear) if w]
+
+        # main._onTabChanged 不會對本頁呼叫 on_activated（只對設定/瀏覽頁），
+        # 故自掛 currentChanged：切回本頁時重套唯讀狀態（比照 tab_print._onShown）。
+        self._tab_index = tab_index
+        try:
+            self.tab_widget.currentChanged.connect(self._onShown)
+        except Exception:
+            pass
+        # 登出降回一般使用者時即時重套反灰
+        AuthManager.instance().role_changed.connect(lambda *_: self._applyInputLock())
+        self._applyInputLock()
+
+    def _onShown(self, idx):
+        """切回本頁時重套唯讀狀態（main._onTabChanged 不會對本頁呼叫 on_activated）。"""
+        if idx == getattr(self, "_tab_index", -1):
+            self._applyInputLock()
+
+    def _applyInputLock(self):
+        """一般使用者遇交辦表被鎖 → 發文表單全反灰＋顯示紅色唯讀橫幅；
+        admin/archive 或未鎖 → 正常可填、橫幅隱藏。"""
+        locked = (not AuthManager.instance().is_manager()
+                  and isInputLocked(self.db_path, "task"))
+        for w in getattr(self, "_lock_widgets", []):
+            w.setEnabled(not locked)
+        if getattr(self, "_readonly_banner", None):
+            self._readonly_banner.setVisible(locked)
+
     def _onRolePerm(self, _role=None):
         """身分變更即時生效：逐列切換刪除鈕停用/啟用，並重算編號欄可點狀態
         （admin 永遠可點，含已發文；一般使用者已發文鎖住）。"""
@@ -100,6 +142,7 @@ class TabDispatch(BaseTab):
         if self.dispatch_sender:
             refreshFilterCombo(self.dispatch_sender, personnel)
         self._refreshTaskPreviewNames(self.table)
+        self._applyInputLock()
 
 
     # ── 查詢單筆 ──────────────────────────────────────────
@@ -272,6 +315,10 @@ class TabDispatch(BaseTab):
 
     # ── 批次發文 ──────────────────────────────────────────
     def handleDispatch(self):
+        # 唯讀 gate：交辦表被鎖時一般使用者不可發文（真正防線，涵蓋按鈕與所有觸發）
+        if not AuthManager.instance().is_manager() and isInputLocked(self.db_path, "task"):
+            msgWarning("唯讀模式", "本功能目前為唯讀模式無法使用。")
+            return
         if not self.table or self.table.rowCount() == 0:
             msgInfo("提示", "清單是空的，請先掃入文號")
             return
