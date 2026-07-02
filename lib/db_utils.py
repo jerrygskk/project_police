@@ -551,6 +551,29 @@ def getIdleTimeoutsMs(db_path):
     return int(mins["logout"] * 60000), int(mins["close"] * 60000)
 
 
+# ══════════════════════════════════════════════════════════════════
+# 三表新增唯讀鎖（管理者可停用一般使用者新增）
+# ──────────────────────────────────────────────────────────────────
+# 跨年度重置不清這些 key（唯讀模式是管理端安全設定，見 performYearEndReset）。
+INPUT_LOCK_KEYS = {
+    "task": "input_lock_task",
+    "crim": "input_lock_crim",
+    "gen":  "input_lock_gen",
+}
+
+
+def isInputLocked(db_path, kind):
+    """該類別是否已被管理者停用新增（一般使用者唯讀）。
+    App_Settings 值為 "1" 才算鎖定；未設定／"0"／壞值／讀不到一律回 False，不拋例外。"""
+    key = INPUT_LOCK_KEYS.get(kind)
+    if not key:
+        return False
+    try:
+        return (getSetting(db_path, key, "") or "").strip() == "1"
+    except Exception:
+        return False
+
+
 _PDF_INDEX_CACHE = {}   # base_dir -> {nfc(檔名): 完整路徑}
 
 
