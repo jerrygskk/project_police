@@ -434,7 +434,7 @@ from ui_utils import msgInfo, msgWarning, msgCritical, confirmBox, loadUi
 | `ArchiveRootPanel` | 年度層 UNC 路徑＋刑案/一般子夾（兩欄並排固定寬） | admin／archive 皆可改 |
 | `PrintTitlePanel` | 簽收表四格（2×2 等寬撐滿）＋恢復預設 | 僅 admin，archive 整塊反灰 |
 | `IdleTimeoutPanel` | 閒置自動登出／強制關閉（NoButtons spinbox，0＝停用） | 僅 admin，archive 整塊反灰 |
-| `InputLockPanel` | 唯讀設定：三個勾選框停用一般使用者對交辦收文／刑案陳報／一般陳報的**新增**（存 `App_Settings`，即時生效） | 僅 admin，archive 整塊反灰 |
+| `InputLockPanel` | 唯讀設定：四個勾選框停用一般使用者對交辦單發文／交辦單收文／刑案陳報／一般陳報的操作（發文為 UPDATE、餘為**新增**；存 `App_Settings`，即時生效） | 僅 admin，archive 整塊反灰 |
 
 > `tab_settings` 掛載處（建立、`_applyRolePermissions` 反灰、`_loadSystem` reload、`_dirtyPanels` dirty）四份清單都要含新面板；面板由 `ui_utils/__init__.py` 匯出。
 
