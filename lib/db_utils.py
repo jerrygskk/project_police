@@ -556,9 +556,10 @@ def getIdleTimeoutsMs(db_path):
 # ──────────────────────────────────────────────────────────────────
 # 跨年度重置不清這些 key（唯讀模式是管理端安全設定，見 performYearEndReset）。
 INPUT_LOCK_KEYS = {
-    "task": "input_lock_task",
-    "crim": "input_lock_crim",
-    "gen":  "input_lock_gen",
+    "dispatch": "input_lock_dispatch",   # 交辦單發文（Tab0 確認發文）
+    "task":     "input_lock_task",       # 交辦單收文（Tab1 新增）
+    "crim":     "input_lock_crim",
+    "gen":      "input_lock_gen",
 }
 
 

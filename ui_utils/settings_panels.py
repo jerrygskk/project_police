@@ -578,9 +578,10 @@ class IdleTimeoutPanel(QGroupBox):
 class InputLockPanel(QGroupBox):
     # (kind, 勾選框標籤)
     _ROWS = [
-        ("task", "交辦單收文／發文"),
-        ("crim", "刑案陳報"),
-        ("gen",  "一般陳報"),
+        ("dispatch", "交辦單發文"),
+        ("task",     "交辦單收文"),
+        ("crim",     "刑案陳報"),
+        ("gen",      "一般陳報"),
     ]
 
     def __init__(self, db_path, parent=None):
@@ -597,8 +598,7 @@ class InputLockPanel(QGroupBox):
 
         hint = QLabel(
             "勾選後，該類別將進入唯讀模式：一般使用者無法新增，僅能瀏覽既有資料；"
-            "管理者與歸檔管理不受限。既有資料的修改、刪除不受影響。儲存後立即生效。\n"
-            "「交辦單收文／發文」一併涵蓋交辦單發文（發文亦停用）。")
+            "管理者與歸檔管理不受限。既有資料的修改、刪除不受影響。儲存後立即生效。")
         hint.setStyleSheet(_HINT_SS)
         hint.setWordWrap(True)
         v.addWidget(hint)

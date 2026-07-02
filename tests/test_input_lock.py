@@ -13,7 +13,12 @@ class TestInputLock(unittest.TestCase):
         os.remove(self.db)
 
     def test_keys_present(self):
-        self.assertEqual(set(INPUT_LOCK_KEYS), {"task", "crim", "gen"})
+        self.assertEqual(set(INPUT_LOCK_KEYS), {"dispatch", "task", "crim", "gen"})
+
+    def test_dispatch_key_independent(self):
+        setSetting(self.db, INPUT_LOCK_KEYS["dispatch"], "1")
+        self.assertTrue(isInputLocked(self.db, "dispatch"))
+        self.assertFalse(isInputLocked(self.db, "task"))
 
     def test_default_unlocked(self):
         for kind in INPUT_LOCK_KEYS:

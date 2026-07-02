@@ -127,9 +127,9 @@ main.py
 
 單位級「跨年度後唯讀」開關：管理者於「系統設定 → 唯讀設定」（`InputLockPanel`）逐一停用三張公文主表的**新增**，被停用者一般使用者只能瀏覽。
 
-- **儲存**：`App_Settings` 三 key `input_lock_task`／`input_lock_crim`／`input_lock_gen`（`"1"`＝鎖）；讀取端 fallback，預設不鎖。常數 `INPUT_LOCK_KEYS`＋便捷 `isInputLocked(db_path, kind)`（kind ∈ task/crim/gen）皆在 `lib/db_utils.py`。純邏輯測試 `tests/test_input_lock.py`。
+- **儲存**：`App_Settings` 四 key `input_lock_dispatch`（發文）／`input_lock_task`（收文）／`input_lock_crim`／`input_lock_gen`（`"1"`＝鎖）；讀取端 fallback，預設不鎖。常數 `INPUT_LOCK_KEYS`＋便捷 `isInputLocked(db_path, kind)`（kind ∈ dispatch/task/crim/gen）皆在 `lib/db_utils.py`。純邏輯測試 `tests/test_input_lock.py`。發文與收文雖同動 `Document_Task`，但屬不同分頁、獨立開關。
 - **只擋新增、只擋一般使用者**：不擋修改／刪除；admin／archive（`is_manager()`）不受限。跨年度重置不動這三 key（`performYearEndReset` 不清 `App_Settings`），重置後保留現值。
-- **硬 gate（真正防線）**：`if not is_manager() and isInputLocked(...): return`——`tab_receive._submit`(task／收文 INSERT)／`tab_report._submitCriminal`(crim)／`_submitGeneral`(gen)／`tab_dispatch.handleDispatch`(task／發文 UPDATE)。涵蓋送出鈕與 Enter。**`task` 鎖同時涵蓋交辦單收文（新增）與交辦單發文（Tab0 確認發文，屬同一交辦流程，跨年度後一併凍結）**——這是刻意的範圍決定，`task` 一個開關管收發文兩頁。
+- **硬 gate（真正防線）**：`if not is_manager() and isInputLocked(...): return`——`tab_dispatch.handleDispatch`(dispatch／發文 UPDATE)／`tab_receive._submit`(task／收文 INSERT)／`tab_report._submitCriminal`(crim)／`_submitGeneral`(gen)。涵蓋送出鈕與 Enter。四頁各自獨立開關。
 - **唯讀 UI（輔助提示）**：一般使用者進到被鎖分頁 → 該表單所有可填欄位＋送出/清除鈕 `setEnabled(False)`、頂端顯示紅色橫幅「唯讀模式：本功能目前無法使用，僅供瀏覽」；預覽表維持可讀。三頁（收文／發文／陳報）各有 `_applyInputLock()`。`tab_report` 依當前刑案/一般模式（`_currentLockKind()`）只鎖對應那種，`type_tabbar` 不反灰（可切到未鎖模式），`_switchFormType` 末尾亦重套。
 - ⚠️ **刷新時機（易踩）**：`main._onTabChanged` **只對設定頁與瀏覽頁**呼叫 `on_activated`，切入收文/發文/陳報頁不會觸發。故這三頁各自 `setup()` 內自掛 `self.tab_widget.currentChanged.connect(self._onShown)`（比照 `tab_print`）來重套 `_applyInputLock`（切入分頁時反灰＋橫幅），不能只靠 `on_activated`。
 - **登出處理**：三頁另掛 `AuthManager.role_changed → _onRoleClearList`，登出降回一般使用者時**清空該頁預覽/發文清單**（`setRowCount(0)`），刻意**不**在原頁做即時反灰（維持最小處理，反灰於下次切入分頁時由 `_onShown` 補上）。

@@ -104,7 +104,7 @@ class TabDispatch(BaseTab):
         """一般使用者遇交辦表被鎖 → 發文表單全反灰＋顯示紅色唯讀橫幅；
         admin/archive 或未鎖 → 正常可填、橫幅隱藏。"""
         locked = (not AuthManager.instance().is_manager()
-                  and isInputLocked(self.db_path, "task"))
+                  and isInputLocked(self.db_path, "dispatch"))
         for w in getattr(self, "_lock_widgets", []):
             w.setEnabled(not locked)
         if getattr(self, "_readonly_banner", None):
@@ -321,7 +321,7 @@ class TabDispatch(BaseTab):
     # ── 批次發文 ──────────────────────────────────────────
     def handleDispatch(self):
         # 唯讀 gate：交辦表被鎖時一般使用者不可發文（真正防線，涵蓋按鈕與所有觸發）
-        if not AuthManager.instance().is_manager() and isInputLocked(self.db_path, "task"):
+        if not AuthManager.instance().is_manager() and isInputLocked(self.db_path, "dispatch"):
             msgWarning("唯讀模式", "本功能目前為唯讀模式無法使用。")
             return
         if not self.table or self.table.rowCount() == 0:
