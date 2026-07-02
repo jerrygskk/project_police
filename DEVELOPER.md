@@ -56,7 +56,7 @@ main.py
 
 ## 2. 踩雷速查表
 
-見 [CLAUDE.md](CLAUDE.md)（動手前必掃）。
+見 [CLAUDE.md](CLAUDE.md)（動手前必掃）。**跨功能影響對照表**（動到設定／權限／面板時要跟著改哪些地方）亦在 CLAUDE.md 文末。
 
 ---
 

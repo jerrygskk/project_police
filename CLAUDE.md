@@ -30,6 +30,7 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 1. **讀 DEVELOPER.md 第 1 節**（架構心智模型）— 了解程式怎麼跑起來、資料怎麼流
 2. **掃 DEVELOPER.md 第 2 節**（踩雷速查表）— 不看就會踩，而且有些踩過還會再踩
 3. **對齊 DEVELOPER.md 第 3 節**（慣例與設計決策）— 為什麼這樣寫，不要自作主張改掉
+4. **動到設定／權限／面板等跨功能主題**，先查本檔文末**「跨功能影響對照表」**——右欄每一項都要檢查，防止改了 A 漏了 B
 
 ## 協作偏好（務必遵守）
 
@@ -170,3 +171,31 @@ README 寫給**完全不懂程式、也不懂運作原理的新使用者**，純
 #### 9. 打包／重啟
 - **重置後重啟、打包版跳 `Failed to load Python DLL`／`unicodedata` 缺** → 啟動新程序前設 `PYINSTALLER_RESET_ENVIRONMENT=1`（新程序沿用舊 `_MEI` 所致；見 `tab_settings._restartApp()`，別用 cmd ping 延遲歪招）。
 - **C 槽空間不足時 onefile 解壓階段失敗（已知無法攔截）** → onefile 開機會先把整包解壓到 C 槽 `%TEMP%`（實測峰值約 216~250MB，視 exe 大小而定），這發生在 `main.py` 任何程式碼執行**之前**（PyInstaller bootloader 階段），我們自己的 `error.log` 機制與 2026-07 加的開機磁碟空間檢查（`lib/db_utils.diskSpaceThreshold` + `main.py` 開頭 `confirmBox`）都攔不到、也留不下紀錄。已與維護者議定不處理（不想為此動 `--runtime-tmpdir` 改打包設定），剩餘風險留給維護者自行注意 C 槽可用空間。執行期間（`main.py` 已開始跑之後）的磁碟空間不足，已用上述檢查＋`LoadWorker` try/except＋`friendlyErrorMessage` 的 `isDiskFullError` 專屬訊息攔住。
+
+---
+
+## 跨功能影響對照表（動到左欄主題＝右欄逐項檢查）
+
+牽一髮動全身的主題集中在此，防「改了 A 漏了 B」。**維護規則：新增設定 key／權限限制／系統設定面板時，必須同步補一列**，否則本表腐爛即失效。詳細技術說明在 DEVELOPER.md 對應章節，本表只列「要記得去看的地方」。
+
+```mermaid
+graph LR
+    S[設定/權限類改動] --> C[程式觸點<br>各 Tab 顯示/gate/刷新]
+    S --> D[DEVELOPER.md 對應節<br>＋權限矩陣]
+    S --> H[HELP help_content.py<br>＋QUICKSTART→重產PDF]
+    S --> R[README 門面<br>使用者有感才改]
+    S --> T[tests/ 純邏輯測試]
+```
+
+| 主題 | 程式觸點 | 文件／測試同步 |
+|------|----------|----------------|
+| **歸檔資料夾設定**（`archive_root`／子夾） | `ArchiveRootPanel`（settings_panels）；歸檔頁 `_updateArchWarn` 警示＋資料夾定位；瀏覽頁 `_refreshArchWarn` 警示＋PDF 連結；設定頁登入彈窗 `_maybeWarnArchiveRoot`；Reset 會清空（`performYearEndReset`）；`clearPdfIndexCache` | DEVELOPER §5「系統設定子頁」＋「歸檔根目錄未設定警示」；HELP 歸檔/設定頁；QUICKSTART；README 部署段＋`07-archive-folder` 截圖 |
+| **簽收表標題**（`print_title_*` 四 key） | `PrintTitlePanel`；`printTitle`/`printTitlesUnset`（db_utils）；列印頁警示 `_refresh_title_warn`＋過期指紋 `_titles_sig`；Reset 不清 | DEVELOPER §5「簽收表標題自訂」；HELP 列印/設定頁；QUICKSTART；`tests/test_print_titles` |
+| **閒置逾時**（`idle_logout_min`/`idle_close_min`） | `IdleTimeoutPanel`；`getIdleTimeoutsMs`/`parseIdleMinutes`；main.py 兩計時器 `>0` guard；「低於鎖螢幕時間」約束（維護者默契、不放 UI）；Reset 不清 | DEVELOPER §3「閒置處理」；HELP/QUICKSTART 內寫死的分鐘數字；`tests/test_idle_timeouts` |
+| **唯讀設定**（`input_lock_*` 四 key） | `InputLockPanel`；`isInputLocked`/`INPUT_LOCK_KEYS`；四硬 gate（`handleDispatch`/`tab_receive._submit`/`_submitCriminal`/`_submitGeneral`）；三頁 `_applyInputLock` 反灰＋橫幅＋`_onShown`＋`_onRoleClearList`；tab_report `_currentLockKind`/`_switchFormType` 重套 | DEVELOPER §3「三表新增鎖」＋權限矩陣＋§5 面板表；HELP/QUICKSTART；`tests/test_input_lock` |
+| **權限／角色**（新增任何「受限身分不可做」） | **每條觸發路徑 guard**（按鈕/雙擊/行內編輯/Enter/右鍵/拖拉，見紀律區）；`role_changed`→`_onRolePerm`/`_applyRolePermissions`；遮罩頁（歸檔/稽核）；閒置登出後的行為 | **DEVELOPER §3 權限矩陣必更新**；HELP 各頁的權限描述；QUICKSTART 權限段；上機以受限身分逐路徑驗證 |
+| **新增 App_Settings key**（通用步驟） | db_utils 常數＋讀取 helper（含 fallback 預設）；`db_seed` 要不要播種；Reset 清不清（`performYearEndReset`）；生效時機（即時讀 vs 重啟） | DEVELOPER §6 App_Settings 那一列；對應 tests |
+| **系統設定新面板** | `settings_panels.py` 新類別＋`ui_utils/__init__` 匯出；tab_settings **四份清單**（建立/`_applyRolePermissions`/`_loadSystem`/`_dirtyPanels`）；`_save()` 開頭權限 guard；儲存鈕 dirty UX（亮/灰/clearFocus） | DEVELOPER §5 面板表；HELP 設定頁；QUICKSTART |
+| **參照表結構／改名行為** | `_ref_changed` 旗標路徑（踩雷表 #7）；預覽表 `_refreshPreviewNames`；歸檔比對 `_loadNameDict`；`RefItemDialog` 三份 config | DEVELOPER §3「參照項對話框」；HELP 設定頁 |
+
+> **發版前固定檢查**：HELP（`help_content.py` 的 `HELP_PAGES`）與速查卡（同檔 `QUICKSTART`，改後跑 `gen_quickstart.py` 重產 PDF）是歷來最常漏的兩處；發布流程第 1 步寫文件時，對照本表右欄逐列確認。
