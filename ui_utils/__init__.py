@@ -32,7 +32,7 @@ from .settings_dialogs import (
     RefItemDialog, REF_PERSONNEL, REF_DEPT, REF_CASETYPE,
     ChangePasswordDialog, ResetDialog,
 )
-from .settings_panels import ArchiveRootPanel, PrintTitlePanel, IdleTimeoutPanel
+from .settings_panels import ArchiveRootPanel, PrintTitlePanel, IdleTimeoutPanel, InputLockPanel
 
 __all__ = [
     "msgInfo", "msgWarning", "msgCritical", "reportError", "confirmBox", "loadUi",
@@ -69,5 +69,5 @@ __all__ = [
     "FIXED_COL_WIDTHS",
     "RefItemDialog", "REF_PERSONNEL", "REF_DEPT", "REF_CASETYPE",
     "ChangePasswordDialog", "ResetDialog",
-    "ArchiveRootPanel", "PrintTitlePanel", "IdleTimeoutPanel",
+    "ArchiveRootPanel", "PrintTitlePanel", "IdleTimeoutPanel", "InputLockPanel",
 ]

@@ -5,6 +5,7 @@ settings_panels.py — 設定頁「系統設定」子頁的嵌入式面板
   - ArchiveRootPanel   歸檔資料夾（年度層 UNC + 刑案/一般子夾名；admin/archive 皆可改）
   - PrintTitlePanel    簽收表標題（4 欄自訂文字；僅 admin）
   - IdleTimeoutPanel   閒置逾時（自動登出／強制關閉，分；僅 admin，重啟生效）
+  - InputLockPanel     唯讀設定（三表新增鎖；僅 admin；即時生效）
 
 由 ArchiveRootDialog / PrintTitleDialog（settings_dialogs.py，已移除）改寫而來，
 儲存邏輯與稽核行為不變。面板值以 reload() 重讀 DB（切入子頁時呼叫）。
@@ -14,7 +15,7 @@ import os
 from PySide6.QtCore    import Qt
 from PySide6.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QLineEdit, QPushButton, QComboBox,
+    QLabel, QLineEdit, QPushButton, QComboBox, QCheckBox,
     QFileDialog, QSpinBox, QDoubleSpinBox, QAbstractSpinBox,
 )
 
@@ -567,5 +568,99 @@ class IdleTimeoutPanel(QGroupBox):
                                "系統", "修改",
                                f"閒置逾時：登出 {fmt(old_logout)}→{fmt(logout)} 分、"
                                f"關閉 {fmt(old_close)}→{fmt(close)} 分"))
+        self.reload()   # 重設 dirty 基準（儲存鈕隨之回灰）
+        return True
+
+
+# ══════════════════════════════════════════════════════════════════
+# 唯讀設定（三表新增鎖；僅 admin；archive 整塊反灰；即時生效）
+# ══════════════════════════════════════════════════════════════════
+class InputLockPanel(QGroupBox):
+    # (kind, 勾選框標籤)
+    _ROWS = [
+        ("dispatch", "唯讀交辦單發文"),
+        ("task",     "唯讀交辦單收文"),
+        ("crim",     "唯讀刑案陳報"),
+        ("gen",      "唯讀一般陳報"),
+    ]
+
+    def __init__(self, db_path, parent=None):
+        super().__init__("唯讀設定", parent)
+        self.db_path = db_path
+        self.setStyleSheet(_PANEL_SS)
+        self._build()
+        self.reload()
+
+    def _build(self):
+        v = QVBoxLayout(self)
+        v.setSpacing(10)
+        v.setContentsMargins(16, 14, 16, 12)
+
+        hint = QLabel(
+            "勾選後，該頁面將進入唯讀模式：\n"
+            "一般使用者無法收發交辦單，也不能新增、修改、刪除陳報案件；"
+            "管理者與歸檔管理不受限制。儲存後立即生效。")
+        hint.setStyleSheet(_HINT_SS)
+        hint.setWordWrap(True)
+        v.addWidget(hint)
+
+        self._checks = {}
+        for kind, label in self._ROWS:
+            cb = QCheckBox(label)
+            cb.stateChanged.connect(self._updateSaveBtn)
+            v.addWidget(cb)
+            self._checks[kind] = cb
+
+        self._btn_save = _save_row(v)
+        self._btn_save.clicked.connect(self._save)
+
+    def reload(self):
+        """重讀 DB：值為 "1" 才勾。"""
+        from lib.db_utils import getSetting, INPUT_LOCK_KEYS
+        for kind, cb in self._checks.items():
+            cur = (getSetting(self.db_path, INPUT_LOCK_KEYS[kind], "") or "").strip()
+            cb.blockSignals(True)
+            cb.setChecked(cur == "1")
+            cb.blockSignals(False)
+        self._loaded = {k: cb.isChecked() for k, cb in self._checks.items()}
+        self._updateSaveBtn()
+
+    def isDirty(self):
+        loaded = getattr(self, "_loaded", None)
+        if loaded is None:
+            return False
+        return any(cb.isChecked() != loaded.get(k, False)
+                   for k, cb in self._checks.items())
+
+    def _updateSaveBtn(self, *_):
+        btn = getattr(self, "_btn_save", None)
+        if not btn:
+            return
+        dirty = self.isDirty()
+        if not dirty and btn.hasFocus():
+            btn.clearFocus()
+        btn.setEnabled(dirty)
+
+    def _save(self):
+        """存檔成功回 True、被擋回 False。"""
+        from lib.auth_manager import AuthManager
+        from lib.db_utils import (setSetting, getSetting, INPUT_LOCK_KEYS,
+                                  writeAuditSafe, buildDetail)
+        # 權限 gate：僅 admin（面板反灰之外的保底，防替代觸發路徑繞過）
+        if not AuthManager.instance().is_admin():
+            return False
+        changes = []
+        for kind, label in self._ROWS:
+            new = "1" if self._checks[kind].isChecked() else ""
+            old = (getSetting(self.db_path, INPUT_LOCK_KEYS[kind], "") or "").strip()
+            if (new == "1") != (old == "1"):
+                changes.append(f"{label} {'開啟' if new == '1' else '關閉'}")
+            setSetting(self.db_path, INPUT_LOCK_KEYS[kind], new)
+        if changes:
+            am = AuthManager.instance()
+            writeAuditSafe(self.db_path, role=am.current_role, action="CONFIG",
+                           operator=am.actor_name(),
+                           detail=buildDetail("系統", "修改",
+                                              "唯讀設定：" + "、".join(changes)))
         self.reload()   # 重設 dirty 基準（儲存鈕隨之回灰）
         return True

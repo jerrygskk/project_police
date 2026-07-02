@@ -36,7 +36,7 @@ from ui_utils import (
 from ui_utils import (
     RefItemDialog, REF_PERSONNEL, REF_DEPT, REF_CASETYPE,
     ChangePasswordDialog, ResetDialog,
-    ArchiveRootPanel, PrintTitlePanel, IdleTimeoutPanel,
+    ArchiveRootPanel, PrintTitlePanel, IdleTimeoutPanel, InputLockPanel,
     preserveScroll,
 )
 from ui_utils.settings_dialogs import _parseSeqMoveTarget
@@ -311,11 +311,13 @@ class TabSettings(BaseTab):
         self._panel_archive_root = ArchiveRootPanel(self.db_path, sys_content)
         self._panel_print_title  = PrintTitlePanel(self.db_path, sys_content)
         self._panel_idle         = IdleTimeoutPanel(self.db_path, sys_content)
+        self._panel_input_lock   = InputLockPanel(self.db_path, sys_content)
         if sys_content and sys_content.layout():
             sys_lay = sys_content.layout()
             sys_lay.addWidget(self._panel_archive_root)
             sys_lay.addWidget(self._panel_print_title)
             sys_lay.addWidget(self._panel_idle)
+            sys_lay.addWidget(self._panel_input_lock)
             sys_lay.addStretch()
 
         self._outer_stack.setCurrentIndex(0)
@@ -577,6 +579,8 @@ class TabSettings(BaseTab):
             self._panel_print_title.setEnabled(is_admin)
         if getattr(self, "_panel_idle", None):
             self._panel_idle.setEnabled(is_admin)
+        if getattr(self, "_panel_input_lock", None):
+            self._panel_input_lock.setEnabled(is_admin)
 
     # ── 身份切換監聽：登出時回到密碼驗證畫面 ─────────────────────
     def _onRoleChanged(self, role):
@@ -617,12 +621,13 @@ class TabSettings(BaseTab):
         ):
             self._switchPage(self._PAGE_SYSTEM)
 
-    # ── 系統設定子頁（歸檔資料夾／簽收表標題／閒置逾時三面板）──────
+    # ── 系統設定子頁（歸檔資料夾／簽收表標題／閒置逾時／唯讀設定四面板）──────
     def _loadSystem(self):
-        """切入系統設定子頁時重讀三面板的 DB 值，確保畫面與 DB 一致。"""
+        """切入系統設定子頁時重讀四面板的 DB 值，確保畫面與 DB 一致。"""
         for p in (getattr(self, "_panel_archive_root", None),
                   getattr(self, "_panel_print_title", None),
-                  getattr(self, "_panel_idle", None)):
+                  getattr(self, "_panel_idle", None),
+                  getattr(self, "_panel_input_lock", None)):
             if p:
                 p.reload()
 
@@ -888,10 +893,11 @@ class TabSettings(BaseTab):
         self._renderSortTable(key)
 
     def _dirtyPanels(self):
-        """系統設定子頁三面板中有未存變更者（切頁/離開提示用）。"""
+        """系統設定子頁四面板中有未存變更者（切頁/離開提示用）。"""
         return [p for p in (getattr(self, "_panel_archive_root", None),
                             getattr(self, "_panel_print_title", None),
-                            getattr(self, "_panel_idle", None))
+                            getattr(self, "_panel_idle", None),
+                            getattr(self, "_panel_input_lock", None))
                 if p and p.isDirty()]
 
     def _promptUnsaved(self, context="edit"):

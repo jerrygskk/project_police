@@ -92,6 +92,36 @@ class TabReceive(BaseTab):
         btn_submit = inner.findChild(QPushButton, 'btn_recv_submit')
         if btn_clear:  btn_clear.clicked.connect(self._formClear)
         if btn_submit: btn_submit.clicked.connect(self._submit)
+
+        # 唯讀橫幅（預設隱藏；一般使用者遇本表被鎖時顯示）
+        self._readonly_banner = QLabel("唯讀模式：本功能目前無法使用，僅供瀏覽")
+        self._readonly_banner.setStyleSheet(
+            "background-color: #fdecea; color: #c0392b; border: 1px solid #e74c3c;"
+            "border-radius: 8px; padding: 8px 12px; font-weight: 600;")
+        self._readonly_banner.setVisible(False)
+        lay.insertWidget(0, self._readonly_banner)
+
+        # 唯讀時要一併反灰的可填元件（送出/清除鈕＋所有輸入欄）
+        self._lock_widgets = [w for w in (
+            self.recv_date, self.recv_receiver, self.recv_dept, self.recv_subject,
+            self.recv_processor, self._deadline_stack, self.chk_no_deadline,
+            btn_submit, btn_clear) if w]
+        self._applyInputLock()
+
+        # main._onTabChanged 不會對本頁呼叫 on_activated（只對設定/瀏覽頁），
+        # 故自掛 currentChanged：切回本頁時重套唯讀狀態（比照 tab_print._onShown）。
+        self._tab_index = tab_index
+        try:
+            self.tab_widget.currentChanged.connect(self._onShown)
+        except Exception:
+            pass
+        # 登出降回一般使用者時：清空預覽清單（不在原頁做額外的即時反灰）
+        from lib.auth_manager import AuthManager as _AM
+        try:
+            _AM.instance().role_changed.connect(self._onRoleClearList)
+        except Exception:
+            pass
+
         if self.recv_subject: self.recv_subject.setFocus()
 
     # ── BaseTab 介面 ──────────────────────────────────────
@@ -107,6 +137,30 @@ class TabReceive(BaseTab):
         refreshFilterCombo(self.recv_processor, self._personnel)
         refreshFilterCombo(self.recv_dept,      self._depts)
         self._refreshTaskPreviewNames(self.recv_table)
+        self._applyInputLock()
+
+    def _onShown(self, idx):
+        """切回本頁時重套唯讀狀態（main._onTabChanged 不會對本頁呼叫 on_activated）。"""
+        if idx == getattr(self, "_tab_index", -1):
+            self._applyInputLock()
+
+    def _applyInputLock(self):
+        """一般使用者遇交辦表被鎖 → 表單全反灰＋顯示紅色唯讀橫幅；
+        admin/archive 或未鎖 → 正常可填、橫幅隱藏。"""
+        from lib.auth_manager import AuthManager
+        from lib.db_utils import isInputLocked
+        locked = (not AuthManager.instance().is_manager()
+                  and isInputLocked(self.db_path, "task"))
+        for w in getattr(self, "_lock_widgets", []):
+            w.setEnabled(not locked)
+        if getattr(self, "_readonly_banner", None):
+            self._readonly_banner.setVisible(locked)
+
+    def _onRoleClearList(self, *_):
+        """登出降回一般使用者時清空預覽清單（取代原頁即時反灰）。"""
+        from lib.auth_manager import AuthManager
+        if not AuthManager.instance().is_manager() and self.recv_table:
+            self.recv_table.setRowCount(0)
 
     # ── 免覆 Checkbox ─────────────────────────────────────
     def _onNoDeadlineChanged(self, state):
@@ -131,6 +185,11 @@ class TabReceive(BaseTab):
 
     # ── 確認收文 ──────────────────────────────────────────
     def _submit(self):
+        from lib.auth_manager import AuthManager
+        from lib.db_utils import isInputLocked
+        if not AuthManager.instance().is_manager() and isInputLocked(self.db_path, "task"):
+            msgWarning("唯讀模式", "本功能目前為唯讀模式無法使用。")
+            return
         recv_date   = self.recv_date.date().toString("yyyy-MM-dd")
         recv_id     = self.recv_receiver.currentData()
         dept_id     = self.recv_dept.currentData()
